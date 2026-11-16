@@ -14,7 +14,7 @@ use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use tokio::time::Instant;
-use torrential_core::{Device, DeviceList, Error, ErrorCode, PairingOffer, TorrentId};
+use torrential_core::{Device, DeviceList, DownloadId, Error, ErrorCode, PairingOffer};
 
 use super::db::{Db, sql_error};
 use super::names::Names;
@@ -52,7 +52,7 @@ pub enum Asker {
 /// The file a cast grant serves.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Granted {
-    pub id: TorrentId,
+    pub id: DownloadId,
     pub index: u32,
     key: Key,
 }
@@ -169,7 +169,7 @@ impl Offer {
 }
 
 struct Grant {
-    id: TorrentId,
+    id: DownloadId,
     index: u32,
     path: String,
 }
@@ -483,7 +483,7 @@ impl Devices {
 
     /// A grant that serves file `index` of download `id` to whoever has its URL, until it is
     /// dropped. `name` gives the URL a file name a TV can show.
-    pub fn grant(self: &Arc<Self>, id: TorrentId, index: u32, name: &str) -> Result<CastGrant, Error> {
+    pub fn grant(self: &Arc<Self>, id: DownloadId, index: u32, name: &str) -> Result<CastGrant, Error> {
         let token = Token::new()?;
         let path = format!("{CAST}{}/{}", token.hex(), super::http::url_name(name));
         let key = token.key();

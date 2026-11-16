@@ -6,7 +6,7 @@ use std::sync::Arc;
 use serde::Serialize;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use torrential_core::{Error, ErrorCode, TorrentId, title};
+use torrential_core::{DownloadId, Error, ErrorCode, title};
 
 use crate::playback::subtitle;
 use torrential_search::subtitles::{FileHash, Found, Video};
@@ -17,9 +17,9 @@ use super::super::media;
 use super::super::owner::{Command, StreamFile};
 use super::{file_of, required};
 
-/// `GET /api/subtitles/online`: what the engine found for the file, by the names in its torrent
+/// `GET /api/subtitles/online`: what the engine found for the file, by the names in its release
 /// and, once both of its ends have downloaded, by its hash.
-pub async fn list(ctx: &Ctx, id: TorrentId, index: u32) -> Result<Value, Error> {
+pub async fn list(ctx: &Ctx, id: DownloadId, index: u32) -> Result<Value, Error> {
     let searched = found(ctx, id, index).await?;
     let found = &searched.found;
     let title = found.title.as_ref().map(|title| Named {
@@ -40,7 +40,7 @@ pub async fn list(ctx: &Ctx, id: TorrentId, index: u32) -> Result<Value, Error> 
 #[derive(Serialize)]
 #[cfg_attr(test, derive(ts_rs::TS), ts(rename = "OnlineSubtitles"))]
 pub(super) struct Online<'a> {
-    /// What the names in the torrent say the video is.
+    /// What the names in the release say the video is.
     title: Option<Named<'a>>,
     subtitles: Vec<Listed<'a>>,
     /// The search had the file's hash. Until it does, asking again once both ends of the file have
@@ -102,7 +102,7 @@ pub async fn vtt(ctx: &Ctx, request: &Request) -> Result<Arc<Vec<u8>>, Error> {
 /// What the sources have for the file. An answer is kept for as long as the engine runs, and
 /// replaced once by a search with the file's hash when both of its ends have downloaded. No
 /// answer, as when the sources are down, is not kept, so the next request asks again.
-async fn found(ctx: &Ctx, id: TorrentId, index: u32) -> Result<Arc<Searched>, Error> {
+async fn found(ctx: &Ctx, id: DownloadId, index: u32) -> Result<Arc<Searched>, Error> {
     let kept = ctx.web.found.lock().expect("no holder panics").get(&(id, index));
     if let Some(kept) = kept.as_ref().filter(|kept| kept.hashed) {
         return Ok(kept.clone());
@@ -112,7 +112,7 @@ async fn found(ctx: &Ctx, id: TorrentId, index: u32) -> Result<Arc<Searched>, Er
     if let Some(kept) = kept.as_ref().filter(|_| hash.is_none()) {
         return Ok(kept.clone());
     }
-    let video = Video { titles: title::read(&file.inside, &file.torrent), file_name: media::name(&file), hash };
+    let video = Video { titles: title::read(&file.inside, &file.release), file_name: media::name(&file), hash };
     let Some(found) = ctx.web.subtitles.find(&video).await else { return Ok(kept.unwrap_or_default()) };
     let searched = Arc::new(Searched { found, hashed: hash.is_some() });
     ctx.web.found.lock().expect("no holder panics").put((id, index), searched.clone());
@@ -121,7 +121,7 @@ async fn found(ctx: &Ctx, id: TorrentId, index: u32) -> Result<Arc<Searched>, Er
 
 /// The file's hash, if both of its ends are on disk already. Subtitles are not worth fetching
 /// pieces out of order for, and a search without the hash still finds them by title.
-async fn hash(ctx: &Ctx, id: TorrentId, index: u32, file: &StreamFile) -> Option<FileHash> {
+async fn hash(ctx: &Ctx, id: DownloadId, index: u32, file: &StreamFile) -> Option<FileHash> {
     let reach = FileHash::reach(file.size);
     let ends = [0, file.size - reach];
     if reach == 0 {

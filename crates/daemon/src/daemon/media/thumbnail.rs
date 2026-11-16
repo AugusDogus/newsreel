@@ -4,7 +4,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use torrential_core::{Error, ErrorCode, TorrentId};
+use torrential_core::{DownloadId, Error, ErrorCode};
 
 use super::super::ctx::Ctx;
 use super::super::owner::{Command, StreamFile};
@@ -25,7 +25,7 @@ pub const EVERY: u32 = 10;
 
 /// A JPEG of the frame at `t` seconds of file `index` of a download. Only from bytes already on
 /// disk: a picture is never worth fetching pieces ahead of the ones being watched.
-pub async fn jpeg(ctx: &Ctx, id: TorrentId, index: u32, t: f64) -> Result<Arc<Vec<u8>>, Error> {
+pub async fn jpeg(ctx: &Ctx, id: DownloadId, index: u32, t: f64) -> Result<Arc<Vec<u8>>, Error> {
     let program = ctx.media.ffmpeg.now()?.ffmpeg;
     let file = ctx.owner.ask(|reply| Command::StreamFile { id, index, reply }).await?;
     let name = name(&file);
@@ -71,7 +71,7 @@ pub async fn jpeg(ctx: &Ctx, id: TorrentId, index: u32, t: f64) -> Result<Arc<Ve
 /// Whether the stretch of the file around the frame `share` of the way into it has all arrived.
 /// The container's index, at one end of the file, is not checked: the player's own reading has
 /// fetched what it needs of it, and a frame read from bytes that are missing fails in ffmpeg.
-async fn on_disk(ctx: &Ctx, id: TorrentId, index: u32, file: &StreamFile, share: f64) -> bool {
+async fn on_disk(ctx: &Ctx, id: DownloadId, index: u32, file: &StreamFile, share: f64) -> bool {
     if file.size == 0 {
         return false;
     }

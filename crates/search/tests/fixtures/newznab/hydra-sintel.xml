@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written in the shape of NZBHydra2's Newznab feed. Links carry the API key, as Hydra's do. -->
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+  <channel>
+    <atom:link href="http://127.0.0.1:5076/api" rel="self" type="application/rss+xml" />
+    <title>NZBHydra2</title>
+    <item>
+      <title>Sintel.2010.1080p.BluRay.x264-GRP</title>
+      <guid isPermaLink="false">a1</guid>
+      <link>http://127.0.0.1:5076/getnzb/api/a1?apikey=k3y</link>
+      <comments>https://indexer.example/details/a1</comments>
+      <pubDate>Sat, 25 Apr 2026 14:35:00 +0000</pubDate>
+      <category>Movies HD</category>
+      <enclosure url="http://127.0.0.1:5076/getnzb/api/a1?apikey=k3y" length="4509715660" type="application/x-nzb" />
+      <newznab:attr name="category" value="2000" />
+      <newznab:attr name="category" value="2040" />
+      <newznab:attr name="size" value="4509715660" />
+      <newznab:attr name="grabs" value="900" />
+    </item>
+    <item>
+      <title>Sintel.2010.720p.WEB.x264-GRP</title>
+      <guid isPermaLink="false">a2</guid>
+      <link>http://127.0.0.1:5076/getnzb/api/a2?apikey=k3y</link>
+      <pubDate>Sun, 26 Apr 2026 08:00:00 +0000</pubDate>
+      <enclosure url="http://127.0.0.1:5076/getnzb/api/a2?apikey=k3y" length="838860800" type="application/x-nzb" />
+      <newznab:attr name="category" value="2040" />
+      <newznab:attr name="size" value="838860800" />
+      <newznab:attr name="grabs" value="300" />
+    </item>
+    <item>
+      <title>Sintel Nights 2024 1080p</title>
+      <guid isPermaLink="false">a3</guid>
+      <link>http://127.0.0.1:5076/getnzb/api/a3?apikey=k3y</link>
+      <pubDate>Mon, 01 Jan 2024 00:00:00 +0000</pubDate>
+      <newznab:attr name="category" value="6000" />
+      <newznab:attr name="size" value="1073741824" />
+      <newznab:attr name="grabs" value="12" />
+    </item>
+  </channel>
+</rss>

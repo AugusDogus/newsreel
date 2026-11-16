@@ -12,7 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { type MediaInfo, mediaErrorCode, type PlayInfo, type TorrentFile } from "../api";
+import { type MediaInfo, mediaErrorCode, type PlayInfo, type ReleaseFile } from "../api";
 import { CastButton } from "../cast/CastButton";
 import { clock } from "../lib/format";
 import {
@@ -59,7 +59,7 @@ const HINT_MS = 12000;
 const ENDS = {
   episode: ["This is the last episode", "This is the first episode"],
   film: ["Nothing plays after this film", "Nothing plays before this film"],
-  torrent: ["This is the last video of the torrent", "This is the first video of the torrent"],
+  release: ["This is the last video of the release", "This is the first video of the release"],
 } as const;
 
 /** Where a video starts, and where the place it stopped is kept. */
@@ -79,10 +79,10 @@ export interface Neighbor {
   go: () => void;
 }
 
-/** What the player plays, as the page that opens it says: a file of a torrent, a film, or an episode. */
+/** What the player plays, as the page that opens it says: a file of a release, a film, or an episode. */
 export interface Shown {
-  kind: "torrent" | "film" | "episode";
-  /** A film or an episode, such as `tt0903747:3:5`, which a cast plays by title. Null for a file of a torrent. */
+  kind: "release" | "film" | "episode";
+  /** A film or an episode, such as `tt0903747:3:5`, which a cast plays by title. Null for a file of a release. */
   video: string | null;
   heading: Heading;
   /** What the system's media controls say plays. */
@@ -90,8 +90,8 @@ export interface Shown {
   /** The videos N and P move to, and the one the end of the video counts down to. */
   previous: Neighbor | null;
   next: Neighbor | null;
-  /** The torrent's videos, which the files panel lists when there are several. Empty for a title. */
-  videos: TorrentFile[];
+  /** The release's videos, which the files panel lists when there are several. Empty for a title. */
+  videos: ReleaseFile[];
   memory: Memory;
   /** Shown before the first frame. */
   cover: ReactNode;
@@ -99,7 +99,7 @@ export interface Shown {
   poster: string | null;
   /** More layers over the picture, which can use the player's context. */
   overlay: ReactNode;
-  /** Another source is being found, which the overlay says, so the wait says nothing about this one's swarm. */
+  /** Another source is being found, which the overlay says, so the wait says nothing about this one. */
   replacing: boolean;
 }
 
@@ -372,8 +372,8 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
   const goPrevious = previous?.go ?? null;
   const multiple = videos.length > 1;
   const ends = ENDS[shown.kind];
-  /** A title's player goes back to its page, and a torrent's to wherever it came from. */
-  const back = shown.kind === "torrent" ? undefined : "Back";
+  /** A title's player goes back to its page, and a release's to wherever it came from. */
+  const back = shown.kind === "release" ? undefined : "Back";
 
   const run = useCallback(
     (action: Command) => {
@@ -646,7 +646,7 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
             filesOpen={filesOpen}
             hasFiles={multiple}
             hasNext={next !== null}
-            nextLabel={shown.kind === "torrent" ? "Next video (N)" : "Next episode (N)"}
+            nextLabel={shown.kind === "release" ? "Next video (N)" : "Next episode (N)"}
             airPlay={airPlay}
             cast={
               <CastButton

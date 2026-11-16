@@ -98,6 +98,7 @@ import type {
   Progress,
   Quality,
   Release,
+  ReleaseFile,
   Resolution,
   Saved,
   SearchMessage as EngineSearchMessage,
@@ -107,11 +108,9 @@ import type {
   SourceReport,
   StreamedFile,
   SubtitleTrack,
-  Swarm,
   TitleCard,
   TitlePage,
   TitleSearch,
-  TorrentFile,
   Tv,
   TvList,
   Version,
@@ -161,6 +160,7 @@ export type {
   Progress,
   Quality,
   Release,
+  ReleaseFile,
   Resolution,
   SearchResult,
   Season,
@@ -168,11 +168,9 @@ export type {
   SourceReport,
   StreamedFile,
   SubtitleTrack,
-  Swarm,
   TitleCard,
   TitlePage,
   TitleSearch,
-  TorrentFile,
   Tv,
   TvList,
   Version,
@@ -314,9 +312,9 @@ export async function* search(
 }
 
 /**
- * Starts or joins the download of `ref` (a Release or Job ID, magnet link, infohash, or .torrent URL)
- * and fetches one video first. Without `file`, the engine picks the main video. Waits for the file
- * list, up to a minute for a magnet.
+ * Starts or joins the download of `ref` (a Release or Job ID, or an NZB URL) and fetches one video
+ * first. Without `file`, the engine picks the main video. Waits while the engine reads the NZB and
+ * the archive headers to list the files.
  */
 export function play(ref: string, file?: number, signal?: AbortSignal): Promise<PlayInfo> {
   return post("/api/play", { ref, file }, signal);
@@ -351,7 +349,7 @@ export function streamUrl(
 
 /**
  * WebVTT, sent as cues are read. With `stream`, the subtitle track with that stream index inside video
- * `file`, from `t` seconds on. Without it, `file` is a subtitle file of the torrent, converted whole.
+ * `file`, from `t` seconds on. Without it, `file` is a subtitle file of the release, converted whole.
  */
 export function subtitleUrl(id: string, file: number, embedded?: { stream: number; t: number }): string {
   const params = new URLSearchParams({ id, file: String(file) });

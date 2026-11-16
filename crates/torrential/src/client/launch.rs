@@ -48,9 +48,10 @@ pub fn send_udp() -> std::io::Result<()> {
 pub fn sandbox_error(blocked: Blocked, env: &Env) -> Error {
     let agent = env.sandbox_harness();
     let (message, signal) = match blocked {
-        Blocked::Network { signal } => {
-            ("this sandbox blocks network access, so torrential cannot reach peers".to_string(), signal)
-        }
+        Blocked::Network { signal } => (
+            "this sandbox blocks network access, so torrential cannot reach the indexers or Usenet servers".to_string(),
+            signal,
+        ),
         Blocked::Loopback { port } => (
             format!("this sandbox blocks the connection to the engine at 127.0.0.1:{port}"),
             "connect: operation not permitted".to_string(),

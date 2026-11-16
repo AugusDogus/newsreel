@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
-use torrential_core::{Error, ErrorCode, TorrentId};
+use torrential_core::{DownloadId, Error, ErrorCode};
 
 use super::ctx::Ctx;
 use super::http;
@@ -39,9 +39,9 @@ pub type Conversion = (PathBuf, Vec<String>, Option<Vec<u8>>);
 pub struct State {
     /// ffmpeg and ffprobe, installed or fetched.
     pub ffmpeg: Ffmpeg,
-    probes: Mutex<Kept<(TorrentId, u32), Arc<Media>>>,
+    probes: Mutex<Kept<(DownloadId, u32), Arc<Media>>>,
     /// Thumbnails, by file and the start of the seconds each stands for.
-    thumbnails: Mutex<Kept<(TorrentId, u32, u32), Made>>,
+    thumbnails: Mutex<Kept<(DownloadId, u32, u32), Made>>,
     thumbnailing: tokio::sync::Semaphore,
     /// Whether each ffmpeg run here can pace its reading.
     paces: Mutex<HashMap<PathBuf, bool>>,
@@ -105,7 +105,7 @@ impl<K: Clone + Eq + Hash, V: Clone> Kept<K, V> {
 
 /// What is inside file `index` of a download. ffprobe reads the file from the engine's own HTTP
 /// server, which fetches the pieces it asks for first.
-pub async fn probe(ctx: &Ctx, id: TorrentId, index: u32) -> Result<Arc<Media>, Error> {
+pub async fn probe(ctx: &Ctx, id: DownloadId, index: u32) -> Result<Arc<Media>, Error> {
     let cached = ctx.media.probes.lock().expect("no holder panics").get(&(id, index));
     if let Some(media) = cached {
         return Ok(media);
@@ -141,7 +141,7 @@ pub async fn probe(ctx: &Ctx, id: TorrentId, index: u32) -> Result<Arc<Media>, E
 }
 
 /// What `probe` has already read about the file, without reading it now.
-pub fn probed(ctx: &Ctx, id: TorrentId, index: u32) -> Option<Arc<Media>> {
+pub fn probed(ctx: &Ctx, id: DownloadId, index: u32) -> Option<Arc<Media>> {
     ctx.media.probes.lock().expect("no holder panics").get(&(id, index))
 }
 
@@ -149,7 +149,7 @@ pub fn probed(ctx: &Ctx, id: TorrentId, index: u32) -> Option<Arc<Media>> {
 /// with audio track `audio` or the default one, and the picture copied or made H.264.
 pub async fn stream(
     ctx: &Ctx,
-    id: TorrentId,
+    id: DownloadId,
     index: u32,
     t: f64,
     audio: Option<u32>,
@@ -175,7 +175,13 @@ pub async fn stream(
 
 /// The command that writes WebVTT of the subtitle track at `stream` inside file `index` of a
 /// download from `t` seconds on, or with no stream, of that file itself, a subtitle file.
-pub async fn subtitles(ctx: &Ctx, id: TorrentId, index: u32, stream: Option<u32>, t: f64) -> Result<Conversion, Error> {
+pub async fn subtitles(
+    ctx: &Ctx,
+    id: DownloadId,
+    index: u32,
+    stream: Option<u32>,
+    t: f64,
+) -> Result<Conversion, Error> {
     let program = ctx.media.ffmpeg.now()?.ffmpeg;
     let file = ctx.owner.ask(|reply| Command::StreamFile { id, index, reply }).await?;
     let name = name(&file);

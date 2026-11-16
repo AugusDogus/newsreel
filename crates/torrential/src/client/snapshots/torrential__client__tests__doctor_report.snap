@@ -1,6 +1,6 @@
 ---
 source: crates/torrential/src/client/tests.rs
-expression: "both(&doctor(&checks, fix), &crate::output::Typed\n{ kind: \"doctor\", body: serde_json::json!({\"checks\": checks}) })"
+expression: "both(&doctor(&checks, fix), &crate::output::Typed\n{ kind: DocKind::Doctor, body: serde_json::json!({\"checks\": checks}) })"
 ---
 CHECK	STATUS	DETAIL
 sandbox	fail	CODEX_SANDBOX_NETWORK_DISABLED=1
@@ -8,8 +8,8 @@ disk	ok	410.2 GiB free in /Users/ada/Downloads/torrential
 state	ok	/Users/ada/.local/state/torrential
 engine	ok	not running; the next command starts it
 sources	fail	1 of 2 responded
-source archive.org	ok	12 results, 380 ms
-source knaben	fail	HTTP 503, 211 ms
+source geek	ok	12 results, 380 ms
+source dognzb	fail	HTTP 503, 211 ms
 # 2 problems
 next: in interactive Codex, rerun with sandbox_permissions "require_escalated" and prefix_rule ["torrential"]
 
@@ -44,12 +44,12 @@ next: in interactive Codex, rerun with sandbox_permissions "require_escalated" a
       "detail": "1 of 2 responded"
     },
     {
-      "check": "source archive.org",
+      "check": "source geek",
       "status": "ok",
       "detail": "12 results, 380 ms"
     },
     {
-      "check": "source knaben",
+      "check": "source dognzb",
       "status": "fail",
       "detail": "HTTP 503, 211 ms"
     }

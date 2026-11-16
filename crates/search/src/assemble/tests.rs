@@ -3,33 +3,38 @@ use std::sync::Arc;
 
 use torrential_core::error::Details;
 use torrential_core::{
-    Arch, Category, Codec, Decoders, Decoding, Display, ErrorCode, Flag, Language, Machine, Os, Playback, Player,
-    Preferences, Profile, Release, ReleaseId, Screen, SearchQuery, Sort, SourceOutcome, SourceReport, Viewer,
+    Arch, Category, Decoders, Decoding, Display, ErrorCode, Flag, Language, Machine, Os, Playback, Player, Preferences,
+    Profile, Release, ResultId, Screen, SearchQuery, Sort, SourceOutcome, SourceReport, Viewer,
 };
 
 use super::*;
-use crate::observation::{Identity, Observation, Peers, VideoCodec, VideoFile, infohash};
+use crate::observation::Observation;
 
-fn source(name: &str, authority: u16, lawful: bool, public: bool) -> Arc<SourceMeta> {
-    Arc::new(SourceMeta { name: name.into(), authority, lawful, public })
-}
-
-fn archive() -> Arc<SourceMeta> {
-    source("archive.org", 3, true, true)
-}
-fn knaben() -> Arc<SourceMeta> {
-    source("knaben", 5, false, true)
-}
-fn apibay() -> Arc<SourceMeta> {
-    source("apibay", 6, false, true)
+fn source(name: &str, authority: u16) -> Arc<SourceMeta> {
+    Arc::new(SourceMeta { name: name.into(), authority })
 }
 
-fn row(hash: &str, name: &str) -> Observation {
-    Observation::new(Identity::Hash { hash: infohash(hash).unwrap(), torrent_url: None }, name).unwrap()
+fn hydra() -> Arc<SourceMeta> {
+    source("hydra", 3)
+}
+fn geek() -> Arc<SourceMeta> {
+    source("geek", 5)
+}
+fn planet() -> Arc<SourceMeta> {
+    source("planet", 6)
 }
 
-fn with(mut o: Observation, seeders: Option<u32>, size: Option<u64>, published: Option<i64>) -> Observation {
-    o.peers = Peers::new(seeders, None);
+/// The NZB link a row tagged `tag` carries.
+fn nzb(tag: &str) -> String {
+    format!("https://indexer.example/getnzb/{tag}.nzb")
+}
+
+fn row(tag: &str, name: &str) -> Observation {
+    Observation::new(nzb(tag), name).unwrap()
+}
+
+fn with(mut o: Observation, grabs: Option<u64>, size: Option<u64>, published: Option<i64>) -> Observation {
+    o.grabs = grabs;
     o.size = size;
     o.published = published;
     o
@@ -51,184 +56,81 @@ fn names(result: &SearchResult) -> Vec<&str> {
     result.releases.iter().map(|r| r.name.as_str()).collect()
 }
 
-fn h(byte: u8) -> String {
-    format!("{byte:02x}").repeat(20)
-}
-
 #[test]
-fn merges_one_torrent_listed_by_two_sources() {
-    let mut from_knaben = row(&h(0xaa), "Ubuntu 24.04 Desktop");
-    from_knaben.peers = Some(Peers { seeders: 50, leechers: Some(5) });
-    from_knaben.size = Some(100);
-    from_knaben.published = Some(1000);
-    from_knaben.category = Some(Category::Software);
-    from_knaben.trackers = vec!["udp://a.example:1337/announce".into(), "udp://b.example:1337/announce".into()];
-    let mut from_apibay = row(&h(0xaa).to_uppercase(), "Ubuntu 24.04 Desktop amd64 ISO").flag(Flag::Trusted, true);
-    from_apibay.peers = Some(Peers { seeders: 80, leechers: None });
-    from_apibay.size = Some(101);
-    from_apibay.published = Some(900);
-    from_apibay.trackers = vec!["udp://b.example:1337/announce".into(), "udp://c.example:1337/announce".into()];
-    from_apibay.info_url = Some("https://thepiratebay.org/description.php?id=1".into());
+fn merges_one_nzb_link_listed_by_two_sources() {
+    let mut from_geek = with(row("aa", "Ubuntu 24.04 Desktop"), Some(50), Some(100), Some(1000));
+    from_geek.category = Some(Category::Software);
+    let from_planet = with(row("aa", "Ubuntu 24.04 Desktop amd64 ISO"), Some(80), Some(101), Some(900));
+    let elsewhere = row("ab", "Ubuntu 24.04 Desktop");
 
     let result = search(
         &SearchQuery::new("ubuntu 24.04"),
-        &[fresh(&apibay(), vec![from_apibay]), fresh(&knaben(), vec![from_knaben])],
+        &[fresh(&planet(), vec![from_planet]), fresh(&geek(), vec![from_geek, elsewhere])],
     );
 
-    let id = format!("{:02x}", 0xaa).repeat(20);
     assert_eq!(
-        result.releases,
-        [Release {
-            id: ReleaseId::Torrent(id.parse().unwrap()),
+        result.releases[0],
+        Release {
+            id: result_id(&nzb("aa")),
             name: "Ubuntu 24.04 Desktop amd64 ISO".into(),
             size: Some(100),
-            seeders: Some(80),
-            leechers: None,
+            grabs: Some(80),
             published: Some(1000),
             category: Some(Category::Software),
-            flags: BTreeSet::from([Flag::Trusted]),
-            sources: vec!["knaben".into(), "apibay".into()],
-            magnet: Some(format!(
-                "magnet:?xt=urn:btih:{id}&dn=Ubuntu%2024.04%20Desktop%20amd64%20ISO\
-                 &tr=udp%3A%2F%2Fa.example%3A1337%2Fannounce\
-                 &tr=udp%3A%2F%2Fb.example%3A1337%2Fannounce\
-                 &tr=udp%3A%2F%2Fc.example%3A1337%2Fannounce"
-            )),
-            torrent_url: None,
-            info_url: Some("https://thepiratebay.org/description.php?id=1".into()),
+            flags: BTreeSet::new(),
+            sources: vec!["geek".into(), "planet".into()],
+            nzb_url: None,
             span: None,
-            swarm: None,
             failed: None,
-        }]
+        }
     );
-    assert_eq!(result.total, 1);
+    assert_eq!(result.total, 2, "another link to the same name stays its own result");
 }
 
 #[test]
 fn a_cut_title_loses_to_the_whole_one() {
-    let cut = row(&h(0xab), "Linux Command Line (Hands-On) Ubuntu Linux & Linux Scripting ...");
-    let whole = row(&h(0xab), "Linux Command Line (Hands-On) Ubuntu Linux & Linux Scripting");
-    let result = search(&SearchQuery::new("ubuntu"), &[fresh(&knaben(), vec![cut, whole])]);
+    let cut = row("ab", "Linux Command Line (Hands-On) Ubuntu Linux & Linux Scripting ...");
+    let whole = row("ab", "Linux Command Line (Hands-On) Ubuntu Linux & Linux Scripting");
+    let result = search(&SearchQuery::new("ubuntu"), &[fresh(&geek(), vec![cut, whole])]);
     assert_eq!(names(&result), ["Linux Command Line (Hands-On) Ubuntu Linux & Linux Scripting"]);
 }
 
 #[test]
-fn a_v2_listing_joins_the_hybrid_listing_of_the_same_torrent() {
-    let (v1, v2) = (h(0x11), "22".repeat(32));
-    let hybrid = Observation::new(
-        Identity::Hash { hash: InfoHash::Hybrid { v1: [0x11; 20], v2: [0x22; 32] }, torrent_url: None },
-        "ImageNet 2012",
-    )
-    .unwrap();
-    let v2_only = row(&v2, "ImageNet 2012 train");
-    let academic = source("academictorrents", 4, true, true);
-
-    let result =
-        search(&SearchQuery::new("imagenet"), &[fresh(&academic, vec![hybrid]), fresh(&knaben(), vec![v2_only])]);
-
-    assert_eq!(result.releases.len(), 1);
-    let release = &result.releases[0];
-    assert_eq!(release.id.to_ref(), v1);
-    assert_eq!(release.sources, ["academictorrents", "knaben"]);
-    assert_eq!(
-        release.magnet.as_deref(),
-        Some(format!("magnet:?xt=urn:btih:{v1}&xt=urn:btmh:1220{v2}&dn=ImageNet%202012%20train").as_str())
-    );
-}
-
-#[test]
-fn conflicting_hybrids_resolve_the_same_way_in_any_order() {
-    let hybrid = |v1: u8| {
-        let hash = InfoHash::Hybrid { v1: [v1; 20], v2: [0x22; 32] };
-        Observation::new(Identity::Hash { hash, torrent_url: None }, "ImageNet 2012").unwrap()
-    };
-    let q = SearchQuery::new("imagenet");
-    let ids = |rows: Vec<Observation>| -> Vec<(String, String)> {
-        search(&q, &[fresh(&knaben(), rows)]).releases.into_iter().map(|r| (r.id.to_ref(), r.name)).collect()
-    };
-    let v2_only = || row(&"22".repeat(32), "ImageNet 2012 train");
-    let one_way = ids(vec![hybrid(0x02), hybrid(0x01), v2_only()]);
-    let other_way = ids(vec![v2_only(), hybrid(0x01), hybrid(0x02)]);
-    assert_eq!(one_way, [(h(0x02), "ImageNet 2012".to_string()), (h(0x01), "ImageNet 2012 train".to_string())]);
-    assert_eq!(other_way, one_way);
-}
-
-#[test]
-fn private_links_stay_out_of_results_and_with_their_own_listing() {
-    let torznab = source("tracker", 8, false, false);
-    let mut public = row(&h(0x33), "Debian 13 netinst");
-    public.trackers = vec!["udp://public.example:6969/announce".into()];
-    public.info_url = Some("https://knaben.org/t/33".into());
-    let mut private = row(&h(0x33), "Debian 13 netinst");
-    private.trackers = vec!["https://private.example/announce?passkey=secret".into()];
-    private.info_url = Some("https://private.example/details.php?id=33&passkey=secret".into());
-    let mut private_only = Observation::new(
-        Identity::Hash {
-            hash: infohash(&h(0x44)).unwrap(),
-            torrent_url: Some("http://127.0.0.1:9117/dl/x/?jackett_apikey=k3y".into()),
-        },
-        "Debian 13 DVD",
-    )
-    .unwrap();
-    private_only.trackers = vec!["https://private.example/announce?passkey=secret".into()];
-    private_only.info_url = Some("https://private.example/details.php?id=44&passkey=secret".into());
+fn nzb_links_stay_out_of_results_and_with_the_indexer_that_issued_them() {
+    let keyed = "http://127.0.0.1:5076/getnzb/api/a1?apikey=k3y";
+    let from_hydra = Observation::new(keyed.into(), "Debian 13 netinst").unwrap();
+    let from_geek = Observation::new(keyed.into(), "Debian 13 netinst").unwrap();
+    let public = row("dvd", "Debian 13 DVD");
     let q = SearchQuery::new("debian 13");
 
     let (shown, linked) = assemble(
         &q,
         Profile::default(),
         &Terms::parse(&q.text),
-        &[fresh(&knaben(), vec![public]), fresh(&torznab, vec![private, private_only])],
+        &[fresh(&geek(), vec![from_geek, public]), fresh(&hydra(), vec![from_hydra])],
         0,
     )
     .unwrap();
 
-    let links = |releases: &[Release]| -> Vec<[Option<String>; 3]> {
-        releases.iter().map(|r| [r.magnet.clone(), r.torrent_url.clone(), r.info_url.clone()]).collect()
-    };
-    let public_magnet = format!(
-        "magnet:?xt=urn:btih:{}&dn=Debian%2013%20netinst&tr=udp%3A%2F%2Fpublic.example%3A6969%2Fannounce",
-        h(0x33)
-    );
-    let public_info = Some("https://knaben.org/t/33".to_string());
-    assert_eq!(
-        links(&shown.releases),
-        [
-            [Some(format!("magnet:?xt=urn:btih:{}&dn=Debian%2013%20DVD", h(0x44))), None, None],
-            [Some(public_magnet.clone()), None, public_info.clone()],
-        ]
-    );
-    let linked: Vec<Release> = linked.into_iter().map(|(release, _)| release).collect();
-    assert_eq!(
-        links(&linked),
-        [
-            [
-                Some(format!(
-                    "magnet:?xt=urn:btih:{}&dn=Debian%2013%20DVD&tr=https%3A%2F%2Fprivate.example%2Fannounce%3Fpasskey%3Dsecret",
-                    h(0x44)
-                )),
-                Some("http://127.0.0.1:9117/dl/x/?jackett_apikey=k3y".into()),
-                Some("https://private.example/details.php?id=44&passkey=secret".into()),
-            ],
-            [Some(public_magnet), None, public_info],
-        ]
-    );
+    let links = |releases: Vec<Release>| -> Vec<Option<String>> { releases.into_iter().map(|r| r.nzb_url).collect() };
+    assert_eq!(links(shown.releases), [None, None]);
+    let issued: Vec<(Option<String>, String)> = linked.into_iter().map(|(r, source)| (r.nzb_url, source)).collect();
+    assert_eq!(issued, [(Some(nzb("dvd")), "geek".into()), (Some(keyed.into()), "hydra".into())]);
 }
 
 #[test]
-fn locator_rows_get_a_stable_u_ref() {
-    let url = "http://127.0.0.1:9117/dl/privatehd/?path=def";
-    let locator = || Observation::new(Identity::Locator { torrent_url: url.into() }, "Ubuntu 26.04 LTS").unwrap();
-    let torznab = source("tracker", 8, false, false);
+fn a_row_gets_a_stable_u_ref_from_its_nzb_link() {
+    let url = "http://127.0.0.1:5076/getnzb/api/a1?apikey=k3y";
+    let listed = || Observation::new(url.into(), "Ubuntu 26.04 LTS").unwrap();
     let q = SearchQuery::new("ubuntu");
     let (first, linked) =
-        assemble(&q, Profile::default(), &Terms::parse(&q.text), &[fresh(&torznab, vec![locator()])], 0).unwrap();
-    let again = search(&q, &[fresh(&torznab, vec![locator(), locator()])]);
+        assemble(&q, Profile::default(), &Terms::parse(&q.text), &[fresh(&hydra(), vec![listed()])], 0).unwrap();
+    let again = search(&q, &[fresh(&hydra(), vec![listed(), listed()])]);
     let digest: [u8; 20] = Sha1::digest(url.as_bytes()).into();
-    assert_eq!(first.releases[0].id, ReleaseId::Locator(LocatorId::from_bytes(digest)));
+    assert_eq!(first.releases[0].id, ResultId::from_bytes(digest));
     assert!(first.releases[0].id.to_ref().starts_with('u'));
-    assert_eq!((first.releases[0].torrent_url.as_deref(), first.releases[0].magnet.as_deref()), (None, None));
-    assert_eq!((linked[0].0.torrent_url.as_deref(), linked[0].1.as_deref()), (Some(url), Some("tracker")));
+    assert_eq!(first.releases[0].nzb_url, None);
+    assert_eq!((linked[0].0.nzb_url.as_deref(), linked[0].1.as_str()), (Some(url), "hydra"));
     assert_eq!(again.releases, first.releases);
 }
 
@@ -236,41 +138,41 @@ fn locator_rows_get_a_stable_u_ref() {
 fn the_guard_drops_a_source_that_answered_another_question() {
     let terms = Terms::parse("ubuntu");
     let latest = vec![
-        row(&h(1), "Some Movie 2026 1080p"),
-        row(&h(2), "Another Show S01E01"),
-        row(&h(3), "Ubuntu 24.04"),
-        row(&h(4), "Album 2026 FLAC"),
+        row("1", "Some Movie 2026 1080p"),
+        row("2", "Another Show S01E01"),
+        row("3", "Ubuntu 24.04"),
+        row("4", "Album 2026 FLAC"),
     ];
     assert_eq!(vet(&terms, latest), Err(Failure::Irrelevant));
 
-    let search_rows = vec![row(&h(1), "Ubuntu 24.04"), row(&h(2), "ubuntu-26.04-desktop"), row(&h(3), "Unrelated")];
+    let search_rows = vec![row("1", "Ubuntu 24.04"), row("2", "ubuntu-26.04-desktop"), row("3", "Unrelated")];
     let kept: Vec<String> = vet(&terms, search_rows).unwrap().iter().map(|o| o.name().to_string()).collect();
     assert_eq!(kept, ["Ubuntu 24.04", "ubuntu-26.04-desktop"]);
 }
 
 fn films() -> Vec<Run> {
-    let mut lawful = with(row(&h(0xa1), "Night of the Living Dead (1968)"), None, Some(5_000), Some(100));
-    lawful.category = Some(Category::Video);
-    let bluray = with(row(&h(0xb2), "Night of the Living Dead 1968 1080p BluRay"), Some(900), Some(4_000), Some(500));
-    let remake = with(row(&h(0xc3), "Night of the Living Dead (1990)"), Some(5_000), Some(1_000), Some(300));
-    let partial = with(row(&h(0xd4), "Living Dead Night Collection"), Some(10_000), Some(3_000), None);
-    let mirror = with(row(&h(0xe5), "Night of the Living Dead 1968"), Some(900), Some(2_000), Some(500));
+    let mut ungrabbed = with(row("a1", "Night of the Living Dead (1968)"), None, Some(5_000), Some(100));
+    ungrabbed.category = Some(Category::Video);
+    let bluray = with(row("b2", "Night of the Living Dead 1968 1080p BluRay"), Some(900), Some(4_000), Some(500));
+    let remake = with(row("c3", "Night of the Living Dead (1990)"), Some(5_000), Some(1_000), Some(300));
+    let partial = with(row("d4", "Living Dead Night Collection"), Some(10_000), Some(3_000), None);
+    let mirror = with(row("e5", "Night of the Living Dead 1968"), Some(900), Some(2_000), Some(500));
     vec![
-        fresh(&archive(), vec![lawful]),
-        fresh(&knaben(), vec![bluray, remake, partial]),
-        fresh(&apibay(), vec![mirror]),
+        fresh(&hydra(), vec![ungrabbed]),
+        fresh(&geek(), vec![bluray, remake, partial]),
+        fresh(&planet(), vec![mirror]),
     ]
 }
 
 #[test]
-fn ranks_relevance_before_popularity_then_lawful_seeders_extra_words() {
+fn ranks_relevance_before_popularity_then_grabs_then_extra_words() {
     let result = search(&SearchQuery::new("night of the living dead 1968"), &films());
     assert_eq!(
         names(&result),
         [
-            "Night of the Living Dead (1968)",
             "Night of the Living Dead 1968",
             "Night of the Living Dead 1968 1080p BluRay",
+            "Night of the Living Dead (1968)",
             "Night of the Living Dead (1990)",
             "Living Dead Night Collection",
         ]
@@ -280,26 +182,25 @@ fn ranks_relevance_before_popularity_then_lawful_seeders_extra_words() {
 const GB: u64 = 1_000_000_000;
 
 fn remasters() -> Vec<Run> {
-    let film = |byte, tags: &str, seeders, size| {
-        let mut o =
-            with(row(&h(byte), &format!("Night of the Living Dead 1968 {tags}")), Some(seeders), Some(size), None);
+    let film = |tag, tags: &str, grabs, size| {
+        let mut o = with(row(tag, &format!("Night of the Living Dead 1968 {tags}")), Some(grabs), Some(size), None);
         o.category = Some(Category::Video);
         o
     };
-    let mut lawful = with(row(&h(0x10), "Night of the Living Dead 1968 4K Remaster"), None, Some(58 * GB), None);
-    lawful.category = Some(Category::Video);
+    let mut ungrabbed = with(row("10", "Night of the Living Dead 1968 4K Remaster"), None, Some(58 * GB), None);
+    ungrabbed.category = Some(Category::Video);
     vec![
-        fresh(&archive(), vec![lawful]),
+        fresh(&hydra(), vec![ungrabbed]),
         fresh(
-            &knaben(),
+            &geek(),
             vec![
-                film(0x11, "2160p UHD BluRay HDR10 x265", 500, 20 * GB),
-                film(0x12, "2160p WEB x265", 300, 9 * GB),
-                film(0x13, "1080p BluRay x264", 200, 8 * GB),
-                film(0x14, "1080p WEB x265", 150, 2 * GB),
-                film(0x15, "720p BluRay x264", 100, 1_500_000_000),
-                film(0x16, "DVDRip", 80, 700_000_000),
-                film(0x17, "Restored", 600, GB),
+                film("11", "2160p UHD BluRay HDR10 x265", 500, 20 * GB),
+                film("12", "2160p WEB x265", 300, 9 * GB),
+                film("13", "1080p BluRay x264", 200, 8 * GB),
+                film("14", "1080p WEB x265", 150, 2 * GB),
+                film("15", "720p BluRay x264", 100, 1_500_000_000),
+                film("16", "DVDRip", 80, 700_000_000),
+                film("17", "Restored", 600, GB),
             ],
         ),
     ]
@@ -327,11 +228,10 @@ fn ranked(profile: Profile) -> Vec<String> {
 }
 
 #[test]
-fn without_a_profile_lawful_sources_then_seeders_lead() {
+fn without_a_profile_grabs_lead_and_unknown_grabs_follow() {
     assert_eq!(
         ranked(Profile::default()),
         [
-            "4K Remaster",
             "Restored",
             "2160p UHD BluRay HDR10 x265",
             "2160p WEB x265",
@@ -339,6 +239,7 @@ fn without_a_profile_lawful_sources_then_seeders_lead() {
             "1080p WEB x265",
             "720p BluRay x264",
             "DVDRip",
+            "4K Remaster",
         ]
     );
 }
@@ -348,12 +249,12 @@ fn a_screen_ranks_its_resolution_first_and_unknown_resolutions_last() {
     assert_eq!(
         ranked(mac()),
         [
-            "4K Remaster",
             "1080p BluRay x264",
             "1080p WEB x265",
             "720p BluRay x264",
             "2160p UHD BluRay HDR10 x265",
             "2160p WEB x265",
+            "4K Remaster",
             "DVDRip",
             "Restored",
         ]
@@ -364,9 +265,9 @@ fn a_screen_ranks_its_resolution_first_and_unknown_resolutions_last() {
     assert_eq!(
         on(Screen::Tv4k),
         [
-            "4K Remaster",
             "2160p UHD BluRay HDR10 x265",
             "2160p WEB x265",
+            "4K Remaster",
             "1080p BluRay x264",
             "1080p WEB x265",
             "720p BluRay x264",
@@ -377,13 +278,13 @@ fn a_screen_ranks_its_resolution_first_and_unknown_resolutions_last() {
     assert_eq!(
         on(Screen::Phone),
         [
-            "4K Remaster",
             "720p BluRay x264",
             "DVDRip",
             "1080p BluRay x264",
             "1080p WEB x265",
             "2160p UHD BluRay HDR10 x265",
             "2160p WEB x265",
+            "4K Remaster",
             "Restored",
         ]
     );
@@ -396,11 +297,11 @@ fn an_sdr_display_ranks_hdr_after_everything_it_shows_well() {
     assert_eq!(
         ranked(linux),
         [
-            "4K Remaster",
             "1080p BluRay x264",
             "1080p WEB x265",
             "720p BluRay x264",
             "2160p WEB x265",
+            "4K Remaster",
             "DVDRip",
             "Restored",
             "2160p UHD BluRay HDR10 x265",
@@ -409,16 +310,16 @@ fn an_sdr_display_ranks_hdr_after_everything_it_shows_well() {
 }
 
 #[test]
-fn a_size_cap_or_a_full_disk_ranks_what_fits_first_even_before_lawful_sources() {
+fn a_size_cap_or_a_full_disk_ranks_what_fits_first() {
     let expected = [
         "Restored",
         "1080p BluRay x264",
         "1080p WEB x265",
         "720p BluRay x264",
         "DVDRip",
-        "4K Remaster",
         "2160p UHD BluRay HDR10 x265",
         "2160p WEB x265",
+        "4K Remaster",
     ];
     assert_eq!(ranked(preferring(Preferences { max_size: Some(8 * GB), ..Preferences::default() })), expected);
     assert_eq!(ranked(Profile { room: Some(8 * GB), ..Profile::default() }), expected);
@@ -431,24 +332,24 @@ fn a_player_ranks_what_it_may_not_play_last() {
     assert_eq!(
         for_player(Playback::Hevc),
         [
-            "4K Remaster",
             "Restored",
             "2160p WEB x265",
             "1080p BluRay x264",
             "1080p WEB x265",
             "720p BluRay x264",
             "DVDRip",
+            "4K Remaster",
             "2160p UHD BluRay HDR10 x265",
         ]
     );
     assert_eq!(
         for_player(Playback::H264),
         [
-            "4K Remaster",
             "Restored",
             "1080p BluRay x264",
             "720p BluRay x264",
             "DVDRip",
+            "4K Remaster",
             "2160p UHD BluRay HDR10 x265",
             "2160p WEB x265",
             "1080p WEB x265",
@@ -457,7 +358,7 @@ fn a_player_ranks_what_it_may_not_play_last() {
 }
 
 #[test]
-fn every_preference_together_ranks_fit_then_lawful_then_screen() {
+fn every_preference_together_ranks_fit_then_screen() {
     let laptop = Preferences { screen: Some(Screen::Laptop), max_size: Some(2 * GB), playback: Some(Playback::H264) };
     assert_eq!(
         ranked(Profile { preferences: laptop, ..mac() }),
@@ -465,20 +366,20 @@ fn every_preference_together_ranks_fit_then_lawful_then_screen() {
             "720p BluRay x264",
             "DVDRip",
             "Restored",
-            "4K Remaster",
             "1080p BluRay x264",
             "1080p WEB x265",
             "2160p UHD BluRay HDR10 x265",
             "2160p WEB x265",
+            "4K Remaster",
         ]
     );
 }
 
 #[test]
 fn a_tagged_trailer_ranks_after_the_film_on_a_screen() {
-    let film = with(row(&h(0x20), "Night of the Living Dead 1968"), Some(40), Some(GB), None);
-    let trailer = with(row(&h(0x21), "Night of the Living Dead 1968 Trailer HD 1080p"), Some(40), Some(GB / 10), None);
-    let runs = [fresh(&knaben(), vec![trailer, film])];
+    let film = with(row("20", "Night of the Living Dead 1968"), Some(40), Some(GB), None);
+    let trailer = with(row("21", "Night of the Living Dead 1968 Trailer HD 1080p"), Some(40), Some(GB / 10), None);
+    let runs = [fresh(&geek(), vec![trailer, film])];
     let ranked = |profile| {
         let q = SearchQuery { profile, ..SearchQuery::new("night of the living dead 1968") };
         names(&search(&q, &runs)).iter().map(|n| n.to_string()).collect::<Vec<_>>()
@@ -489,16 +390,16 @@ fn a_tagged_trailer_ranks_after_the_film_on_a_screen() {
 }
 
 #[test]
-fn a_screen_leaves_releases_that_are_not_video_to_seeders() {
+fn a_screen_leaves_releases_that_are_not_video_to_grabs() {
     let mut episode = with(
-        row(&h(0x50), "Celtics City S01E08 Chapter VIII Ubuntu 1080p AMZN WEB-DL DDP5 1 H 264-Kits"),
+        row("50", "Celtics City S01E08 Chapter VIII Ubuntu 1080p AMZN WEB-DL DDP5 1 H 264-Kits"),
         Some(1),
         Some(4 * GB),
         None,
     );
     episode.category = Some(Category::Video);
-    let iso = with(row(&h(0x51), "ubuntu-26.04-desktop-amd64.iso"), Some(143), Some(6 * GB), None);
-    let runs = [fresh(&knaben(), vec![episode, iso])];
+    let iso = with(row("51", "ubuntu-26.04-desktop-amd64.iso"), Some(143), Some(6 * GB), None);
+    let runs = [fresh(&geek(), vec![episode, iso])];
     let q = SearchQuery { profile: mac(), ..SearchQuery::new("ubuntu") };
     assert_eq!(
         names(&search(&q, &runs)),
@@ -510,13 +411,13 @@ fn a_screen_leaves_releases_that_are_not_video_to_seeders() {
 }
 
 #[test]
-fn the_machines_architecture_breaks_a_tie_before_seeders() {
+fn the_machines_architecture_breaks_a_tie_before_grabs() {
     let runs = [fresh(
-        &knaben(),
+        &geek(),
         vec![
-            with(row(&h(0x30), "debian-13.7.0-amd64-netinst.iso"), Some(50), Some(GB), None),
-            with(row(&h(0x31), "debian-13.7.0-arm64-netinst.iso"), Some(10), Some(GB), None),
-            with(row(&h(0x32), "debian-13.7.0-source-netinst.iso"), Some(30), Some(GB), None),
+            with(row("30", "debian-13.7.0-amd64-netinst.iso"), Some(50), Some(GB), None),
+            with(row("31", "debian-13.7.0-arm64-netinst.iso"), Some(10), Some(GB), None),
+            with(row("32", "debian-13.7.0-source-netinst.iso"), Some(30), Some(GB), None),
         ],
     )];
     let ranked = |profile| {
@@ -539,12 +440,12 @@ fn the_machines_architecture_breaks_a_tie_before_seeders() {
 }
 
 #[test]
-fn the_system_language_breaks_a_tie_before_seeders() {
+fn the_system_language_breaks_a_tie_before_grabs() {
     let runs = [fresh(
-        &archive(),
+        &hydra(),
         vec![
-            with(row(&h(0x40), "Night Of The Living Dead ( 1968) Doblada Al Español FULL HD"), Some(9), None, None),
-            with(row(&h(0x41), "Night Of The Living Dead ( 1968) English FULL HD"), Some(3), None, None),
+            with(row("40", "Night Of The Living Dead ( 1968) Doblada Al Español FULL HD"), Some(9), None, None),
+            with(row("41", "Night Of The Living Dead ( 1968) English FULL HD"), Some(3), None, None),
         ],
     )];
     let ranked = |profile| {
@@ -567,27 +468,23 @@ fn a_file_too_small_for_its_tag_ranks_as_untagged_on_a_screen() {
     let laptop = Preferences { screen: Some(Screen::Laptop), ..Preferences::default() };
     let ranked = |text: &str, rows: Vec<Observation>| {
         let q = SearchQuery { profile: preferring(laptop), ..SearchQuery::new(text) };
-        names(&search(&q, &[fresh(&knaben(), rows)])).iter().map(|n| n.to_string()).collect::<Vec<_>>()
+        names(&search(&q, &[fresh(&geek(), rows)])).iter().map(|n| n.to_string()).collect::<Vec<_>>()
     };
-    let sized = |byte, name, size| with(row(&h(byte), name), Some(40), Some(size), None);
-    let clip = sized(0x22, "Night of the Living Dead |1968| WebRip US (HD 1080p)", 8_690_000);
-    let film = sized(0x23, "Night of the Living Dead (1968)", GB);
+    let sized = |tag, name, size| with(row(tag, name), Some(40), Some(size), None);
+    let clip = sized("22", "Night of the Living Dead |1968| WebRip US (HD 1080p)", 8_690_000);
+    let film = sized("23", "Night of the Living Dead (1968)", GB);
     assert_eq!(
         ranked("night of the living dead 1968", vec![clip, film]),
         ["Night of the Living Dead (1968)", "Night of the Living Dead |1968| WebRip US (HD 1080p)"]
     );
     let episodes = vec![
-        sized(0x24, "Bobs Burgers S16E03", 300_000_000),
-        sized(0x25, "Bobs Burgers S16E03 1080p HEVC x265-MeGusta", 112_500_000),
-        sized(0x26, "Bobs Burgers S16E03 720p WEB x265-MiNX", 81_400_000),
+        sized("24", "Bobs Burgers S16E03", 300_000_000),
+        sized("25", "Bobs Burgers S16E03 1080p HEVC x265-ELiTE", 112_500_000),
+        sized("26", "Bobs Burgers S16E03 720p WEB x265-MiNX", 81_400_000),
     ];
     assert_eq!(
         ranked("bobs burgers s16e03", episodes),
-        [
-            "Bobs Burgers S16E03 1080p HEVC x265-MeGusta",
-            "Bobs Burgers S16E03 720p WEB x265-MiNX",
-            "Bobs Burgers S16E03"
-        ]
+        ["Bobs Burgers S16E03 1080p HEVC x265-ELiTE", "Bobs Burgers S16E03 720p WEB x265-MiNX", "Bobs Burgers S16E03"]
     );
 }
 
@@ -599,7 +496,7 @@ fn alternate_sorts_keep_the_same_tie_breaks() {
         names(&search(&q, &films())).into_iter().map(str::to_string).collect::<Vec<_>>()
     };
     assert_eq!(
-        sorted(Sort::Seeds),
+        sorted(Sort::Grabs),
         [
             "Living Dead Night Collection",
             "Night of the Living Dead (1990)",
@@ -635,8 +532,8 @@ fn filters_exclude_unknown_values_and_count_before_the_limit() {
     let mut q = SearchQuery::new("night of the living dead 1968");
     let mut runs = films();
     runs.push(fresh(
-        &source("nyaa", 7, false, true),
-        vec![with(row(&h(0xf6), "Night of the Living Dead 1968 REMUX"), Some(40), None, None)],
+        &source("slug", 7),
+        vec![with(row("f6", "Night of the Living Dead 1968 REMUX"), Some(40), None, None)],
     ));
 
     q.max_size = Some(3_000);
@@ -647,13 +544,13 @@ fn filters_exclude_unknown_values_and_count_before_the_limit() {
     );
 
     q.max_size = None;
-    q.min_seeds = Some(1_000);
+    q.min_grabs = Some(1_000);
     q.limit = 1;
-    let seeded = search(&q, &runs);
-    assert_eq!(names(&seeded), ["Night of the Living Dead (1990)"]);
-    assert_eq!(seeded.total, 2);
+    let grabbed = search(&q, &runs);
+    assert_eq!(names(&grabbed), ["Night of the Living Dead (1990)"]);
+    assert_eq!(grabbed.total, 2);
 
-    q.min_seeds = None;
+    q.min_grabs = None;
     q.limit = 10;
     q.category = Some(Category::Video);
     assert_eq!(names(&search(&q, &runs)), ["Night of the Living Dead (1968)"]);
@@ -661,12 +558,12 @@ fn filters_exclude_unknown_values_and_count_before_the_limit() {
 
 #[test]
 fn hides_adult_releases_without_eating_lookalike_titles() {
-    let mut film = row(&h(0x01), "xXx (2002) 1080p BluRay");
+    let mut film = row("01", "xXx (2002) 1080p BluRay");
     film.category = Some(Category::Video);
-    let by_category = row(&h(0x02), "xXx 2002 scene pack").flag(Flag::Adult, true);
-    let by_name = row(&h(0x03), "Brazzers xXx 2002");
-    let show = row(&h(0x04), "Sex Education S04 1080p");
-    let runs = [fresh(&knaben(), vec![film, by_category, by_name, show])];
+    let by_category = row("02", "xXx 2002 scene pack").flag(Flag::Adult, true);
+    let by_name = row("03", "Brazzers xXx 2002");
+    let show = row("04", "Sex Education S04 1080p");
+    let runs = [fresh(&geek(), vec![film, by_category, by_name, show])];
 
     let hidden = search(&SearchQuery::new("xxx 2002 sex education"), &runs);
     assert_eq!(names(&hidden), ["xXx (2002) 1080p BluRay", "Sex Education S04 1080p"]);
@@ -683,43 +580,83 @@ fn hides_adult_releases_without_eating_lookalike_titles() {
 
 #[test]
 fn flags_camera_releases_from_any_listing_name() {
-    let mut cam = row(&h(0x05), "Some Movie 2024 HDCAM x264");
+    let mut cam = row("05", "Some Movie 2024 HDCAM x264");
     cam.category = Some(Category::Video);
-    let result = search(&SearchQuery::new("some movie 2024"), &[fresh(&knaben(), vec![cam])]);
+    let result = search(&SearchQuery::new("some movie 2024"), &[fresh(&geek(), vec![cam])]);
     assert_eq!(result.releases[0].flags, BTreeSet::from([Flag::Cam]));
+}
+
+#[test]
+fn trash_guides_standings_rank_groups_above_more_grabs() {
+    let avoided = with(row("06", "Sintel 2010 1080p BluRay x264-aXXo"), Some(900), None, None);
+    let unlisted = with(row("07", "Sintel 2010 1080p BluRay x264-NoOne"), Some(50), None, None);
+    let tiered = with(row("08", "Sintel 2010 1080p WEB-DL DDP5 1 H 264-FLUX"), Some(5), None, None);
+    let result = search(&SearchQuery::new("sintel 2010"), &[fresh(&geek(), vec![avoided, unlisted, tiered])]);
+    assert_eq!(
+        names(&result),
+        [
+            "Sintel 2010 1080p WEB-DL DDP5 1 H 264-FLUX",
+            "Sintel 2010 1080p BluRay x264-NoOne",
+            "Sintel 2010 1080p BluRay x264-aXXo"
+        ]
+    );
+    let flags: Vec<bool> = result.releases.iter().map(|r| r.flags.contains(&Flag::Avoid)).collect();
+    assert_eq!(flags, [false, false, true]);
+}
+
+#[test]
+fn a_ranked_group_lifts_only_releases_of_the_query_title() {
+    let other_show = with(
+        row("09", "The.Island.with.Bear.Grylls.S03E01.1080p.AMZN.WEB-DL.DD.2.0.H.264-Cinefeel"),
+        Some(168),
+        None,
+        None,
+    );
+    let popular = with(row("10", "The.Bear.S03E01.1080p.WEB.H264-SuccessfulCrab"), Some(37833), None, None);
+    let tiered =
+        with(row("11", "The.Bear.S03E01.Tomorrow.1080p.DSNP.WEB-DL.DDP5.1.H.264-NTb"), Some(11637), None, None);
+    let result = search(&SearchQuery::new("the bear s03e01"), &[fresh(&geek(), vec![other_show, popular, tiered])]);
+    assert_eq!(
+        names(&result),
+        [
+            "The.Bear.S03E01.Tomorrow.1080p.DSNP.WEB-DL.DDP5.1.H.264-NTb",
+            "The.Bear.S03E01.1080p.WEB.H264-SuccessfulCrab",
+            "The.Island.with.Bear.Grylls.S03E01.1080p.AMZN.WEB-DL.DD.2.0.H.264-Cinefeel"
+        ]
+    );
 }
 
 #[test]
 fn every_source_failing_is_an_error_not_an_empty_list() {
     let q = SearchQuery::new("ubuntu");
     let runs = [
-        failed(&apibay(), Failure::Http(503)),
-        failed(&knaben(), Failure::Timeout),
-        failed(&archive(), Failure::Irrelevant),
+        failed(&planet(), Failure::Http(503)),
+        failed(&geek(), Failure::Timeout),
+        failed(&hydra(), Failure::Irrelevant),
     ];
     let err = assemble(&q, Profile::default(), &Terms::parse("ubuntu"), &runs, 6000).unwrap_err();
     assert_eq!(err.code, ErrorCode::ProvidersUnavailable);
-    assert_eq!(err.message, "all sources failed (archive.org, knaben, apibay)");
+    assert_eq!(err.message, "all sources failed (hydra, geek, planet)");
     assert_eq!(
         err.details,
         Some(Details::Sources(vec![
-            SourceReport { source: "archive.org".into(), outcome: SourceOutcome::Irrelevant, elapsed_ms: 6000 },
-            SourceReport { source: "knaben".into(), outcome: SourceOutcome::Timeout, elapsed_ms: 6000 },
-            SourceReport { source: "apibay".into(), outcome: SourceOutcome::Http { status: 503 }, elapsed_ms: 6000 },
+            SourceReport { source: "hydra".into(), outcome: SourceOutcome::Irrelevant, elapsed_ms: 6000 },
+            SourceReport { source: "geek".into(), outcome: SourceOutcome::Timeout, elapsed_ms: 6000 },
+            SourceReport { source: "planet".into(), outcome: SourceOutcome::Http { status: 503 }, elapsed_ms: 6000 },
         ]))
     );
 }
 
 #[test]
 fn one_empty_answer_is_a_successful_search_with_no_results() {
-    let runs = [failed(&apibay(), Failure::Http(503)), fresh(&knaben(), Vec::new())];
+    let runs = [failed(&planet(), Failure::Http(503)), fresh(&geek(), Vec::new())];
     let result = search(&SearchQuery::new("zzqqxx"), &runs);
     assert_eq!(result.releases, []);
     assert_eq!(
         result.sources,
         [
-            SourceReport { source: "knaben".into(), outcome: SourceOutcome::Ok { results: 0 }, elapsed_ms: 40 },
-            SourceReport { source: "apibay".into(), outcome: SourceOutcome::Http { status: 503 }, elapsed_ms: 6000 },
+            SourceReport { source: "geek".into(), outcome: SourceOutcome::Ok { results: 0 }, elapsed_ms: 40 },
+            SourceReport { source: "planet".into(), outcome: SourceOutcome::Http { status: 503 }, elapsed_ms: 6000 },
         ]
     );
 }
@@ -749,29 +686,16 @@ fn crowded() -> Vec<(Arc<SourceMeta>, Vec<Observation>)> {
         "Living Dead",
         "Night of the Living Dead",
     ];
-    let sources = [archive(), knaben(), apibay(), source("tracker", 8, false, false)];
+    let sources = [hydra(), geek(), planet(), source("slug", 8)];
     let mut by_source: Vec<(Arc<SourceMeta>, Vec<Observation>)> =
         sources.iter().map(|s| (s.clone(), Vec::new())).collect();
-    for i in 0..60u32 {
-        let id = u8::try_from(i % 23 + 1).unwrap();
-        let mut o = row(&h(id), titles[i as usize % titles.len()]);
-        o.peers = [None, Some(Peers { seeders: 10, leechers: Some(1) }), Some(Peers { seeders: 10, leechers: None })]
-            [i as usize % 3];
-        o.size = [None, Some(700), Some(700), Some(1400)][i as usize % 4];
-        o.published = [None, Some(50), Some(50)][i as usize % 3];
-        o.trackers = vec![format!("udp://t{}.example:80/announce", i % 5)];
-        if i % 11 == 0 {
-            o.identity = Identity::Locator { torrent_url: format!("https://example.org/{}.torrent", i % 2) };
-        }
-        by_source[i as usize % sources.len()].1.push(o);
+    for i in 0..60usize {
+        let mut o = row(&(i % 23 + 1).to_string(), titles[i % titles.len()]);
+        o.grabs = [None, Some(10), Some(10)][i % 3];
+        o.size = [None, Some(700), Some(700), Some(1400)][i % 4];
+        o.published = [None, Some(50), Some(50)][i % 3];
+        by_source[i % sources.len()].1.push(o);
     }
-    let hybrid = Observation::new(
-        Identity::Hash { hash: InfoHash::Hybrid { v1: [0x01; 20], v2: [0xfe; 32] }, torrent_url: None },
-        "Night of the Living Dead 1968 hybrid",
-    )
-    .unwrap();
-    by_source[0].1.push(hybrid);
-    by_source[1].1.push(row(&"fe".repeat(32), "Night of the Living Dead 1968"));
     by_source
 }
 
@@ -784,11 +708,10 @@ fn a_thousand_shuffles_give_one_order() {
         groups.iter().map(|(s, rows)| fresh(s, rows.clone())).collect()
     };
     let (expected, expected_linked) = assemble(&query, Profile::default(), &terms, &runs_from(&base), 0).unwrap();
-    assert_eq!(expected.releases.len(), 25);
-    let hybrid = expected.releases.iter().find(|r| r.id.to_ref() == h(0x01)).unwrap();
-    assert_eq!(hybrid.name, "Night of the Living Dead (1968) 1080p");
-    assert_eq!(hybrid.sources, ["archive.org", "knaben", "apibay", "tracker"]);
-    assert!(hybrid.magnet.as_deref().unwrap().contains(&format!("xt=urn:btmh:1220{}", "fe".repeat(32))));
+    assert_eq!(expected.releases.len(), 23);
+    let thrice = expected.releases.iter().find(|r| r.id == result_id(&nzb("1"))).unwrap();
+    assert_eq!(thrice.name, "Night of the Living Dead (1968) 1080p");
+    assert_eq!(thrice.sources, ["hydra", "planet", "slug"]);
 
     let mut rng = XorShift(0x9e37_79b9_7f4a_7c15);
     for _ in 0..1000 {
@@ -816,8 +739,8 @@ fn night(namesakes: Namesakes, year: u16) -> Wanted {
     }
 }
 
-fn video(byte: u8, name: &str, seeders: Option<u32>, size: u64) -> Observation {
-    let mut o = with(row(&h(byte), name), seeders, Some(size), None);
+fn video(byte: u8, name: &str, grabs: Option<u64>, size: u64) -> Observation {
+    let mut o = with(row(&format!("{byte:02x}"), name), grabs, Some(size), None);
     o.category = Some(Category::Video);
     o
 }
@@ -839,9 +762,9 @@ fn played(wanted: &Wanted, profile: Profile, runs: &[Run]) -> Vec<String> {
 }
 
 #[test]
-fn a_cam_ranks_last_even_with_the_most_seeders() {
+fn a_cam_ranks_last_even_with_the_most_grabs() {
     let cam = video(0x61, "Night of the Living Dead 1968 HDCAM x264", Some(300), 1_400_000_000);
-    let runs = [fresh(&knaben(), vec![cam, dvdrip(), bluray()])];
+    let runs = [fresh(&geek(), vec![cam, dvdrip(), bluray()])];
     assert_eq!(
         played(&night(Namesakes::Leading, 1968), Profile::default(), &runs),
         [
@@ -853,76 +776,40 @@ fn a_cam_ranks_last_even_with_the_most_seeders() {
 }
 
 #[test]
-fn a_release_known_to_have_no_seeders_is_dropped_outside_a_lawful_catalog() {
-    let dead = video(0x63, "Night.of.the.Living.Dead.1968.720p.BluRay.x264", Some(0), 4 * GB);
-    let lawful = video(0x64, "Night of the Living Dead (1968)", Some(0), 500_000_000);
-    let runs = [fresh(&archive(), vec![lawful]), fresh(&knaben(), vec![dead, bluray()])];
-    let result = search(&for_title(&night(Namesakes::Leading, 1968), Profile::default()), &runs);
-    assert_eq!(
-        names(&result),
-        ["Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP", "Night of the Living Dead (1968)"]
-    );
-    assert_eq!(result.total, 2);
-}
-
-#[test]
-fn archive_org_without_seeders_counts_as_a_strong_swarm() {
-    let lawful = video(0x64, "Night of the Living Dead (1968)", None, 1_200_000_000);
-    let dead = video(0x6c, "Night Of The Living Dead ( 1968)", Some(0), 800_000_000);
-    let yts = video(0x65, "Night of the Living Dead (1968) 1080p BRRip x264 -YTS", Some(232), 1_600_000_000);
-    let runs = [fresh(&archive(), vec![dead, lawful]), fresh(&knaben(), vec![dvdrip(), yts])];
-    assert_eq!(
-        played(&night(Namesakes::Leading, 1968), Profile::default(), &runs),
-        [
-            "Night of the Living Dead (1968)",
-            "Night of the Living Dead (1968) 1080p BRRip x264 -YTS",
-            "Night of the Living Dead 1968 DVDRip XviD",
-            "Night Of The Living Dead ( 1968)",
-        ]
-    );
-}
-
-#[test]
 fn hevc_ranks_after_h264_for_a_player_that_may_not_play_it() {
-    let hevc = video(0x66, "Night.of.the.Living.Dead.1968.1080p.BluRay.x265-RARBG", Some(200), 3 * GB);
-    let runs = [fresh(&knaben(), vec![hevc, bluray()])];
+    let hevc = video(0x66, "Night.of.the.Living.Dead.1968.1080p.BluRay.x265-GRP2", Some(200), 3 * GB);
+    let runs = [fresh(&geek(), vec![hevc, bluray()])];
     let for_player = |playback| {
         let profile = preferring(Preferences { playback: Some(playback), ..Preferences::default() });
         played(&night(Namesakes::Leading, 1968), profile, &runs)
     };
     assert_eq!(
         for_player(Playback::H264),
-        [
-            "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP",
-            "Night.of.the.Living.Dead.1968.1080p.BluRay.x265-RARBG"
-        ]
+        ["Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP", "Night.of.the.Living.Dead.1968.1080p.BluRay.x265-GRP2"]
     );
     assert_eq!(
         for_player(Playback::Hevc),
-        [
-            "Night.of.the.Living.Dead.1968.1080p.BluRay.x265-RARBG",
-            "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP"
-        ]
+        ["Night.of.the.Living.Dead.1968.1080p.BluRay.x265-GRP2", "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP"]
     );
 }
 
 #[test]
 fn a_remux_ranks_after_an_encode_in_its_band() {
-    let remux = video(0x67, "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC.DTS-HD.MA-FGT", Some(150), 30 * GB);
-    let runs = [fresh(&knaben(), vec![remux, bluray()])];
+    let remux = video(0x67, "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC.DTS-HD.MA-GRP", Some(150), 30 * GB);
+    let runs = [fresh(&geek(), vec![remux, bluray()])];
     let wanted = night(Namesakes::Leading, 1968);
     assert_eq!(
         played(&wanted, Profile::default(), &runs),
         [
             "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP",
-            "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC.DTS-HD.MA-FGT",
+            "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC.DTS-HD.MA-GRP",
         ]
     );
     let raw = SearchQuery { wanted: None, ..for_title(&wanted, Profile::default()) };
     assert_eq!(
         names(&search(&raw, &runs)),
         [
-            "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC.DTS-HD.MA-FGT",
+            "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC.DTS-HD.MA-GRP",
             "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP",
         ]
     );
@@ -932,54 +819,13 @@ fn watching_on(width: u32, height: u32, scale: f64) -> Profile {
     Profile { player: Player::Device(Viewer::measured(width, height, scale, Playback::Hevc)), ..mac() }
 }
 
-/// An archive.org item of Night of the Living Dead with its video files, as `(extension, size,
-/// width, height)`.
-fn archived(byte: u8, videos: &[(&str, u64, u32, u32)]) -> Observation {
-    let mut o = video(byte, "Night of the Living Dead (1968)", None, videos.iter().map(|v| v.1).sum());
-    o.videos = videos
-        .iter()
-        .map(|&(extension, size, width, height)| {
-            let codec = match extension {
-                "mp4" => Some(VideoCodec::Modern(Codec::H264)),
-                "ogv" => Some(VideoCodec::Old),
-                _ => None,
-            };
-            VideoFile { name: format!("night.{extension}"), size, width, height, codec }
-        })
-        .collect();
-    o
-}
-
-#[test]
-fn a_browser_ranks_archive_org_items_by_the_picture_of_the_file_it_would_open() {
-    // The most downloaded item holds a 400x300 Ogg, which a browser cannot decode, and a 320x240 MP4.
-    let theater = archived(
-        0x70,
-        &[("mov", 286_303_405, 320, 240), ("ogv", 469_976_138, 400, 300), ("mp4", 416_743_288, 320, 240)],
-    );
-    let dvd = archived(0x71, &[("mp4", 550_635_511, 854, 480)]);
-    let restored = archived(0x72, &[("mp4", 1_902_907_166, 1024, 768)]);
-    let narrow = archived(0x75, &[("mp4", 598_000_000, 720, 480), ("ogv", 420_000_000, 450, 300)]);
-    let runs = [fresh(&archive(), vec![theater, narrow, dvd, restored])];
-    let night = night(Namesakes::Leading, 1968);
-    let order = |profile: Profile| {
-        let result = search(&for_title(&night, profile), &runs);
-        result.releases.iter().map(|r| r.id.to_ref()[..2].to_string()).collect::<Vec<_>>()
-    };
-    assert_eq!(order(watching_on(800, 600, 1.0)), ["71", "75", "70", "72"], "a headless browser's 800x600 screen");
-    let here =
-        Profile { player: Player::Browser { playback: Playback::Hevc, measured: None, decoders: None }, ..mac() };
-    assert_eq!(order(here), ["72", "71", "75", "70"], "this Mac's 1080p display shows the 1024x768 picture best");
-    assert_eq!(order(Profile { player: Player::External, ..mac() })[0], "72", "the player here opens the largest file");
-}
-
 #[test]
 fn a_browser_plays_what_it_decodes_in_hardware_then_in_software_then_old_codecs() {
     let named = |byte: u8, codec: &str| {
         video(byte, &format!("Night.of.the.Living.Dead.1968.1080p.WEB.{codec}"), Some(40), 3 * GB)
     };
     let runs =
-        [fresh(&knaben(), vec![named(0x80, "XviD"), named(0x81, "AV1"), named(0x82, "x265"), named(0x83, "x264")])];
+        [fresh(&geek(), vec![named(0x80, "XviD"), named(0x81, "AV1"), named(0x82, "x265"), named(0x83, "x264")])];
     let night = night(Namesakes::Leading, 1968);
     let order = |profile: Profile| {
         let result = search(&for_title(&night, profile), &runs);
@@ -995,22 +841,12 @@ fn a_browser_plays_what_it_decodes_in_hardware_then_in_software_then_old_codecs(
 }
 
 #[test]
-fn a_browser_plays_an_mp4_before_an_ogg_with_the_same_picture() {
-    let ogg = archived(0x73, &[("ogv", 500_000_000, 640, 480), ("mp4", 200_000_000, 320, 240)]);
-    let mp4 = archived(0x74, &[("mp4", 500_000_000, 640, 480)]);
-    let runs = [fresh(&archive(), vec![ogg, mp4])];
-    let result = search(&for_title(&night(Namesakes::Leading, 1968), watching_on(1920, 1080, 1.0)), &runs);
-    let order: Vec<String> = result.releases.iter().map(|r| r.id.to_ref()[..2].to_string()).collect();
-    assert_eq!(order, ["74", "73"], "the Ogg's MP4 is too small to stand in for it");
-}
-
-#[test]
 fn a_phone_plays_720p_first_a_4k_tv_2160p_and_this_mac_its_1080p() {
-    let uhd = "Night of the Living Dead (1968) 2160p BRRip 5.1 10Bit x265 -YTS";
-    let hd = "Night of the Living Dead (1968) 1080p BRRip x264 -YTS";
-    let small = "Night Of The Living Dead 1968 720p BRRip x264-x0r";
+    let uhd = "Night of the Living Dead (1968) 2160p BRRip 5.1 10Bit x265-GRP";
+    let hd = "Night of the Living Dead (1968) 1080p BRRip x264-GRP";
+    let small = "Night Of The Living Dead 1968 720p BRRip x264-GRP";
     let runs = [fresh(
-        &knaben(),
+        &geek(),
         vec![
             video(0x93, uhd, Some(50), 4_700_000_000),
             video(0x94, hd, Some(232), 1_600_000_000),
@@ -1024,15 +860,17 @@ fn a_phone_plays_720p_first_a_4k_tv_2160p_and_this_mac_its_1080p() {
 }
 
 #[test]
-fn a_phone_plays_a_copy_its_screen_shows_before_a_remux_with_more_seeders() {
-    let remux = "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC.DTS-HD.MA-FGT";
-    let small = "Night Of The Living Dead 1968 720p BRRip x264-x0r";
+fn a_phone_plays_a_copy_its_screen_shows_before_a_remux_with_more_grabs() {
+    let remux = "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC.DTS-HD.MA-GRP";
+    let small = "Night Of The Living Dead 1968 720p BRRip x264-GRP";
     let runs =
-        [fresh(&knaben(), vec![video(0x97, remux, Some(150), 20 * GB), video(0x98, small, Some(3), 1_700_000_000)])];
+        [fresh(&geek(), vec![video(0x97, remux, Some(150), 20 * GB), video(0x98, small, Some(3), 1_700_000_000)])];
     let wanted = night(Namesakes::Leading, 1968);
     assert_eq!(played(&wanted, watching_on(1170, 2532, 3.0), &runs), [small, remux]);
-    assert_eq!(played(&wanted, watching_on(3840, 2160, 1.0), &runs), [remux, small], "28 Mbit/s streams to a 4K TV");
-    assert_eq!(played(&wanted, mac(), &runs), [remux, small], "this Mac reads the file from disk");
+    // A Usenet release has no swarm to weigh, so the copy that streams within its band leads
+    // on every screen.
+    assert_eq!(played(&wanted, watching_on(3840, 2160, 1.0), &runs), [small, remux], "28 Mbit/s is past the band");
+    assert_eq!(played(&wanted, mac(), &runs), [small, remux]);
 }
 
 fn friday() -> Wanted {
@@ -1051,30 +889,30 @@ fn friday() -> Wanted {
 fn a_small_encode_that_streams_comfortably_is_in_band() {
     let criterion = "His Girl Friday (1940) Criterion + Extras (1080p BluRay x265 HEVC 10bit AAC 1.0";
     let runs = [fresh(
-        &knaben(),
+        &geek(),
         vec![
             video(0x80, criterion, Some(31), 5_600_000_000),
-            video(0x81, "His Girl Friday (1940) 1080p BRRip x264 -YTS", Some(54), 1_500_000_000),
+            video(0x81, "His Girl Friday (1940) 1080p BRRip x264-GRP", Some(54), 1_500_000_000),
         ],
     )];
     assert_eq!(
         played(&friday(), Profile::default(), &runs),
-        ["His Girl Friday (1940) 1080p BRRip x264 -YTS", criterion]
+        ["His Girl Friday (1940) 1080p BRRip x264-GRP", criterion]
     );
     let runs = [fresh(
-        &knaben(),
+        &geek(),
         vec![
-            video(0x92, "Night Of The Living Dead 1968 720p BRRip x264-x0r", Some(22), 1_700_000_000),
-            video(0x93, "Night of the Living Dead (1968) 2160p BRRip 5.1 10Bit x265 -YTS", Some(50), 4_700_000_000),
-            video(0x94, "Night of the Living Dead (1968) 1080p BRRip x264 -YTS", Some(232), 1_600_000_000),
+            video(0x92, "Night Of The Living Dead 1968 720p BRRip x264-GRP", Some(22), 1_700_000_000),
+            video(0x93, "Night of the Living Dead (1968) 2160p BRRip 5.1 10Bit x265-GRP", Some(50), 4_700_000_000),
+            video(0x94, "Night of the Living Dead (1968) 1080p BRRip x264-GRP", Some(232), 1_600_000_000),
         ],
     )];
     assert_eq!(
         played(&night(Namesakes::Leading, 1968), Profile::default(), &runs),
         [
-            "Night of the Living Dead (1968) 1080p BRRip x264 -YTS",
-            "Night of the Living Dead (1968) 2160p BRRip 5.1 10Bit x265 -YTS",
-            "Night Of The Living Dead 1968 720p BRRip x264-x0r",
+            "Night of the Living Dead (1968) 1080p BRRip x264-GRP",
+            "Night of the Living Dead (1968) 2160p BRRip 5.1 10Bit x265-GRP",
+            "Night Of The Living Dead 1968 720p BRRip x264-GRP",
         ]
     );
 }
@@ -1083,7 +921,7 @@ fn a_small_encode_that_streams_comfortably_is_in_band() {
 fn a_remux_that_fits_the_screen_plays_after_a_copy_that_streams() {
     let remux = "Night of the Living Dead (1968) 4K UHD Blu-ray Remux";
     let runs = [fresh(
-        &archive(),
+        &hydra(),
         vec![video(0x95, remux, None, 59 * GB), video(0x96, "Night of the Living Dead (1968)", None, 1_200_000_000)],
     )];
     let on_4k = preferring(Preferences { screen: Some(Screen::Tv4k), ..Preferences::default() });
@@ -1103,10 +941,10 @@ fn sintel() -> Wanted {
 }
 
 #[test]
-fn the_more_seeded_release_wins_a_tie_in_play_order() {
+fn the_more_grabbed_release_wins_a_tie_in_play_order() {
     let runs = [
-        fresh(&knaben(), vec![video(0x82, "Sintel", Some(3), 500_000_000)]),
-        fresh(&apibay(), vec![video(0x83, "Sintel.2010.HDRip.XviD.AC3-ViSiON", Some(1), 300_000_000)]),
+        fresh(&geek(), vec![video(0x82, "Sintel", Some(3), 500_000_000)]),
+        fresh(&planet(), vec![video(0x83, "Sintel.2010.HDRip.XviD.AC3-ViSiON", Some(1), 300_000_000)]),
     ];
     assert_eq!(played(&sintel(), Profile::default(), &runs), ["Sintel", "Sintel.2010.HDRip.XviD.AC3-ViSiON"]);
 }
@@ -1114,7 +952,7 @@ fn the_more_seeded_release_wins_a_tie_in_play_order() {
 #[test]
 fn a_trailer_is_not_the_film() {
     let runs = [fresh(
-        &archive(),
+        &hydra(),
         vec![
             video(0x84, "Night Of The Living Dead (1968) Trailer HD 1080p", None, 300_000_000),
             video(0x64, "Night of the Living Dead (1968)", None, 1_200_000_000),
@@ -1125,7 +963,7 @@ fn a_trailer_is_not_the_film() {
         ["Night of the Living Dead (1968)"]
     );
     let runs = [fresh(
-        &archive(),
+        &hydra(),
         vec![
             video(0x85, "His Girl Friday (1940) Trailer HD", None, 800_000_000),
             video(0x86, "His Girl Friday (1940)", None, 2_300_000_000),
@@ -1141,7 +979,7 @@ fn a_trailer_is_not_the_film() {
         season_episodes: Some(6),
         countries: Default::default(),
     };
-    let runs = [fresh(&knaben(), vec![video(0x87, "Trailer.Park.Boys.S01E01.720p.WEB.x264", Some(40), 500_000_000)])];
+    let runs = [fresh(&geek(), vec![video(0x87, "Trailer.Park.Boys.S01E01.720p.WEB.x264", Some(40), 500_000_000)])];
     assert_eq!(played(&boys, Profile::default(), &runs), ["Trailer.Park.Boys.S01E01.720p.WEB.x264"]);
 }
 
@@ -1149,7 +987,7 @@ fn a_trailer_is_not_the_film() {
 fn a_plainly_named_release_plays_before_an_alternate_version() {
     let flesh = "Night of the Living Dead (1968) - The Flesh Harvest 4k re-sound design (2024)";
     let runs = [fresh(
-        &archive(),
+        &hydra(),
         vec![
             video(0x88, flesh, None, 15 * GB),
             video(0x89, "Night of the Living Dead (1968) [colorised, 4k, 60FPS]", None, 6_900_000_000),
@@ -1178,25 +1016,25 @@ fn a_release_in_another_language_plays_after_the_original() {
     let english = Profile { detected: Some(machine("en-US", None, Arch::Arm64)), ..Profile::default() };
     let dub = "Night Of The Living Dead ( 1968) Doblada Al Español FULL HD";
     let runs = [
-        fresh(&archive(), vec![video(0x8d, dub, None, 3_600_000_000)]),
+        fresh(&hydra(), vec![video(0x8d, dub, None, 3_600_000_000)]),
         fresh(
-            &knaben(),
+            &geek(),
             vec![
                 video(0x8e, "Night of the Living Dead (1968) 1080p Ita Eng MIRCrew", Some(6), 2_200_000_000),
-                video(0x8f, "Night of the Living Dead 1968 1080p BluRay x264-OFT", Some(7), 4_300_000_000),
+                video(0x8f, "Night of the Living Dead 1968 1080p BluRay x264-GRP", Some(7), 4_300_000_000),
             ],
         ),
     ];
     assert_eq!(
         played(&night(Namesakes::Leading, 1968), english.clone(), &runs),
         [
-            "Night of the Living Dead 1968 1080p BluRay x264-OFT",
+            "Night of the Living Dead 1968 1080p BluRay x264-GRP",
             "Night of the Living Dead (1968) 1080p Ita Eng MIRCrew",
             dub,
         ]
     );
     let runs = [fresh(
-        &knaben(),
+        &geek(),
         vec![
             video(0x90, "Sintel.2010.720p.SWESUB.x264-SMS", Some(25), 400_000_000),
             video(0x91, "Sintel.2010.720p.WEB.H264-CLASSiCALHD", Some(5), 400_000_000),
@@ -1211,7 +1049,7 @@ fn a_release_in_another_language_plays_after_the_original() {
 #[test]
 fn a_release_too_small_for_the_runtime_is_dropped_as_a_fake() {
     let fake = video(0x6a, "Night.of.the.Living.Dead.1968.1080p.WEB-DL.x264", Some(900), 150_000_000);
-    let runs = [fresh(&knaben(), vec![fake, bluray()])];
+    let runs = [fresh(&geek(), vec![fake, bluray()])];
     assert_eq!(
         played(&night(Namesakes::Leading, 1968), Profile::default(), &runs),
         ["Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP"]
@@ -1230,7 +1068,7 @@ fn an_episode_ranks_before_its_season_pack() {
         countries: Default::default(),
     };
     let runs = [fresh(
-        &knaben(),
+        &geek(),
         vec![
             video(0x70, "Breaking.Bad.S03.1080p.BluRay.x264-ROVERS", Some(300), 19_500_000_000),
             video(0x71, "Breaking.Bad.S03E05.1080p.WEB-DL.DD5.1.H.264", Some(25), 1_600_000_000),
@@ -1256,18 +1094,18 @@ fn an_episode_ranks_before_its_season_pack() {
 #[test]
 fn a_remake_with_another_year_is_absent() {
     let remake = video(0x68, "Night of the Living Dead (1990) 1080p BluRay", Some(500), 9 * GB);
-    let dated = video(0x65, "Night Of The Living Dead 1968 720p BRRip x264-x0r", Some(22), 1_700_000_000);
-    let yearless = video(0x6b, "night_of_the_living_dead", None, 1_100_000_000);
-    let runs = [fresh(&archive(), vec![yearless]), fresh(&knaben(), vec![remake, dated])];
+    let dated = video(0x65, "Night Of The Living Dead 1968 720p BRRip x264-GRP", Some(22), 1_700_000_000);
+    let yearless = video(0x6b, "night_of_the_living_dead", Some(40), 1_100_000_000);
+    let runs = [fresh(&hydra(), vec![yearless]), fresh(&geek(), vec![remake, dated])];
     assert_eq!(
         played(&night(Namesakes::Leading, 1968), Profile::default(), &runs),
-        ["Night Of The Living Dead 1968 720p BRRip x264-x0r", "night_of_the_living_dead"],
-        "beside a namesake, a release that names the year leads a lawful one that does not"
+        ["Night Of The Living Dead 1968 720p BRRip x264-GRP", "night_of_the_living_dead"],
+        "beside a namesake, a release that names the year leads a more grabbed one that does not"
     );
     assert_eq!(
         played(&night(Namesakes::None, 1968), Profile::default(), &runs),
-        ["night_of_the_living_dead", "Night Of The Living Dead 1968 720p BRRip x264-x0r"],
-        "without one, the lawful source leads"
+        ["night_of_the_living_dead", "Night Of The Living Dead 1968 720p BRRip x264-GRP"],
+        "without one, the more grabbed release leads"
     );
     assert_eq!(
         played(&night(Namesakes::Shadowed, 1990), Profile::default(), &runs),
@@ -1279,7 +1117,7 @@ fn a_remake_with_another_year_is_absent() {
 fn a_search_without_a_wanted_title_ranks_and_writes_as_before() {
     let remake = video(0x68, "Night of the Living Dead (1990) 1080p BluRay", Some(500), 9 * GB);
     let cam = video(0x61, "Night of the Living Dead 1968 HDCAM x264", Some(300), 1_400_000_000);
-    let runs = [fresh(&knaben(), vec![remake, cam, dvdrip(), bluray()])];
+    let runs = [fresh(&geek(), vec![remake, cam, dvdrip(), bluray()])];
     let result = search(&SearchQuery::new("night of the living dead 1968"), &runs);
     assert_eq!(
         names(&result),
@@ -1298,35 +1136,40 @@ fn each_source_reports_once_over_a_titles_queries() {
     let yearless = video(0x69, "Night.of.the.Living.Dead.1080p.WEB-DL", Some(400), 3 * GB);
     let fair = video(0x65, "Night Of The Living Dead 1968 720p BRRip x264", Some(12), 1_200_000_000);
     let runs = [
-        fresh(&knaben(), vec![bluray()]),
-        fresh(&knaben(), vec![bluray(), yearless]),
-        failed(&apibay(), Failure::Timeout),
-        fresh(&apibay(), vec![fair]),
-        failed(&archive(), Failure::Http(503)),
-        failed(&archive(), Failure::Timeout),
+        fresh(&geek(), vec![bluray()]),
+        fresh(&geek(), vec![bluray(), yearless]),
+        failed(&planet(), Failure::Timeout),
+        fresh(&planet(), vec![fair]),
+        failed(&hydra(), Failure::Http(503)),
+        failed(&hydra(), Failure::Timeout),
     ];
     let result = search(&for_title(&night(Namesakes::Leading, 1968), Profile::default()), &runs);
     assert_eq!(
         result.sources,
         [
-            SourceReport {
-                source: "archive.org".into(),
-                outcome: SourceOutcome::Http { status: 503 },
-                elapsed_ms: 6000
-            },
-            SourceReport { source: "knaben".into(), outcome: SourceOutcome::Ok { results: 3 }, elapsed_ms: 40 },
-            SourceReport { source: "apibay".into(), outcome: SourceOutcome::Ok { results: 1 }, elapsed_ms: 6000 },
+            SourceReport { source: "hydra".into(), outcome: SourceOutcome::Http { status: 503 }, elapsed_ms: 6000 },
+            SourceReport { source: "geek".into(), outcome: SourceOutcome::Ok { results: 3 }, elapsed_ms: 40 },
+            SourceReport { source: "planet".into(), outcome: SourceOutcome::Ok { results: 1 }, elapsed_ms: 6000 },
         ]
     );
     let listed: Vec<(&str, &[String])> = result.releases.iter().map(|r| (r.name.as_str(), &r.sources[..])).collect();
-    let knaben = ["knaben".to_string()];
-    let apibay = ["apibay".to_string()];
+    let geek = ["geek".to_string()];
+    let planet = ["planet".to_string()];
+    // With a namesake, a release that names the year leads one that does not, whatever its grabs.
     assert_eq!(
         listed,
         [
-            ("Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP", &knaben[..]),
-            ("Night.of.the.Living.Dead.1080p.WEB-DL", &knaben[..]),
-            ("Night Of The Living Dead 1968 720p BRRip x264", &apibay[..]),
+            ("Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP", &geek[..]),
+            ("Night Of The Living Dead 1968 720p BRRip x264", &planet[..]),
+            ("Night.of.the.Living.Dead.1080p.WEB-DL", &geek[..]),
         ]
     );
+}
+
+#[test]
+fn a_ranked_groups_remux_past_the_screens_band_plays_after_a_copy_that_streams() {
+    let remux = "Night.of.the.Living.Dead.1968.UHD.BluRay.2160p.FLAC.1.0.SDR.HEVC.REMUX-FraMeSToR";
+    let encode = "Night.Of.The.Living.Dead.1968.1080p.Bluray.x264-GRP";
+    let runs = [fresh(&geek(), vec![video(0x9a, remux, Some(1381), 57 * GB), video(0x9b, encode, Some(1615), 9 * GB)])];
+    assert_eq!(played(&night(Namesakes::Leading, 1968), mac(), &runs), [encode, remux]);
 }

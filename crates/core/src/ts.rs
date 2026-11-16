@@ -27,9 +27,8 @@ macro_rules! written_as {
 }
 
 written_as! {
-    crate::TorrentId => "string",
-    crate::InfoHash => "string",
-    crate::ReleaseId => "string",
+    crate::DownloadId => "string",
+    crate::ResultId => "string",
     crate::PieceMap => "string",
     crate::TitleId => "string",
     crate::VideoRef => "string",
@@ -64,7 +63,6 @@ pub fn declarations(cfg: &Config) -> Vec<String> {
         Resolution::decl(cfg),
         Codec::decl(cfg),
         Quality::decl(cfg),
-        Swarm::decl(cfg),
         ReleaseWire::decl(cfg),
         SourceOutcome::decl(cfg),
         SourceReport::decl(cfg),
@@ -77,8 +75,8 @@ pub fn declarations(cfg: &Config) -> Vec<String> {
         Job::decl(cfg),
         protocol::Event::decl(cfg),
         FileRisk::decl(cfg),
-        TorrentFile::decl(cfg),
-        protocol::MetadataSource::decl(cfg),
+        ReleaseFile::decl(cfg),
+        protocol::FileListSource::decl(cfg),
         protocol::FilesReply::decl(cfg),
         protocol::ChangeResult::decl(cfg),
         protocol::Kept::decl(cfg),

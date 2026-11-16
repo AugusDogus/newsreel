@@ -1,11 +1,9 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use torrential_core::{
-    Category, Error, ErrorCode, Flag, InfoHash, Release, ReleaseId, Selection, SourceOutcome, TorrentId,
-};
+use torrential_core::{Category, DownloadId, Error, ErrorCode, Flag, Release, ResultId, Selection, SourceOutcome};
 
-use super::{Search, Source, Swarm, TorrentFile, land};
+use super::{Network, Posting, Search, Source, land};
 use crate::daemon::admission::Cap;
 use crate::daemon::book::{Intent, JobRecord};
 use crate::daemon::store::Store;
@@ -14,44 +12,43 @@ const KIB: u64 = 1024;
 const MIB: u64 = 1024 * KIB;
 const DAY: i64 = 86_400;
 
-fn id(short: &str) -> InfoHash {
+fn id(short: &str) -> DownloadId {
     let hex = format!("{short}{}", "5d3b8e2f1c4a".repeat(3));
-    let id: TorrentId = hex[..40].parse().expect("fixture IDs are hex");
-    InfoHash::V1(*id.as_bytes())
+    hex[..40].parse().expect("fixture IDs are hex")
 }
 
-fn torrent(short: &str, name: &str, files: &[(&str, u64)]) -> TorrentFile {
-    TorrentFile {
-        info_hash: id(short),
+fn posting(short: &str, name: &str, files: &[(&str, u64)]) -> Posting {
+    Posting {
+        id: id(short),
         name: name.into(),
         files: files.iter().map(|(path, size)| (path.to_string(), *size)).collect(),
     }
 }
 
 struct Listing {
-    torrent: TorrentFile,
+    release: Posting,
     title: &'static str,
     source: &'static str,
     flags: &'static [Flag],
-    seeders: Option<u32>,
+    grabs: Option<u64>,
     age_days: i64,
     category: Category,
 }
 
 fn night() -> Vec<Listing> {
-    let listing = |torrent, title, source, flags, seeders, age_days, category| Listing {
-        torrent,
+    let listing = |release, title, source, flags, grabs, age_days, category| Listing {
+        release,
         title,
         source,
         flags,
-        seeders,
+        grabs,
         age_days,
         category,
     };
     let video = Category::Video;
     vec![
         listing(
-            torrent(
+            posting(
                 "4c1e9a",
                 "night_of_the_living_dead",
                 &[
@@ -63,14 +60,14 @@ fn night() -> Vec<Listing> {
                 ],
             ),
             "Night of the Living Dead (1968)",
-            "archive.org",
-            &[Flag::PublicDomain],
-            None,
+            "geek",
+            &[],
+            Some(1_204),
             3_300,
             video,
         ),
         listing(
-            torrent(
+            posting(
                 "b7f20d",
                 "night_of_the_living_dead_1968_dvd",
                 &[
@@ -89,14 +86,14 @@ fn night() -> Vec<Listing> {
                 ],
             ),
             "Night of the Living Dead (1968) [DVD]",
-            "archive.org",
-            &[Flag::PublicDomain],
-            None,
+            "geek",
+            &[],
+            Some(860),
             4_400,
             video,
         ),
         listing(
-            torrent(
+            posting(
                 "e3a915",
                 "Night.of.the.Living.Dead.1968.1080p.BluRay.x264",
                 &[
@@ -106,14 +103,14 @@ fn night() -> Vec<Listing> {
                 ],
             ),
             "Night.of.the.Living.Dead.1968.1080p.BluRay.x264",
-            "knaben",
-            &[Flag::Trusted],
+            "hydra",
+            &[],
             Some(214),
             1_100,
             video,
         ),
         listing(
-            torrent(
+            posting(
                 "09cd47",
                 "Night of the Living Dead 4K Restoration",
                 &[
@@ -122,27 +119,27 @@ fn night() -> Vec<Listing> {
                 ],
             ),
             "Night of the Living Dead 4K Restoration",
-            "knaben",
-            &[Flag::Official],
+            "hydra",
+            &[],
             Some(88),
             700,
             video,
         ),
         listing(
-            torrent(
+            posting(
                 "f61b2e",
                 "Night.of.the.Living.Dead.2025.CAM.x264",
                 &[("Night.of.the.Living.Dead.2025.CAM.x264.mkv", 1_503_238_553), ("Sample.mkv", 19_084_083)],
             ),
             "Night.of.the.Living.Dead.2025.CAM.x264",
-            "torrents-csv",
+            "planet",
             &[Flag::Cam],
             Some(41),
             60,
             video,
         ),
         listing(
-            torrent(
+            posting(
                 "7a0c3f",
                 "night_of_the_living_dead_colorized",
                 &[
@@ -151,14 +148,14 @@ fn night() -> Vec<Listing> {
                 ],
             ),
             "Night of the Living Dead (1968) colorized",
-            "archive.org",
-            &[Flag::PublicDomain],
-            None,
+            "geek",
+            &[],
+            Some(377),
             2_200,
             video,
         ),
         listing(
-            torrent(
+            posting(
                 "c48e01",
                 "Night of the Living Dead score",
                 &[
@@ -170,20 +167,20 @@ fn night() -> Vec<Listing> {
                 ],
             ),
             "Night of the Living Dead, original score FLAC",
-            "knaben",
-            &[Flag::CreativeCommons],
+            "hydra",
+            &[],
             Some(12),
             1_500,
             Category::Audio,
         ),
         listing(
-            torrent(
+            posting(
                 "2d9b6a",
                 "Night of the Living Dead 1968 720p WEB",
                 &[("Night of the Living Dead 1968 720p WEB.mkv", 2_254_857_830), ("English.srt", 53_555)],
             ),
             "Night of the Living Dead 1968 720p WEB",
-            "torrents-csv",
+            "planet",
             &[],
             Some(0),
             1_800,
@@ -192,12 +189,12 @@ fn night() -> Vec<Listing> {
     ]
 }
 
-/// A Linux ISO every fake search knows, and the source that lists it in the fake engine.
+/// A Linux ISO every fake search knows, and the indexer that lists it in the fake engine.
 struct Iso {
     id: &'static str,
     name: &'static str,
     size: u64,
-    seeders: u32,
+    grabs: u64,
     source: &'static str,
 }
 
@@ -206,39 +203,41 @@ const ISOS: [Iso; 2] = [
         id: "9b521219bc48550140a666f74a29048ed78e933b",
         name: "archlinux-2026.10.01-x86_64.iso",
         size: 1_640_497_152,
-        seeders: 412,
-        source: "archlinux.org",
+        grabs: 412,
+        source: "hydra",
     },
     Iso {
         id: "e3a1f06d2b1c8a4f5e6d7c8b9a0f1e2d3c4b5a69",
         name: "ubuntu-24.04.5-desktop-amd64.iso",
         size: 6_345_887_744,
-        seeders: 1873,
-        source: "knaben",
+        grabs: 1873,
+        source: "geek",
     },
 ];
 
 impl Iso {
-    /// This ISO as `source` lists it. Arch's own site lists Arch's ISO as official.
+    /// This ISO as `source` lists it.
     fn listed_by(&self, source: &str) -> Release {
-        let (id, name, size) = (self.id, self.name, self.size);
-        Release {
-            id: ReleaseId::Torrent(id.parse().expect("catalog IDs are valid")),
-            name: name.to_string(),
-            size: Some(size),
-            seeders: Some(self.seeders),
-            leechers: None,
-            published: None,
-            category: Some(Category::Software),
-            flags: (source == "archlinux.org").then_some(Flag::Official).into_iter().collect(),
-            sources: vec![source.into()],
-            magnet: Some(format!("magnet:?xt=urn:btih:{id}&dn={name}&xl={size}")),
-            torrent_url: None,
-            info_url: None,
-            span: None,
-            swarm: None,
-            failed: None,
-        }
+        Release { sources: vec![source.into()], ..release(self.id, self.name, self.size, self.grabs) }
+    }
+}
+
+/// A row the fake indexer lists. Its `fake://` NZB link serves a fake release of one file
+/// whose download ID has the same hex as the row's ID.
+pub fn release(hex: &str, name: &str, size: u64, grabs: u64) -> Release {
+    let id: DownloadId = hex.parse().expect("fake IDs are 40 hex characters");
+    Release {
+        id: ResultId::from_bytes(*id.as_bytes()),
+        name: name.to_string(),
+        size: Some(size),
+        grabs: Some(grabs),
+        published: None,
+        category: Some(Category::Software),
+        flags: Default::default(),
+        sources: vec!["fake".into()],
+        nzb_url: Some(format!("fake://{hex}")),
+        span: None,
+        failed: None,
     }
 }
 
@@ -248,59 +247,46 @@ pub fn isos() -> Vec<Release> {
     ISOS.iter().map(|iso| iso.listed_by("fake")).collect()
 }
 
-fn torrent_url(torrent: &TorrentFile) -> String {
-    format!("https://archive.org/download/{0}/{0}_archive.torrent", torrent.name)
+fn nzb_url(release: &Posting) -> String {
+    format!("fake://{}", release.id.to_hex())
 }
 
 pub fn search(now: i64) -> Search {
     let mut catalog: Vec<Release> = ISOS.iter().map(|iso| iso.listed_by(iso.source)).collect();
-    let mut torrents = BTreeMap::new();
+    let mut nzbs = BTreeMap::new();
     for listing in night() {
-        let t = &listing.torrent;
-        let hex = t.info_hash.id().to_hex();
-        let archive = listing.source == "archive.org";
-        if archive {
-            torrents.insert(torrent_url(t), t.bytes());
-        }
+        let t = &listing.release;
+        nzbs.insert(nzb_url(t), t.bytes());
         catalog.push(Release {
-            id: ReleaseId::Torrent(t.info_hash.id()),
+            id: ResultId::from_bytes(*t.id.as_bytes()),
             name: listing.title.into(),
             size: Some(t.files.iter().map(|(_, size)| size).sum()),
-            seeders: listing.seeders,
-            leechers: listing.seeders.map(|s| s / 3),
+            grabs: listing.grabs,
             published: Some(now - listing.age_days * DAY),
             category: Some(listing.category),
             flags: listing.flags.iter().copied().collect(),
             sources: vec![listing.source.into()],
-            magnet: Some(format!("magnet:?xt=urn:btih:{hex}&dn={}", t.name)),
-            torrent_url: archive.then(|| torrent_url(t)),
-            info_url: archive.then(|| format!("https://archive.org/details/{}", t.name)),
+            nzb_url: Some(nzb_url(t)),
             span: None,
-            swarm: None,
             failed: None,
         });
     }
     let script = vec![
-        Source::answers("archlinux.org", 200),
-        Source::answers("archive.org", 450),
-        Source::fails("apibay", 600, SourceOutcome::Http { status: 503 }),
-        Source::answers("knaben", 800),
-        Source::answers("torrents-csv", 1_150),
-        Source::fails("nyaa", 1_500, SourceOutcome::Timeout),
+        Source::answers("hydra", 200),
+        Source::answers("geek", 450),
+        Source::fails("dognzb", 600, SourceOutcome::Http { status: 503 }),
+        Source::answers("planet", 800),
+        Source::fails("slowznab", 1_500, SourceOutcome::Timeout),
     ];
-    Search::scripted(catalog, script, torrents)
+    Search::scripted(catalog, script, nzbs)
 }
 
-pub fn swarm(rate: u64) -> Swarm {
-    let swarm = Swarm::inventive(rate);
-    for listing in night() {
-        swarm.publish(listing.torrent);
-    }
-    swarm
+pub fn network(rate: u64) -> Network {
+    Network::new(rate)
 }
 
 struct Seed {
-    torrent: TorrentFile,
+    release: Posting,
     intent: Intent,
     done_percent: u64,
     added_days_ago: i64,
@@ -312,7 +298,7 @@ pub fn seed(store: &mut Store, downloads: &Path, now: i64) -> Result<(), Error> 
             .with_hint("check that the download folder is writable, then press p to resume");
     let seeds = [
         Seed {
-            torrent: torrent(
+            release: posting(
                 "6f2c81",
                 "wikipedia-en-2026-09-text",
                 &[
@@ -326,7 +312,7 @@ pub fn seed(store: &mut Store, downloads: &Path, now: i64) -> Result<(), Error> 
             added_days_ago: 0,
         },
         Seed {
-            torrent: torrent(
+            release: posting(
                 "a90d44",
                 "openwebtext-2019",
                 &[
@@ -341,7 +327,7 @@ pub fn seed(store: &mut Store, downloads: &Path, now: i64) -> Result<(), Error> 
             added_days_ago: 1,
         },
         Seed {
-            torrent: torrent(
+            release: posting(
                 "91fd3b",
                 "stackexchange",
                 &[
@@ -363,7 +349,7 @@ pub fn seed(store: &mut Store, downloads: &Path, now: i64) -> Result<(), Error> 
             added_days_ago: 3,
         },
         Seed {
-            torrent: torrent(
+            release: posting(
                 "5e02c8",
                 "big_buck_bunny_1080p_h264.mov",
                 &[("big_buck_bunny_1080p_h264.mov", 725_106_140)],
@@ -373,7 +359,7 @@ pub fn seed(store: &mut Store, downloads: &Path, now: i64) -> Result<(), Error> 
             added_days_ago: 5,
         },
         Seed {
-            torrent: torrent(
+            release: posting(
                 "c7b9e3",
                 "archlinux-2026.09.01-x86_64.iso",
                 &[("archlinux-2026.09.01-x86_64.iso", 1_438_646_272)],
@@ -384,20 +370,18 @@ pub fn seed(store: &mut Store, downloads: &Path, now: i64) -> Result<(), Error> 
         },
     ];
     for seed in seeds {
-        let size: u64 = seed.torrent.files.iter().map(|(_, size)| size).sum();
+        let size: u64 = seed.release.files.iter().map(|(_, size)| size).sum();
         let arrived = size / 100 * seed.done_percent;
-        let metainfo = seed.torrent.metainfo()?;
-        let landing = land(&metainfo, &vec![true; metainfo.files.len()], arrived, 0);
-        let id = seed.torrent.info_hash.id();
+        let layout = seed.release.layout()?;
+        let landing = land(&layout, &vec![true; layout.files.len()], arrived, 0);
+        let id = seed.release.id;
         let added_at = now - seed.added_days_ago * DAY - 3_600;
         let record = JobRecord {
             id,
-            info_hash: seed.torrent.info_hash,
-            name: Some(seed.torrent.name.clone()),
+            name: seed.release.name.clone(),
             dir: downloads.to_path_buf(),
             selection: Selection::All,
             cap: Cap::new(None, None),
-            magnet: None,
             added_at,
             intent: seed.intent,
             verified: landing.verified,
@@ -406,7 +390,7 @@ pub fn seed(store: &mut Store, downloads: &Path, now: i64) -> Result<(), Error> 
             title: None,
             home: crate::daemon::book::Home::Folder,
         };
-        store.insert(&record, Some(&seed.torrent.bytes()), added_at)?;
+        store.insert(&record, &seed.release.bytes(), added_at)?;
         let resume = arrived.to_string();
         let files = record.files_verified.as_deref();
         store.save_resume(id, resume.as_bytes(), record.verified, record.piece_map, files, added_at)?;
@@ -442,14 +426,14 @@ mod tests {
         seed(&mut store, dir.path(), 0).unwrap();
         let mut mapped = Vec::new();
         for stored in store.jobs().unwrap() {
-            let metainfo = parse(&stored.metainfo.unwrap()).unwrap();
-            let job = JobEntry::new(stored.record, Some(Arc::new(metainfo)), Observed::Absent).view();
-            let name = job.name.unwrap();
+            let layout = parse(&stored.layout).unwrap();
+            let job = JobEntry::new(stored.record, Arc::new(layout), Observed::Absent).view();
+            let name = job.name;
             let Some(map) = job.progress.piece_map else {
                 assert_eq!(job.status.name(), "done", "{name} has no map");
                 continue;
             };
-            let progress = job.progress.verified as f64 / job.progress.size.unwrap() as f64;
+            let progress = job.progress.verified as f64 / job.progress.size as f64;
             assert!((filled(map) - progress).abs() < 0.005, "{name} draws {map} for {progress:.3}");
             let text = map.to_string();
             assert!(text.as_bytes().windows(2).any(|w| w[0] < w[1]), "{text} does not fill from the start");

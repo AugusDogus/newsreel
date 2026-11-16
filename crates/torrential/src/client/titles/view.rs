@@ -17,7 +17,7 @@ fn rating(rating: Option<f32>) -> String {
     rating.map_or_else(|| UNKNOWN.to_string(), |r| format!("{r:.1}"))
 }
 
-/// The torrent search for `words`, such as a title's name and year.
+/// The Usenet search for `words`, such as a title's name and year.
 pub fn search_for(words: &str) -> String {
     let words: Vec<String> = words
         .split(|c: char| c.is_whitespace() || c == '(' || c == ')')
@@ -198,7 +198,7 @@ pub fn sources(sources: &TitleSources, now: i64) -> Doc {
             row
         })
         .collect();
-    let mut header = vec!["ID", "SEEDS", "SIZE", "QUALITY", "AGE", "SOURCE", "FLAGS", "NAME"];
+    let mut header = vec!["ID", "GRABS", "SIZE", "QUALITY", "AGE", "SOURCE", "FLAGS", "NAME"];
     if episode {
         header.insert(header.len() - 1, "HOLDS");
     }

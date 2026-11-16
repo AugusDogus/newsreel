@@ -17,15 +17,15 @@ use crate::catalog::{EpisodeInfo, TitleCard, TitleDetails, TitleId, VideoRef};
 use crate::device::DeviceList;
 use crate::error::Error;
 use crate::error::Tried;
-use crate::id::ReleaseId;
-use crate::job::{Job, Selection, TorrentFile};
+use crate::id::ResultId;
+use crate::job::{Job, ReleaseFile, Selection};
 use crate::release::{Release, SearchQuery, SearchResult};
 use crate::target::Target;
 use crate::watching::{AttemptEvent, Next, Watched};
 
-/// How long the engine waits for a torrent's file list before it gives up.
-pub const METADATA_WAIT: Duration = Duration::from_secs(60);
-/// How long the engine waits for libtorrent to stop writing a download it pauses.
+/// How long a client waits for the engine to fetch and read an NZB over NNTP.
+pub const RESOLVE_WAIT: Duration = Duration::from_secs(60);
+/// How long the engine waits for a download it pauses to stop writing.
 pub const WRITES_STOP_WITHIN: Duration = Duration::from_secs(10);
 /// How long the engine may take to find a title's source and start it, between two steps.
 pub const STEP_WITHIN: Duration = Duration::from_secs(240);
@@ -49,10 +49,9 @@ pub enum Request {
         #[serde(default)]
         stream: bool,
     },
-    /// Lists a torrent's files, fetching metadata if needed, within `timeout_ms`.
+    /// Lists a release's files, reading its NZB if needed.
     Files {
         target: Target,
-        timeout_ms: u32,
     },
     Get(GetRequest),
     /// Downloads these files first and in order, and serves them over local HTTP as they arrive.
@@ -122,7 +121,7 @@ pub enum Request {
     Tvs {
         fresh: bool,
     },
-    /// Plays a film, an episode, or a torrent's video on a TV. A title sends a `Frame::Update`
+    /// Plays a film, an episode, or a release's video on a TV. A title sends a `Frame::Update`
     /// for each step of finding its source. The reply comes once the TV plays, or the cast fails.
     Cast(CastRequest),
     /// Pauses, resumes, seeks, stops, or sets the volume of the cast on a TV: its ID or a part of
@@ -137,7 +136,7 @@ pub enum Request {
     /// keeps where it is in the watch history as a browser tab or a TV keeps theirs.
     Follow {
         video: VideoRef,
-        release: Option<ReleaseId>,
+        release: Option<ResultId>,
         socket: PathBuf,
     },
 }
@@ -149,8 +148,7 @@ impl Request {
         match self {
             Request::Hello => Duration::from_secs(5),
             Request::Search { query, .. } => Duration::from_millis(query.timeout_ms.into()) + Duration::from_secs(10),
-            Request::Files { timeout_ms, .. } => Duration::from_millis((*timeout_ms).into()) + Duration::from_secs(15),
-            Request::Get(get) if get.dry_run => METADATA_WAIT + Duration::from_secs(15),
+            Request::Files { .. } | Request::Get(_) => RESOLVE_WAIT + Duration::from_secs(15),
             Request::Pause { .. } | Request::Shutdown { .. } => 2 * WRITES_STOP_WITHIN,
             Request::PlayTitle(_) | Request::GetTitle(_) | Request::Cast(_) => STEP_WITHIN,
             _ => REPLY_WITHIN,
@@ -185,7 +183,7 @@ pub struct PlayRequest {
     pub target: Target,
     /// `None` means the configured download folder. An existing download keeps its own.
     pub dir: Option<PathBuf>,
-    /// `TorrentFile::index` of each file to play: the video first, then its subtitles. They join any
+    /// `ReleaseFile::index` of each file to play: the video first, then its subtitles. They join any
     /// files the download already has selected.
     pub files: Vec<u32>,
 }
@@ -385,10 +383,10 @@ impl Reply for () {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FilesReply {
     pub id: String,
-    pub name: Option<String>,
+    pub name: String,
     pub total_size: u64,
-    pub files: Vec<TorrentFile>,
-    pub metadata_source: MetadataSource,
+    pub files: Vec<ReleaseFile>,
+    pub source: FileListSource,
     pub elapsed_ms: u32,
 }
 
@@ -414,7 +412,7 @@ pub struct PlayReply {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Stream {
     pub index: u32,
-    /// Relative to the torrent's folder, sanitized, as in `TorrentFile`.
+    /// Relative to the release's folder, sanitized, as in `ReleaseFile`.
     pub path: String,
     pub size: u64,
     pub url: String,
@@ -448,14 +446,13 @@ pub struct DownloadPlan {
 }
 
 crate::words! {
-    /// Where a torrent's file list came from.
+    /// Where a release's file list came from.
     #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-    pub enum MetadataSource {
+    pub enum FileListSource {
         Download = "download",
         Cache = "cache",
-        TorrentFile = "torrent_file",
-        TorrentUrl = "torrent_url",
-        Peers = "peers",
+        NzbFile = "nzb_file",
+        NzbUrl = "nzb_url",
     }
 }
 

@@ -73,7 +73,6 @@ export function useJob(id: string | null): Job | null {
 /** What each state of a download is called on a page. */
 export const STATE_WORDS: Record<JobState, string> = {
   queued: "Queued",
-  metadata: "Finding peers",
   checking: "Checking files",
   downloading: "Downloading",
   paused: "Paused",
@@ -82,5 +81,5 @@ export const STATE_WORDS: Record<JobState, string> = {
 };
 
 export function isActive(job: Job): boolean {
-  return job.state === "downloading" || job.state === "metadata" || job.state === "checking" || job.state === "queued";
+  return job.state === "downloading" || job.state === "checking" || job.state === "queued";
 }

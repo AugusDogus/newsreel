@@ -7,7 +7,8 @@ use torrential_core::{Error, ErrorCode, Preferences};
 
 use super::detector::Detector;
 use super::engine_port::EngineHandle;
-use super::metainfo::ParseTorrent;
+use super::layout::ParseLayout;
+use super::nzb_port::NzbPort;
 use super::owner::{Command, Reply};
 use super::search_port::SearchPort;
 
@@ -36,7 +37,9 @@ pub struct Ctx {
     pub search: Arc<dyn SearchPort>,
     pub machine: Arc<Detector>,
     pub engine: EngineHandle,
-    pub parse: ParseTorrent,
+    pub parse: ParseLayout,
+    /// Resolves an NZB, from a file or a URL, into the manifest `parse` reads.
+    pub nzb: Arc<dyn NzbPort>,
     pub version: String,
     /// The preferences in config.yaml now, which rank searches and cap new downloads.
     pub preferences: Arc<dyn Fn() -> Preferences + Send + Sync>,

@@ -63,7 +63,7 @@ mod tests {
         let page = Some((&b"page"[..], "text/html; charset=utf-8", "no-cache"));
         assert_eq!(read("/"), page);
         assert_eq!(read("/watch/9b5212"), page);
-        assert_eq!(read("/watch/https%3A%2F%2Farchive.org%2Fdownload%2FSintel%2FSintel_archive.torrent"), page);
+        assert_eq!(read("/watch/https%3A%2F%2Findexer.example%2Fapi%3Ft%3Dget%26id%3Dsintel"), page);
         assert_eq!(read("/watch/Sintel.2010.1080p.mkv"), page);
         assert_eq!(read("/downloads"), page);
         assert_eq!(read("/index.html"), page);

@@ -103,7 +103,7 @@ impl torrential_tui::Backend for EngineBackend {
         let listing = super::file_list(&mut conn, target.clone())?;
         let reply = play::start(&mut conn, target, &listing, None)?;
         let player = play::player(&config, &self.paths, &self.env, &reply.streams[0].url)?;
-        let name = listing.name.unwrap_or_else(|| super::rows::short_ref(&listing.id));
+        let name = listing.name;
         play::open(&mut conn, &player, &Playing { name, reply, title: None }, &self.env, &self.paths)?;
         Ok(player.name())
     }

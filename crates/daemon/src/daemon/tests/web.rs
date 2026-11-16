@@ -27,7 +27,7 @@ use super::super::admission::GIB;
 use super::super::fake;
 use super::super::search_port::SearchPort;
 use super::super::titles::catalog_port::{self, CatalogPort};
-use super::{Harness, MIB, Outside, magnet, prefix, titles, torrent, written};
+use super::{Harness, MIB, Outside, prefix, release, titles, written};
 use crate::ffmpeg::fetch::{Build, Fetch, Packing};
 use crate::ffmpeg::{INSTALL, Tools};
 
@@ -194,9 +194,11 @@ fn error((status, body): &(u16, Value)) -> (u16, &str, &str) {
     (*status, body["error"]["code"].as_str().unwrap_or_default(), body["error"]["message"].as_str().unwrap_or_default())
 }
 
-pub(super) fn magnet_link(torrent: &fake::TorrentFile) -> String {
-    let Target::Magnet(link) = magnet(torrent) else { unreachable!() };
-    link
+/// An NZB link that serves this release, as an indexer would.
+pub(super) fn nzb_link(h: &Harness, release: &fake::Posting) -> String {
+    let url = format!("https://indexer.example/get/{}.nzb", release.id.to_hex());
+    h.search.serve_nzb(&url, release.bytes());
+    url
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -208,8 +210,8 @@ async fn the_app_answers_for_its_pages_and_not_for_missing_scripts() {
     assert!(headers.contains("cache-control: no-cache\n"), "{headers}");
     assert!(page.starts_with(b"<!doctype html>"), "{}", String::from_utf8_lossy(&page));
     assert_eq!(fetch(&h, "GET", "/watch/9b5212?file=2", &[], "").await.2, page);
-    let torrent_url = "/watch/https%3A%2F%2Farchive.org%2Fdownload%2FSintel%2FSintel_archive.torrent";
-    assert_eq!(fetch(&h, "GET", torrent_url, &[], "").await.2, page);
+    let nzb_url = "/watch/https%3A%2F%2Findexer.example%2Fapi%3Ft%3Dget%26id%3Dsintel";
+    assert_eq!(fetch(&h, "GET", nzb_url, &[], "").await.2, page);
     assert_eq!(fetch(&h, "GET", "/downloads", &[], "").await.2, page);
     let (status, headers, body) = fetch(&h, "HEAD", "/", &[], "").await;
     assert_eq!((status, body.len()), (200, 0));
@@ -252,10 +254,10 @@ async fn other_websites_cannot_use_the_engine_through_the_browser() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_get_starts_no_work_since_a_browser_without_fetch_metadata_sends_one_from_any_website() {
     let h = Harness::new();
-    let iso = torrent(63, "debian.iso", &[("debian.iso", GIB)]);
-    let url = "https://cdimage.example/debian.iso.torrent";
-    h.search.serve_torrent(url, iso.bytes());
-    let fetched = "ref=https%3A%2F%2Fcdimage.example%2Fdebian.iso.torrent";
+    let iso = release(63, "debian.iso", &[("debian.iso", GIB)]);
+    let url = "https://indexer.example/debian.iso.nzb";
+    h.search.serve_nzb(url, iso.bytes());
+    let fetched = "ref=https%3A%2F%2Findexer.example%2Fdebian.iso.nzb";
     for route in [
         format!("files?{fetched}"),
         format!("play?{fetched}"),
@@ -281,10 +283,8 @@ async fn a_get_starts_no_work_since_a_browser_without_fetch_metadata_sends_one_f
 #[tokio::test(flavor = "multi_thread")]
 async fn a_search_sends_a_line_each_time_a_source_answers() {
     let listed = |hex: &str, name: &str, source: &str| torrential_core::Release {
-        id: torrential_core::ReleaseId::Torrent(hex.repeat(20).parse().unwrap()),
-        name: name.into(),
         sources: vec![source.into()],
-        ..fake::isos().remove(0)
+        ..fake::release(&hex.repeat(20), name, GIB, 1)
     };
     let catalog = vec![listed("aa", "dead \u{1b}[31mred", "slow"), listed("bb", "dead fast", "quick")];
     let script = vec![fake::Source::answers("quick", 0), fake::Source::answers("slow", 60)];
@@ -331,10 +331,10 @@ async fn a_search_takes_a_json_post_so_another_website_cannot_start_one() {
 async fn play_picks_the_video_and_its_subtitles_and_says_where_they_are() {
     let h = Harness::new();
     let film =
-        torrent(60, "film", &[("Film.mkv", 3 * GIB), ("Film.en.srt", 40_000), ("extras.mkv", GIB), ("notes.txt", 10)]);
-    h.swarm.publish(film.clone());
-    let id = film.info_hash.id().to_hex();
-    let (status, playing) = post(&h, "/api/play", json!({ "ref": magnet_link(&film) })).await;
+        release(60, "film", &[("Film.mkv", 3 * GIB), ("Film.en.srt", 40_000), ("extras.mkv", GIB), ("notes.txt", 10)]);
+    h.network.publish(film.clone());
+    let id = film.id.to_hex();
+    let (status, playing) = post(&h, "/api/play", json!({ "ref": nzb_link(&h, &film) })).await;
     assert_eq!(status, 200, "{playing}");
     let selected = |playing: &Value| -> Vec<bool> {
         playing["files"].as_array().unwrap().iter().map(|f| f["selected"].as_bool().unwrap()).collect()
@@ -360,17 +360,18 @@ async fn play_picks_the_video_and_its_subtitles_and_says_where_they_are() {
     let tail = RUNTIME_BYTES;
     let wanted = [(0, 3 * GIB - tail, tail), (2, GIB - tail, tail)];
     let deadline = Instant::now() + Duration::from_secs(10);
-    while h.swarm.wanted(film.info_hash.id()).len() < 2 && Instant::now() < deadline {
+    while h.network.wanted(film.id).len() < 2 && Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
-    assert_eq!(h.swarm.wanted(film.info_hash.id()), wanted, "each play fetches the end of its video first");
+    assert_eq!(h.network.wanted(film.id), wanted, "each play fetches the end of its video first");
 
-    let papers = torrent(61, "papers", &[("a.pdf", 1000), ("b.pdf", 1000)]);
-    h.swarm.publish(papers.clone());
-    let file = h.dir.path().join("film.torrent").display().to_string();
+    let papers = release(61, "papers", &[("a.pdf", 1000), ("b.pdf", 1000)]);
+    h.network.publish(papers.clone());
+    let Target::NzbFile(file) = h.nzb_file(&film) else { unreachable!() };
+    let file = file.display().to_string();
     let refused = [
         post(&h, "/api/play", json!({ "ref": prefix(&film), "file": 9 })).await,
-        post(&h, "/api/play", json!({ "ref": magnet_link(&papers) })).await,
+        post(&h, "/api/play", json!({ "ref": nzb_link(&h, &papers) })).await,
         post(&h, "/api/play", json!({ "ref": "c0ffee" })).await,
         post(&h, "/api/play", json!({ "ref": file })).await,
         post(&h, "/api/play", json!({ "file": 1 })).await,
@@ -380,7 +381,7 @@ async fn play_picks_the_video_and_its_subtitles_and_says_where_they_are() {
         refused,
         [(400, "usage"), (404, "no_selection"), (404, "not_found"), (404, "invalid_ref"), (400, "usage")]
     );
-    assert_eq!(h.status().await.len(), 1, "a torrent with nothing to play starts no download");
+    assert_eq!(h.status().await.len(), 1, "a release with nothing to play starts no download");
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -394,10 +395,10 @@ async fn a_page_follows_and_changes_downloads() {
     assert!(headers.contains("content-type: text/event-stream\n"), "{headers}");
     assert_eq!(events.event().await, json!({ "event": "snapshot", "jobs": [] }));
 
-    let film = torrent(62, "film", &[("film.mkv", GIB), ("film.srt", 40_000)]);
-    h.swarm.publish(film.clone());
-    let id = film.info_hash.id().to_hex();
-    post(&h, "/api/play", json!({ "ref": magnet_link(&film) })).await;
+    let film = release(62, "film", &[("film.mkv", GIB), ("film.srt", 40_000)]);
+    h.network.publish(film.clone());
+    let id = film.id.to_hex();
+    post(&h, "/api/play", json!({ "ref": nzb_link(&h, &film) })).await;
     let event = events.event().await;
     assert_eq!(json!([event["event"], event["job"]["id"]]), json!(["job", id]));
     let (_, listing) = post(&h, "/api/files", json!({ "ref": prefix(&film) })).await;
@@ -426,12 +427,12 @@ async fn a_page_follows_and_changes_downloads() {
 #[tokio::test(flavor = "multi_thread")]
 async fn without_ffmpeg_a_file_goes_by_its_name_and_its_header() {
     let h = Harness::new();
-    h.swarm.set_rate(100 * GIB);
+    h.network.set_rate(100 * GIB);
     let clip = include_bytes!("../../../tests/fixtures/media/faststart.mp4");
-    let film = torrent(63, "film", &[("film.mp4", clip.len() as u64), ("film.mkv", 5_000)]);
-    h.swarm.publish(film.clone());
-    let id = film.info_hash.id().to_hex();
-    post(&h, "/api/play", json!({ "ref": magnet_link(&film), "file": 0 })).await;
+    let film = release(63, "film", &[("film.mp4", clip.len() as u64), ("film.mkv", 5_000)]);
+    h.network.publish(film.clone());
+    let id = film.id.to_hex();
+    post(&h, "/api/play", json!({ "ref": nzb_link(&h, &film), "file": 0 })).await;
     std::fs::create_dir_all(h.play_folder(&film).join("film")).unwrap();
     std::fs::write(h.play_folder(&film).join("film/film.mp4"), clip).unwrap();
     written(&h.play_folder(&film).join("film/film.mkv"), 5_000);
@@ -511,11 +512,11 @@ const FILM: &str = r#"{"streams":[
   ],"format":{"format_name":"matroska,webm","duration":"5400.0"}}"#;
 
 async fn playing(h: &Harness, n: u8) -> String {
-    let film = torrent(n, "film", &[("Film (2024).mkv", GIB), ("Film.srt", 40_000)]);
-    h.swarm.publish(film.clone());
-    let (status, playing) = post(h, "/api/play", json!({ "ref": magnet_link(&film) })).await;
+    let film = release(n, "film", &[("Film (2024).mkv", GIB), ("Film.srt", 40_000)]);
+    h.network.publish(film.clone());
+    let (status, playing) = post(h, "/api/play", json!({ "ref": nzb_link(h, &film) })).await;
     assert_eq!(status, 200, "{playing}");
-    film.info_hash.id().to_hex()
+    film.id.to_hex()
 }
 
 // Its ffmpeg and ffprobe stand-ins are shell scripts.
@@ -687,7 +688,7 @@ async fn the_first_file_to_convert_fetches_ffmpeg_once_for_everyone_who_asks() {
     let outside = Outside { fetch: Fetch::Build(build(url, &archive)), ..Outside::default() };
     let h = Harness::with_outside(fake::Search::new(fake::isos()), outside);
     // Without ffprobe the engine reads the file's header and its end for the duration.
-    h.swarm.set_rate(100 * GIB);
+    h.network.set_rate(100 * GIB);
     let id = playing(&h, 65).await;
     let (media_path, stream) =
         (format!("/api/media?id={id}&file=0"), format!("/api/stream?id={id}&file=0&t=0&video=copy"));
@@ -743,12 +744,12 @@ async fn a_title_whose_file_the_browser_cannot_read_starts_the_ffmpeg_fetch_as_i
     let calls = tempfile::tempdir().unwrap();
     let archive = archive(&calls.path().join("calls"), FILM, "true");
     let (url, asked) = serve(archive.clone()).await;
-    let film = torrent(0xb1, "Night.of.the.Living.Dead.1968.1080p.BluRay.x264", &[("Night.1968.1080p.mkv", 2 * GIB)]);
-    let listed = vec![titles::listed(&film, "knaben", Some(40))];
-    let search = fake::Search::scripted(listed, vec![fake::Source::answers("knaben", 0)], BTreeMap::new());
+    let film = release(0xb1, "Night.of.the.Living.Dead.1968.1080p.BluRay.x264", &[("Night.1968.1080p.mkv", 2 * GIB)]);
+    let listed = vec![titles::listed(&film, "geek", Some(40))];
+    let search = fake::Search::scripted(listed, vec![fake::Source::answers("geek", 0)], BTreeMap::new());
     let h = Harness::with_outside(search, Outside { fetch: Fetch::Build(build(url, &archive)), ..Outside::default() });
-    h.swarm.publish(film.clone());
-    h.swarm.set_rate(GIB);
+    h.network.publish(film.clone());
+    h.network.set_rate(GIB);
     let (_, _, body) = fetch(&h, "POST", "/api/title/play", &FETCH, r#"{"video":"tt0063350"}"#).await;
     let steps: Vec<String> = lines(&body).iter().map(titles::step).collect();
     assert_eq!(steps.last().map(String::as_str), Some("playing tt0063350 b1b1b1 file 0 at null"), "{steps:?}");
@@ -1030,13 +1031,13 @@ async fn a_matroska_film_plays_from_any_second_with_its_own_timestamps() {
     let made =
         tools.both().and_then(|_| film(h.dir.path(), &tools)).expect("this machine's ffmpeg makes the test film");
     *h.outside.tools.lock().unwrap() = tools;
-    h.swarm.set_rate(100 * GIB);
+    h.network.set_rate(100 * GIB);
     // "déjà vu" in Windows-1252, as old subtitle files are.
     let lines = b"1\n00:00:03,000 --> 00:00:04,000\nd\xE9j\xE0 vu\n";
-    let film = torrent(67, "film", &[("film.mkv", made.len() as u64), ("film.fr.srt", lines.len() as u64)]);
-    h.swarm.publish(film.clone());
-    let id = film.info_hash.id().to_hex();
-    let (status, playing) = post(&h, "/api/play", json!({ "ref": magnet_link(&film) })).await;
+    let film = release(67, "film", &[("film.mkv", made.len() as u64), ("film.fr.srt", lines.len() as u64)]);
+    h.network.publish(film.clone());
+    let id = film.id.to_hex();
+    let (status, playing) = post(&h, "/api/play", json!({ "ref": nzb_link(&h, &film) })).await;
     assert_eq!((status, &playing["subtitles"][0]["index"]), (200, &json!(1)), "{playing}");
     std::fs::create_dir_all(h.play_folder(&film).join("film")).unwrap();
     std::fs::write(h.play_folder(&film).join("film/film.mkv"), &made).unwrap();
@@ -1114,10 +1115,10 @@ async fn a_video_without_subtitles_gets_them_from_online_sources() {
     use torrential_search::subtitles::FileHash;
     let h = Harness::new();
     let size = 300_000;
-    let film = torrent(68, "Sintel (2010) [1080p]", &[("Sintel.2010.1080p.mkv", size), ("poster.jpg", 9_000)]);
-    h.swarm.publish(film.clone());
-    let id = film.info_hash.id().to_hex();
-    post(&h, "/api/play", json!({ "ref": magnet_link(&film) })).await;
+    let film = release(68, "Sintel (2010) [1080p]", &[("Sintel.2010.1080p.mkv", size), ("poster.jpg", 9_000)]);
+    h.network.publish(film.clone());
+    let id = film.id.to_hex();
+    post(&h, "/api/play", json!({ "ref": nzb_link(&h, &film) })).await;
     let bytes = written(&h.play_folder(&film).join("Sintel (2010) [1080p]/Sintel.2010.1080p.mkv"), size);
     let online = format!("/api/subtitles/online?id={id}&file=0");
 
@@ -1177,7 +1178,7 @@ async fn a_video_without_subtitles_gets_them_from_online_sources() {
 
     // Once the file's ends are on disk, the kept answer gives way to a search with its hash, for
     // subtitles timed for this exact file. That answer is the last.
-    h.swarm.set_rate(100 * GIB);
+    h.network.set_rate(100 * GIB);
     h.until("done", |jobs| jobs[0].status.name() == "done").await;
     let (_, found) = get(&h, &online).await;
     assert_eq!((&found["subtitles"][0]["id"], &found["subtitles"][0]["exact"]), (&json!("fake-eng-1"), &json!(true)));
@@ -1214,19 +1215,19 @@ async fn the_player_sees_which_parts_of_a_file_have_arrived_and_gets_pictures_on
     let h = Harness::new();
     let tools = StandIns::install(&h, FILM, "printf 'a jpeg'");
     // A film large enough that the bytes around one second are a small part of it.
-    // The fake swarm lands pieces in an order its ID decides. With this one, the pieces withheld
+    // The fake network lands pieces in an order its ID decides. With this one, the pieces withheld
     // below are all in the film's first third, so both of its ends arrive.
-    let film = torrent(99, "film", &[("extras.mkv", GIB), ("film.mkv", 20 * GIB)]);
-    h.swarm.publish(film.clone());
-    let id = film.info_hash.id().to_hex();
-    post(&h, "/api/play", json!({ "ref": magnet_link(&film), "file": 1 })).await;
+    let film = release(99, "film", &[("extras.mkv", GIB), ("film.mkv", 20 * GIB)]);
+    h.network.publish(film.clone());
+    let id = film.id.to_hex();
+    post(&h, "/api/play", json!({ "ref": nzb_link(&h, &film), "file": 1 })).await;
     assert_eq!(pieces(&h, &id).await, "0".repeat(200), "nothing has arrived");
     let not_read = thumbnail(&h, &id, 60).await;
     assert_eq!(error(&not_read).2, "no picture of film.mkv at 60 s: its tracks have not been read yet");
 
     // Some pieces never arrive, so the download stops partly done.
-    h.swarm.withhold(film.info_hash.id(), 24);
-    h.swarm.set_rate(1000 * GIB);
+    h.network.withhold(film.id, 24);
+    h.network.set_rate(1000 * GIB);
     h.until("all but the withheld pieces arrived", |jobs| jobs[0].progress.verified > 19 * GIB).await;
     get(&h, &format!("/api/media?id={id}&file=1")).await;
     let map = pieces(&h, &id).await;
@@ -1285,11 +1286,11 @@ async fn the_player_sees_which_parts_of_a_file_have_arrived_and_gets_pictures_on
 #[tokio::test(flavor = "multi_thread")]
 async fn a_finished_file_has_every_part_without_asking_the_engine() {
     let h = Harness::new();
-    h.swarm.set_rate(100 * GIB);
-    let film = torrent(70, "film", &[("film.mkv", 4 * super::MIB)]);
-    h.swarm.publish(film.clone());
-    let id = film.info_hash.id().to_hex();
-    post(&h, "/api/play", json!({ "ref": magnet_link(&film) })).await;
+    h.network.set_rate(100 * GIB);
+    let film = release(70, "film", &[("film.mkv", 4 * super::MIB)]);
+    h.network.publish(film.clone());
+    let id = film.id.to_hex();
+    post(&h, "/api/play", json!({ "ref": nzb_link(&h, &film) })).await;
     written(&h.play_folder(&film).join("film/film.mkv"), 4 * super::MIB);
     h.until("done", |jobs| jobs[0].status.name() == "done").await;
     assert_eq!(get(&h, &format!("/api/pieces?id={id}&file=0")).await, (200, json!({ "pieces": "8".repeat(200) })));
@@ -1307,7 +1308,7 @@ impl Page {
     }
 }
 
-async fn gone_from_the_engine(h: &Harness, ids: &[torrential_core::TorrentId]) -> bool {
+async fn gone_from_the_engine(h: &Harness, ids: &[torrential_core::DownloadId]) -> bool {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let mut held = Vec::new();
@@ -1353,15 +1354,15 @@ async fn a_title_plays_from_the_first_of_its_sources_that_starts_and_cleans_up_t
             "searched 4",
             "trying 1 of 4 Night.of.the.Living.Dead.1968.720p.BluRay.x264",
             "check file_list",
-            r#"skipped a1a1a1 {"reason":"no_file_list","waited_s":1,"text":"no peer sent its file list in 1s"}"#,
+            r#"skipped ua1a1a {"reason":"no_file_list","waited_s":1,"text":"its NZB did not arrive in 1s"}"#,
             "trying 2 of 4 Night.of.the.Living.Dead.1968.DVD9",
             "check file_list",
-            r#"skipped a2a2a2 {"reason":"no_video","text":"none of its files is the video"}"#,
+            r#"skipped ua2a2a {"reason":"no_video","text":"none of its files is the video"}"#,
             "trying 3 of 4 Night.of.the.Living.Dead.1968.1080p.WEB.x264",
             "check file_list",
             "check start",
             "check first_bytes",
-            r#"skipped a3a3a3 {"reason":"no_data","waited_s":1,"text":"no data arrived in 1s"}"#,
+            r#"skipped ua3a3a {"reason":"no_data","waited_s":1,"text":"no data arrived in 1s"}"#,
             "trying 4 of 4 night_of_the_living_dead",
             "check file_list",
             "check start",
@@ -1369,7 +1370,7 @@ async fn a_title_plays_from_the_first_of_its_sources_that_starts_and_cleans_up_t
             "playing tt0063350 a4a4a4 file 0 at null",
         ]
     );
-    let id = night[3].info_hash.id().to_hex();
+    let id = night[3].id.to_hex();
     let keys = |v: &Value| v.as_object().unwrap().keys().cloned().collect::<std::collections::BTreeSet<String>>();
     assert_eq!(keys(&playing), ["play", "release", "resume_at", "type", "video"].map(String::from).into());
     let play_keys: Vec<String> = keys(&playing["play"]).into_iter().collect();
@@ -1388,11 +1389,11 @@ async fn a_title_plays_from_the_first_of_its_sources_that_starts_and_cleans_up_t
         ])
     );
 
-    let tried: Vec<_> = night[..3].iter().map(|t| t.info_hash.id()).collect();
+    let tried: Vec<_> = night[..3].iter().map(|t| t.id).collect();
     assert!(gone_from_the_engine(&h, &tried).await, "no file list probe or trial is left in the engine");
     let (_, jobs) = get(&h, "/api/jobs").await;
     let listed: Vec<Value> = jobs["jobs"].as_array().unwrap().iter().map(|j| json!([j["id"], j["title"]])).collect();
-    assert_eq!(listed, [json!([id, { "title": "tt0063350", "span": "film", "release": id }])]);
+    assert_eq!(listed, [json!([id, { "title": "tt0063350", "span": "film", "release": format!("u{id}") }])]);
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1421,7 +1422,7 @@ async fn a_title_play_whose_download_goes_before_its_video_is_served_fails_with_
 async fn closing_the_connection_while_a_source_sends_nothing_pauses_its_download_and_keeps_what_it_wrote() {
     let (h, night) = titles::night();
     let third = h.play_folder(&night[2]).join("Night.of.the.Living.Dead.1968.1080p.WEB.x264");
-    let body = json!({ "video": "tt0063350", "source": night[2].info_hash.id().to_hex() }).to_string();
+    let body = json!({ "video": "tt0063350", "source": format!("u{}", night[2].id.to_hex()) }).to_string();
     let mut page = Page::open(&h).await;
     page.send("POST", "/api/title/play", &["Content-Type: application/json"], &body).await;
     assert_eq!(page.head().await.0, 200);
@@ -1705,19 +1706,15 @@ async fn titles_their_pictures_and_their_sources_come_from_the_catalog_and_the_s
     assert_eq!(status, 200);
     assert!(headers.contains("content-type: application/x-ndjson\n"), "{headers}");
     let done = lines(&body).pop().unwrap();
-    let sources: Vec<Value> = done["result"]["releases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|r| json!([r["name"], r["span"], r["swarm"]]))
-        .collect();
+    let sources: Vec<Value> =
+        done["result"]["releases"].as_array().unwrap().iter().map(|r| json!([r["name"], r["span"]])).collect();
     assert_eq!(
         sources,
         [
-            json!(["Night.of.the.Living.Dead.1968.720p.BluRay.x264", "film", "strong"]),
-            json!(["Night.of.the.Living.Dead.1968.DVD9", "film", "strong"]),
-            json!(["Night.of.the.Living.Dead.1968.1080p.WEB.x264", "film", "strong"]),
-            json!(["night_of_the_living_dead", "film", "strong"]),
+            json!(["Night.of.the.Living.Dead.1968.720p.BluRay.x264", "film"]),
+            json!(["Night.of.the.Living.Dead.1968.DVD9", "film"]),
+            json!(["Night.of.the.Living.Dead.1968.1080p.WEB.x264", "film"]),
+            json!(["night_of_the_living_dead", "film"]),
         ]
     );
     let profile = &done["result"]["query"]["profile"];
@@ -1735,10 +1732,10 @@ async fn titles_their_pictures_and_their_sources_come_from_the_catalog_and_the_s
     let (_, _, raw) = search(&h, json!({ "q": "night" })).await;
     let raw = lines(&raw).pop().unwrap();
     let raw = &raw["result"]["releases"][0];
-    assert!(raw.get("span").is_none() && raw.get("swarm").is_none(), "a torrent search names no span or swarm");
+    assert!(raw.get("span").is_none(), "a search by words names no span");
     assert_eq!(
         error(&post(&h, "/api/play", json!({ "ref": "tt0063350" })).await),
-        (404, "invalid_ref", "tt0063350 is a film or a series, not a torrent")
+        (404, "invalid_ref", "tt0063350 is a film or a series, not a release")
     );
     let (_, refused) = post(&h, "/api/play", json!({ "ref": "tt0063350" })).await;
     assert_eq!(refused["error"]["hint"], json!("play a film or a series with POST /api/title/play"));
@@ -1747,16 +1744,16 @@ async fn titles_their_pictures_and_their_sources_come_from_the_catalog_and_the_s
 #[tokio::test(flavor = "multi_thread")]
 async fn without_ffmpeg_the_browser_passes_over_a_matroska_film_that_a_media_player_plays() {
     use torrential_core::protocol::{Request, Response, TitleRequest};
-    let film = torrent(0xb1, "Night.of.the.Living.Dead.1968.1080p.BluRay.x264", &[("Night.1968.1080p.mkv", 2 * GIB)]);
-    let catalog = vec![titles::listed(&film, "archive.org", None)];
-    let script = vec![fake::Source::answers("archive.org", 0)];
+    let film = release(0xb1, "Night.of.the.Living.Dead.1968.1080p.BluRay.x264", &[("Night.1968.1080p.mkv", 2 * GIB)]);
+    let catalog = vec![titles::listed(&film, "hydra", None)];
+    let script = vec![fake::Source::answers("hydra", 0)];
     let h = Harness::with_search(fake::Search::scripted(catalog, script, Default::default()));
-    h.swarm.publish(film.clone());
-    h.swarm.set_rate(GIB);
+    h.network.publish(film.clone());
+    h.network.set_rate(GIB);
     let ask = r#"{"video":"tt0063350"}"#;
     let (status, _, body) = fetch(&h, "POST", "/api/title/play", &["Content-Type: application/json"], ask).await;
     let steps: Vec<String> = lines(&body).iter().map(titles::step).collect();
-    let skipped = r#"b1b1b1 {"reason":"unplayable","container":"mkv","text":"its .mkv file needs ffmpeg, which is not installed"}"#;
+    let skipped = r#"ub1b1b {"reason":"unplayable","container":"mkv","text":"its .mkv file needs ffmpeg, which is not installed"}"#;
     assert_eq!(
         (status, steps),
         (
@@ -1783,7 +1780,7 @@ async fn without_ffmpeg_the_browser_passes_over_a_matroska_film_that_a_media_pla
         panic!("the command line's play answers a title")
     };
     let streams: Vec<&str> = reply.streams.iter().map(|s| s.path.as_str()).collect();
-    assert_eq!((reply.job.id, streams, title.tried), (film.info_hash.id(), vec!["Night.1968.1080p.mkv"], vec![]));
+    assert_eq!((reply.job.id, streams, title.tried), (film.id, vec!["Night.1968.1080p.mkv"], vec![]));
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -1837,7 +1834,7 @@ async fn a_play_tries_a_titles_sources_in_the_order_listed_and_the_list_then_put
 
     let after = vec![
         (name(3), Value::Null),
-        (name(0), json!({ "reason": "no_file_list", "waited_s": 1, "text": "no peer sent its file list in 1s" })),
+        (name(0), json!({ "reason": "no_file_list", "waited_s": 1, "text": "its NZB did not arrive in 1s" })),
         (name(1), json!({ "reason": "no_video", "text": "none of its files is the video" })),
         (name(2), json!({ "reason": "no_data", "waited_s": 1, "text": "no data arrived in 1s" })),
     ];
@@ -1889,7 +1886,7 @@ async fn the_web_app_and_the_socket_read_the_same_title_page() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn with_title_lookups_off_title_search_says_so_and_torrent_search_still_works() {
+async fn with_title_lookups_off_title_search_says_so_and_release_search_still_works() {
     use torrential_search::catalog::CatalogConfig;
     let off = CatalogConfig { online: false, endpoint: None, imdb_endpoint: None, cache_dir: None };
     let catalog = std::sync::Arc::new(super::super::titles::catalog_port::Live::new(&off).unwrap());
@@ -1900,11 +1897,11 @@ async fn with_title_lookups_off_title_search_says_so_and_torrent_search_still_wo
         (400, "usage", "title lookups are off in config.yaml, and tt0063350 is not kept on this machine")
     );
     assert_eq!(fetch(&h, "GET", "/api/title/art?id=tt0063350&kind=poster", &[], "").await.0, 404);
-    let film = torrent(64, "film", &[("film.mp4", GIB)]);
-    h.swarm.publish(film.clone());
-    assert_eq!(post(&h, "/api/play", json!({ "ref": magnet_link(&film) })).await.0, 200);
+    let film = release(64, "film", &[("film.mp4", GIB)]);
+    h.network.publish(film.clone());
+    assert_eq!(post(&h, "/api/play", json!({ "ref": nzb_link(&h, &film) })).await.0, 200);
     let (_, jobs) = get(&h, "/api/jobs").await;
-    assert!(jobs["jobs"][0].get("title").is_none(), "a download made by playing a torrent names no title");
+    assert!(jobs["jobs"][0].get("title").is_none(), "a download made by playing a release names no title");
     let (status, _, body) = search(&h, json!({ "q": "ubuntu" })).await;
     let done = lines(&body).pop().unwrap();
     assert_eq!(
@@ -2013,10 +2010,9 @@ async fn first_tried(h: &Harness, on: &On, viewer: &Value) -> String {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_download_here_plays_first_only_where_the_browser_decodes_it_or_ffmpeg_converts_it() {
     let (h, night) = titles::night();
-    let hdr = torrent(0xb1, "Night.of.the.Living.Dead.1968.2160p.UHD.BluRay.REMUX.HDR.HEVC", &[("Night.mp4", MIB)]);
-    let remux = torrent(0xb2, "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC", &[("Night.mp4", MIB)]);
+    let hdr = release(0xb1, "Night.of.the.Living.Dead.1968.2160p.UHD.BluRay.REMUX.HDR.HEVC", &[("Night.mp4", MIB)]);
+    let remux = release(0xb2, "Night.of.the.Living.Dead.1968.1080p.BluRay.REMUX.AVC", &[("Night.mp4", MIB)]);
     for t in [&hdr, &remux] {
-        h.swarm.publish(t.clone());
         h.play_for(t, &[0], Some("tt0063350")).await.unwrap();
     }
     let (phone, tv) = (On::pair(&h).await, On::pair(&h).await);
@@ -2042,37 +2038,37 @@ async fn a_download_here_plays_first_only_where_the_browser_decodes_it_or_ffmpeg
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_download_here_plays_first_where_the_ffmpeg_that_converts_it_can_still_be_fetched() {
-    let hdr = torrent(0xb1, "Night.of.the.Living.Dead.1968.2160p.UHD.BluRay.REMUX.HDR.HEVC", &[("Night.mp4", MIB)]);
+    let hdr = release(0xb1, "Night.of.the.Living.Dead.1968.2160p.UHD.BluRay.REMUX.HDR.HEVC", &[("Night.mp4", MIB)]);
     let h264 = json!({ "width": 1920, "height": 1080, "scale": 1, "playback": "h264" });
     let pinned = build("http://127.0.0.1:9/ffmpeg.tar.xz".into(), b"");
     let (fetches, _) = titles::night_with(Outside { fetch: Fetch::Build(pinned.clone()), ..Outside::default() });
     let (off, night) = titles::night_with(Outside { fetch: Fetch::Off(pinned), ..Outside::default() });
     for h in [&fetches, &off] {
-        h.swarm.publish(hdr.clone());
         h.play_for(&hdr, &[0], Some("tt0063350")).await.unwrap();
     }
     assert_eq!(first_tried(&fetches, &On::Mac, &h264).await, hdr.name, "fetching ffmpeg costs less than a download");
     assert_eq!(first_tried(&off, &On::Mac, &h264).await, night[0].name, "config.yaml turns fetching off");
 }
 
-/// A Torznab indexer on this machine that answers every search with `releases`, each a torrent
-/// with the size and seeders it claims.
-async fn indexer(releases: &[(&fake::TorrentFile, u64, u32)]) -> String {
+/// A Newznab indexer on this machine that answers every search with `releases`, each an NZB with
+/// the size and grabs it claims.
+async fn indexer(releases: &[(&fake::Posting, u64, u32)]) -> String {
     let items: String = releases
         .iter()
-        .map(|(t, size, seeders)| {
+        .map(|(t, size, grabs)| {
             format!(
-                "<item><title>{}</title><size>{size}</size><category>2000</category>\
-                 <torznab:attr name=\"seeders\" value=\"{seeders}\" />\
-                 <torznab:attr name=\"infohash\" value=\"{}\" /></item>",
+                "<item><title>{}</title><link>https://indexer.example/get/{}.nzb</link>\
+                 <newznab:attr name=\"category\" value=\"2040\" />\
+                 <newznab:attr name=\"size\" value=\"{size}\" />\
+                 <newznab:attr name=\"grabs\" value=\"{grabs}\" /></item>",
                 t.name,
-                t.info_hash.id().to_hex()
+                t.id.to_hex()
             )
         })
         .collect();
     let feed = format!(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
-         <rss version=\"2.0\" xmlns:torznab=\"http://torznab.com/schemas/2015/feed\"><channel>{items}</channel></rss>"
+         <rss version=\"2.0\" xmlns:newznab=\"http://www.newznab.com/DTD/2010/feeds/attributes/\"><channel>{items}</channel></rss>"
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let url = format!("http://{}/api", listener.local_addr().unwrap());
@@ -2101,16 +2097,13 @@ async fn indexer(releases: &[(&fake::TorrentFile, u64, u32)]) -> String {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_phone_and_a_tv_on_the_home_network_each_get_the_copy_for_their_screen() {
-    let uhd = torrent(0xc1, "Night of the Living Dead 1968 2160p UHD BluRay x265 HDR", &[("Night.mp4", MIB)]);
-    let hd = torrent(0xc2, "Night of the Living Dead 1968 1080p BluRay x264", &[("Night.mp4", MIB)]);
-    let sd = torrent(0xc3, "Night Of The Living Dead 1968 720p BRRip x264", &[("Night.mp4", MIB)]);
+    let uhd = release(0xc1, "Night of the Living Dead 1968 2160p UHD BluRay x265 HDR", &[("Night.mp4", MIB)]);
+    let hd = release(0xc2, "Night of the Living Dead 1968 1080p BluRay x264", &[("Night.mp4", MIB)]);
+    let sd = release(0xc3, "Night Of The Living Dead 1968 720p BRRip x264", &[("Night.mp4", MIB)]);
     let url = indexer(&[(&uhd, 12 * GIB, 50), (&hd, 4 * GIB, 232), (&sd, 1700 * MIB, 22)]).await;
-    let builtin = ["archlinux", "ubuntu", "debian", "archive.org", "academictorrents", "knaben", "apibay", "nyaa"];
     let config = torrential_search::SearchConfig {
-        cache_dir: None,
-        torznab: vec![torrential_search::TorznabConfig { name: "home".into(), url, api_key: None }],
-        endpoints: std::collections::BTreeMap::new(),
-        disabled: builtin.map(String::from).to_vec(),
+        indexers: vec![torrential_search::IndexerConfig { name: "home".into(), url, api_key: None }],
+        disabled: Vec::new(),
     };
     let search = torrential_search::Search::new(&config, torrential_search::ResultCache::new()).unwrap();
     let search: Arc<dyn SearchPort> = Arc::new(search);
@@ -2139,7 +2132,7 @@ async fn a_phone_and_a_tv_on_the_home_network_each_get_the_copy_for_their_screen
         "phone and h264 in config.yaml are for this Mac"
     );
 
-    let _cast = h.running.ctx.devices.grant(uhd.info_hash.id(), 0, "Night.mp4").unwrap();
+    let _cast = h.running.ctx.devices.grant(uhd.id, 0, "Night.mp4").unwrap();
     let path = "/api/title/sources?video=tt0063350&width=3840&height=2160&scale=1&playback=hevc-hdr";
     let (status, _, body) = exchange(Page::to(&h, tv.ip()).await, "GET", path, &[], "").await;
     assert_eq!(

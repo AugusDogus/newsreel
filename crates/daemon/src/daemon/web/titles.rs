@@ -9,8 +9,8 @@ use tokio::sync::mpsc;
 use torrential_core::catalog::Episode;
 use torrential_core::time::now;
 use torrential_core::{
-    ArtKind, AttemptEvent, Decoders, Decoding, Error, ErrorCode, Playback, Player, Plays, Release, ReleaseId,
-    TitleCard, TitleId, TorrentId, VideoRef, Viewer, Watched,
+    ArtKind, AttemptEvent, Decoders, Decoding, DownloadId, Error, ErrorCode, Playback, Player, Plays, Release,
+    ResultId, TitleCard, TitleId, VideoRef, Viewer, Watched,
 };
 
 use super::super::ctx::Ctx;
@@ -211,9 +211,9 @@ pub(super) struct Play {
     /// What the browser decodes, from a tab opened before browsers reported their screen.
     playback: Option<Playback>,
     /// Play only this release.
-    source: Option<ReleaseId>,
+    source: Option<ResultId>,
     /// The download that stalled.
-    replace: Option<TorrentId>,
+    replace: Option<DownloadId>,
 }
 
 /// `POST /api/title/play`: a line of JSON for each step of the play, the last being `playing` or
@@ -291,7 +291,7 @@ pub struct Position {
     /// Seconds.
     position: f64,
     duration: Option<f64>,
-    release: Option<ReleaseId>,
+    release: Option<ResultId>,
     /// A word the tab made up for the video it plays. A tab that sends none is one tab.
     #[serde(default)]
     tab: String,

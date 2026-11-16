@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use torrential_core::protocol::Change;
 use torrential_core::{
-    Category, Error, ErrorCode, Job, Profile, Release, SearchQuery, SearchResult, Target, TorrentId,
+    Category, DownloadId, Error, ErrorCode, Job, Profile, Release, SearchQuery, SearchResult, Target,
 };
 
 use super::ctx::Ctx;
@@ -36,7 +36,6 @@ use super::owner::Command;
 use super::search_port::Progress;
 use super::subtitle_port::SubtitlePort;
 use crate::ffmpeg::fetch::{Fetching, Stage};
-use torrential_core::protocol::METADATA_WAIT;
 
 const NDJSON: &str = "application/x-ndjson";
 const VTT: &str = "text/vtt; charset=utf-8";
@@ -51,9 +50,9 @@ const MOST_RESULTS: u16 = 200;
 pub struct State {
     pub subtitles: Arc<dyn SubtitlePort>,
     /// What the online sources have for each file asked about, with where each subtitle is.
-    found: Mutex<Kept<(TorrentId, u32), Arc<online::Searched>>>,
+    found: Mutex<Kept<(DownloadId, u32), Arc<online::Searched>>>,
     /// Online subtitles as WebVTT, by file and subtitle ID.
-    converted: Mutex<Kept<(TorrentId, u32, String), Made>>,
+    converted: Mutex<Kept<(DownloadId, u32, String), Made>>,
 }
 
 impl State {
@@ -129,7 +128,7 @@ async fn respond(ctx: &Ctx, request: &Request, route: &str, asker: &Asker) -> Re
         }
         (Method::Post, "files") => {
             let Ref { reference } = body(request)?;
-            value(downloads::files(ctx, target(&reference)?, METADATA_WAIT).await?)
+            value(downloads::files(ctx, target(&reference)?).await?)
         }
         (Method::Post, "pause" | "resume" | "remove") => {
             let Refs { refs, delete } = body(request)?;
@@ -251,7 +250,7 @@ fn number<T: std::str::FromStr>(request: &Request, name: &str) -> Result<Option<
 }
 
 /// The `id` and `file` parameters: a download and the index of one of its files.
-fn file_of(request: &Request) -> Result<(TorrentId, u32), Error> {
+fn file_of(request: &Request) -> Result<(DownloadId, u32), Error> {
     let id = required(request, "id")?;
     let id = id.parse().map_err(|_| Error::new(ErrorCode::InvalidRef, format!("{id} is not a download's full ID")))?;
     let file =
@@ -259,16 +258,16 @@ fn file_of(request: &Request) -> Result<(TorrentId, u32), Error> {
     Ok((id, file))
 }
 
-/// What a page may name: a download or search result ID, an infohash, a magnet link, or the URL of
-/// a .torrent file. Never a file on this machine.
+/// What a page may name: a download or search result ID, or an NZB URL. Never a file on this
+/// machine.
 fn target(reference: &str) -> Result<Target, Error> {
     match Target::parse(reference, std::path::Path::new("/"))? {
-        Target::TorrentFile(_) => {
-            Err(Error::new(ErrorCode::InvalidRef, "the web app cannot open a .torrent file by its path")
-                .with_hint("use the torrent's magnet link, or run torrential get with the file"))
+        Target::NzbFile(_) => {
+            Err(Error::new(ErrorCode::InvalidRef, "the web app cannot open an .nzb file by its path")
+                .with_hint("use the NZB's URL, or run torrential get with the file"))
         }
         Target::Title(video) => {
-            Err(Error::new(ErrorCode::InvalidRef, format!("{video} is a film or a series, not a torrent"))
+            Err(Error::new(ErrorCode::InvalidRef, format!("{video} is a film or a series, not a release"))
                 .with_hint("play a film or a series with POST /api/title/play"))
         }
         target => Ok(target),
@@ -282,11 +281,10 @@ fn status(code: ErrorCode) -> &'static str {
         Usage | ConfirmationRequired => "400 Bad Request",
         NotPaired => "401 Unauthorized",
         LocalOnly => "403 Forbidden",
-        InvalidRef | InvalidTorrent | NotFound | NoSelection => "404 Not Found",
+        InvalidRef | InvalidRelease | NotFound | NoSelection => "404 Not Found",
         AmbiguousRef | JobConflict | PathConflict => "409 Conflict",
         TooLarge => "413 Content Too Large",
         FetchFailed => "502 Bad Gateway",
-        MetadataTimeout => "504 Gateway Timeout",
         ProvidersUnavailable | NetworkUnavailable | NoSource | Interrupted => "503 Service Unavailable",
         SandboxNetworkBlocked | SandboxWriteBlocked | DaemonUnavailable | DaemonVersion => "503 Service Unavailable",
         DiskFull => "507 Insufficient Storage",
@@ -395,7 +393,7 @@ async fn follow(conn: &mut Connection<'_>, mut stage: tokio::sync::watch::Receiv
     }
 }
 
-/// What `POST /api/search` takes. A search can fetch .torrent files and keep fetching after it
+/// What `POST /api/search` takes. A search can fetch NZBs and keep fetching after it
 /// answers, so it is a JSON POST, which another website cannot make without a preflight.
 #[derive(Deserialize)]
 struct Search {
@@ -443,20 +441,19 @@ mod tests {
     #[test]
     fn a_page_cannot_name_a_file_on_this_machine() {
         let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("film.torrent");
-        std::fs::write(&file, "d4:infod4:name1:aee").unwrap();
+        let file = dir.path().join("film.nzb");
+        std::fs::write(&file, "<nzb/>").unwrap();
         let path = file.display().to_string();
         assert_eq!(target(&path).unwrap_err().code, ErrorCode::InvalidRef);
         assert_eq!(target("9b5212").unwrap(), Target::Prefix("9b5212".into()));
-        assert!(matches!(target("magnet:?xt=urn:btih:9b5212").unwrap(), Target::Magnet(_)));
-        assert!(matches!(target("https://example.org/a.torrent").unwrap(), Target::TorrentUrl(_)));
+        assert!(matches!(target("https://example.org/api?t=get&id=7").unwrap(), Target::NzbUrl(_)));
         assert_eq!(target("film").unwrap_err().code, ErrorCode::InvalidRef);
         let title = target("tt0063350").unwrap_err();
         assert_eq!(
             (title.code, title.message, title.hint),
             (
                 ErrorCode::InvalidRef,
-                "tt0063350 is a film or a series, not a torrent".into(),
+                "tt0063350 is a film or a series, not a release".into(),
                 Some("play a film or a series with POST /api/title/play".into())
             )
         );

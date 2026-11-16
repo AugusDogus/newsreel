@@ -71,9 +71,9 @@ const FIELDS: [FieldSchema; 8] = [
     FieldSchema {
         name: "progress.piece_map",
         help: "Where a download's data has arrived, in status, wait, and the TUI's watch stream: 64 characters, one \
-               per equal run of the torrent's pieces in order. 0 to 8 are eighths of the run's selected pieces that \
-               passed their hash check, and - is a run with no selected piece. Absent before the engine first samples \
-               it, which needs the file list, and once the download is done",
+               per equal run of the release's pieces in order. 0 to 8 are eighths of the run's selected pieces that \
+               arrived intact, and - is a run with no selected piece. Absent before the engine first samples \
+               it, and once the download is done",
     },
     FieldSchema {
         name: "result.releases[].quality",
@@ -88,7 +88,7 @@ const FIELDS: [FieldSchema; 8] = [
                setup saves. room, arch, and language are detected, and room is the bytes a download may take in the \
                download folder. detected is null until the engine finishes detecting the machine after it starts. \
                Within equal relevance, results that fit max_size, the room, and the player come first, then \
-               official and lawful sources, then the resolution closest to the screen, then the machine's CPU \
+               releases TRaSH Guides does not list to avoid, then the resolution closest to the screen, then the machine's CPU \
                architecture, then releases in the system language",
     },
     FieldSchema {
@@ -217,10 +217,10 @@ mod tests {
         let files = get["flags"].as_array().unwrap().iter().find(|f| f["name"] == "--files").unwrap();
         assert_eq!(files["repeatable"], true);
         assert_eq!(files["value_name"], "GLOB");
-        let wait = named(&s, "wait");
-        let until = wait["flags"].as_array().unwrap().iter().find(|f| f["name"] == "--until").unwrap();
-        assert_eq!(until["values"], serde_json::json!(["done", "metadata"]));
-        assert_eq!(until["default"], "done");
+        let search = named(&s, "search");
+        let sort = search["flags"].as_array().unwrap().iter().find(|f| f["name"] == "--sort").unwrap();
+        assert_eq!(sort["values"], serde_json::json!(["relevance", "grabs", "size", "age"]));
+        assert_eq!(sort["default"], "relevance");
         assert_eq!(s["global_flags"][0]["name"], "--json");
     }
 }

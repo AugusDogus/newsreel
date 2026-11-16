@@ -20,12 +20,12 @@ use torrential_daemon::paths::Paths;
 use torrential_daemon::update::Audience;
 use torrential_daemon::{daemon, service};
 
-const SHORT_HELP: &str = "torrential searches torrent indexes and downloads torrents.
+const SHORT_HELP: &str = "torrential searches Usenet indexers, and downloads or streams releases.
 
-  torrential search <words>       search for torrents
+  torrential search <words>       search for releases
   torrential titles <words>       find a film or series
-  torrential play <ID>            play a film, an episode, or a torrent's video
-  torrential files <ID>           list a torrent's files
+  torrential play <ID>            play a film, an episode, or a release's video
+  torrential files <ID>           list a release's files
   torrential get <ID>             start a download
   torrential wait <ID>            follow a download until it finishes
   torrential status               list downloads

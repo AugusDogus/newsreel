@@ -3,12 +3,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use torrential_core::{Error, InfoHash, Job, JobStatus, PieceMap, Place, Progress, Selection, TitleLink, TorrentId};
+use torrential_core::{DownloadId, Error, Job, JobStatus, PieceMap, Place, Progress, Selection, TitleLink};
 
 use super::admission::Cap;
 use super::engine_port::Stats;
 use super::files;
-use super::metainfo::Metainfo;
+use super::layout::Layout;
 
 const ETA_AFTER: Duration = Duration::from_secs(10);
 
@@ -28,7 +28,6 @@ pub enum Observed {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Phase {
-    Metadata,
     Checking,
     Downloading,
     Pausing,
@@ -49,7 +48,6 @@ pub fn status(intent: &Intent, observed: Observed) -> JobStatus {
         (Intent::Failed { error }, _) => JobStatus::Error { error: error.clone() },
         (Intent::Paused, _) => JobStatus::Paused,
         (Intent::Running, Observed::Absent | Observed::InEngine(Phase::Paused)) => JobStatus::Queued,
-        (Intent::Running, Observed::InEngine(Phase::Metadata)) => JobStatus::Metadata,
         (Intent::Running, Observed::InEngine(Phase::Downloading | Phase::Pausing | Phase::Finishing { .. })) => {
             JobStatus::Downloading
         }
@@ -58,10 +56,7 @@ pub fn status(intent: &Intent, observed: Observed) -> JobStatus {
 
 impl Observed {
     pub fn occupies_slot(self) -> bool {
-        matches!(
-            self,
-            Observed::InEngine(Phase::Metadata | Phase::Checking | Phase::Downloading | Phase::Finishing { .. })
-        )
+        matches!(self, Observed::InEngine(Phase::Checking | Phase::Downloading | Phase::Finishing { .. }))
     }
 
     pub fn in_engine(self) -> bool {
@@ -71,13 +66,11 @@ impl Observed {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct JobRecord {
-    pub id: TorrentId,
-    pub info_hash: InfoHash,
-    pub name: Option<String>,
+    pub id: DownloadId,
+    pub name: String,
     pub dir: PathBuf,
     pub selection: Selection,
     pub cap: Cap,
-    pub magnet: Option<String>,
     pub added_at: i64,
     pub intent: Intent,
     pub verified: u64,
@@ -118,7 +111,7 @@ pub struct Linked {
 #[derive(Clone, Debug)]
 pub struct JobEntry {
     pub record: JobRecord,
-    pub metainfo: Option<Arc<Metainfo>>,
+    pub layout: Arc<Layout>,
     pub observed: Observed,
     pub stats: Stats,
     receiving_since: Option<Instant>,
@@ -129,10 +122,10 @@ pub struct JobEntry {
 }
 
 impl JobEntry {
-    pub fn new(record: JobRecord, metainfo: Option<Arc<Metainfo>>, observed: Observed) -> Self {
+    pub fn new(record: JobRecord, layout: Arc<Layout>, observed: Observed) -> Self {
         Self {
             record,
-            metainfo,
+            layout,
             observed,
             stats: Stats::default(),
             receiving_since: None,
@@ -148,7 +141,7 @@ impl JobEntry {
         self.rate_settled = self.receiving_since.is_some_and(|since| at - since >= ETA_AFTER);
         let downloading = self.observed == Observed::InEngine(Phase::Downloading);
         let unsourced = stats.missing.is_some_and(|m| m.pieces > 0 && m.unavailable == m.pieces);
-        match (downloading, stats.peers > 0, unsourced) {
+        match (downloading, stats.connections > 0, unsourced) {
             (false, ..) | (true, true, false) => self.forget_sources(),
             (true, false, _) => self.unsourced_at = None,
             (true, true, true) => {
@@ -172,32 +165,32 @@ impl JobEntry {
         matches!(self.record.intent, Intent::Failed { .. }) && self.observed == Observed::InEngine(Phase::Paused)
     }
 
-    pub fn id(&self) -> TorrentId {
+    pub fn id(&self) -> DownloadId {
         self.record.id
     }
 
     pub fn wanted(&self) -> Option<Vec<bool>> {
-        files::wanted(self.metainfo.as_deref()?, &self.record.selection).ok()
+        files::wanted(&self.layout, &self.record.selection).ok()
     }
 
-    fn path(&self) -> Option<PathBuf> {
-        let targets =
-            self.metainfo.as_deref().zip(self.wanted()).map(|(m, wanted)| files::targets(m, &self.record.dir, &wanted));
+    fn path(&self) -> PathBuf {
+        let targets = self.wanted().map(|wanted| files::targets(&self.layout, &self.record.dir, &wanted));
         match targets.as_deref() {
-            Some([only]) => Some(only.clone()),
-            _ => self.record.name.as_ref().map(|n| files::root(&self.record.dir, n)),
+            Some([only]) => only.clone(),
+            _ => files::root(&self.record.dir, &self.record.name),
         }
     }
 
-    pub fn selected_size(&self) -> Option<u64> {
-        let metainfo = self.metainfo.as_deref()?;
-        let wanted = self.wanted()?;
-        Some(metainfo.files.iter().zip(wanted).filter(|(_, w)| *w).map(|(f, _)| f.size).sum())
+    /// Bytes in the selected files. Zero when the selection does not compile, which `get`
+    /// refuses before a download exists.
+    pub fn selected_size(&self) -> u64 {
+        let wanted = self.wanted().unwrap_or_default();
+        self.layout.files.iter().zip(wanted).filter(|(_, w)| *w).map(|(f, _)| f.size).sum()
     }
 
     pub fn verified(&self) -> u64 {
         match (&self.record.intent, self.observed) {
-            (Intent::Done { .. }, _) => self.selected_size().unwrap_or(self.record.verified),
+            (Intent::Done { .. }, _) => self.selected_size(),
             (_, Observed::InEngine(_)) => self.stats.verified.max(self.record.verified),
             _ => self.record.verified,
         }
@@ -213,27 +206,22 @@ impl JobEntry {
 
     pub fn remaining(&self) -> u64 {
         match self.record.intent {
-            Intent::Running => self.selected_size().map_or(0, |size| size.saturating_sub(self.verified())),
+            Intent::Running => self.selected_size().saturating_sub(self.verified()),
             _ => 0,
         }
     }
 
     pub fn view(&self) -> Job {
         let status = status(&self.record.intent, self.observed);
-        let transferring = matches!(status, JobStatus::Metadata | JobStatus::Downloading);
+        let transferring = status == JobStatus::Downloading;
         let size = self.selected_size();
         let verified = self.verified();
         let s = if transferring { self.stats } else { Stats::default() };
-        let eta = match size {
-            Some(size) if s.down_rate > 0 && self.rate_settled && self.unsourced_at.is_none() => {
-                Some(size.saturating_sub(verified).div_ceil(s.down_rate))
-            }
-            _ => None,
-        };
+        let eta = (s.down_rate > 0 && self.rate_settled && self.unsourced_at.is_none())
+            .then(|| size.saturating_sub(verified).div_ceil(s.down_rate));
         Job {
             id: self.record.id,
-            info_hash: self.record.info_hash,
-            name: self.record.name.as_deref().map(torrential_core::text::sanitize),
+            name: torrential_core::text::sanitize(&self.record.name),
             dir: self.record.dir.clone(),
             path: self.path(),
             status,
@@ -242,9 +230,7 @@ impl JobEntry {
                 verified,
                 piece_map: self.piece_map(),
                 down_rate: s.down_rate,
-                up_rate: s.up_rate,
-                peers: s.peers,
-                seeds: s.seeds,
+                connections: s.connections,
                 eta,
             },
             selection: self.record.selection.clone(),
@@ -262,8 +248,8 @@ impl JobEntry {
 pub fn to_start<'a>(
     jobs: impl Iterator<Item = &'a JobEntry>,
     max_active: usize,
-    streamed: &BTreeSet<TorrentId>,
-) -> Vec<TorrentId> {
+    streamed: &BTreeSet<DownloadId>,
+) -> Vec<DownloadId> {
     let (mut now, mut waiting) = (Vec::new(), Vec::new());
     let mut active = 0;
     for job in jobs {
@@ -289,14 +275,14 @@ pub use crate::folder::Identity;
 
 const STEM: usize = 16;
 
-/// The name of a play's folder: the first 16 hex digits of its torrent's ID, a dash, and a
+/// The name of a play's folder: the first 16 hex digits of its download's ID, a dash, and a
 /// number. Always one part of a path.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct PlayName(String);
 
 impl PlayName {
     /// The `n`th name for a play of `id`.
-    pub fn new(id: TorrentId, n: u32) -> Self {
+    pub fn new(id: DownloadId, n: u32) -> Self {
         Self(format!("{}-{n}", &id.to_hex()[..STEM]))
     }
 
@@ -319,19 +305,19 @@ impl PlayName {
 mod tests {
     use super::*;
     use crate::daemon::engine_port::Missing;
-    use crate::daemon::metainfo::MetaFile;
+    use crate::daemon::layout::LayoutFile;
     use torrential_core::ErrorCode;
 
     fn entry(n: u8, added_at: i64, intent: Intent, observed: Observed) -> JobEntry {
-        let id = TorrentId::from_bytes([n; 20]);
+        let id = DownloadId::from_bytes([n; 20]);
+        let files = vec![LayoutFile { path: "film.mp4".into(), size: 600 << 20 }];
+        let layout = Layout::new(id, "film.mp4".into(), files, true, Vec::new()).unwrap();
         let record = JobRecord {
             id,
-            info_hash: InfoHash::V1([n; 20]),
-            name: None,
+            name: "film.mp4".into(),
             dir: PathBuf::from("/d"),
             selection: Selection::All,
             cap: Cap { bytes: 1, from_setup: false },
-            magnet: None,
             added_at,
             intent,
             verified: 0,
@@ -340,15 +326,12 @@ mod tests {
             title: None,
             home: Home::Folder,
         };
-        JobEntry::new(record, None, observed)
+        JobEntry::new(record, Arc::new(layout), observed)
     }
 
     #[test]
     fn an_eta_waits_until_the_rate_has_held_for_ten_seconds() {
         let mut job = entry(1, 0, Intent::Running, Observed::InEngine(Phase::Downloading));
-        let film = MetaFile { path: "film.mp4".into(), size: 600 << 20 };
-        let metainfo = Metainfo::new(job.record.info_hash, "film.mp4".into(), vec![film], true, Vec::new()).unwrap();
-        job.metainfo = Some(Arc::new(metainfo));
         let start = Instant::now();
         let mut etas = Vec::new();
         for (second, down_rate) in [(0, 1 << 20), (9, 2 << 20), (10, 10 << 20), (11, 0), (12, 10 << 20), (22, 10 << 20)]
@@ -358,7 +341,7 @@ mod tests {
         }
         assert_eq!(etas, [None, None, Some(60), None, None, Some(60)]);
         let missing = Some(Missing { pieces: 2, unavailable: 2 });
-        let stats = Stats { down_rate: 10 << 20, missing, peers: 2, ..Stats::default() };
+        let stats = Stats { down_rate: 10 << 20, missing, connections: 2, ..Stats::default() };
         job.sample(stats, start + Duration::from_secs(23));
         assert_eq!(job.view().progress.eta, None, "bytes arrive, but no source has the pieces still missing");
     }
@@ -366,26 +349,27 @@ mod tests {
     #[test]
     fn the_path_is_the_file_when_one_file_is_picked() {
         let mut job = entry(1, 0, Intent::Running, Observed::Absent);
-        let files = vec![MetaFile { path: "bbb.mp4".into(), size: 1 }, MetaFile { path: "bbb.mov".into(), size: 1 }];
-        let metainfo = Metainfo::new(job.record.info_hash, "Big Buck Bunny".into(), files, false, Vec::new()).unwrap();
-        job.metainfo = Some(Arc::new(metainfo));
-        job.record.name = Some("Big Buck Bunny".into());
-        assert_eq!(job.view().path, Some(PathBuf::from("/d/Big Buck Bunny")));
+        let files =
+            vec![LayoutFile { path: "bbb.mp4".into(), size: 1 }, LayoutFile { path: "bbb.mov".into(), size: 1 }];
+        let layout = Layout::new(job.id(), "Big Buck Bunny".into(), files, false, Vec::new()).unwrap();
+        job.layout = Arc::new(layout);
+        job.record.name = "Big Buck Bunny".into();
+        assert_eq!(job.view().path, PathBuf::from("/d/Big Buck Bunny"));
         job.record.selection = Selection::Patterns(vec!["*.mp4".into()]);
-        assert_eq!(job.view().path, Some(PathBuf::from("/d/Big Buck Bunny/bbb.mp4")));
+        assert_eq!(job.view().path, PathBuf::from("/d/Big Buck Bunny/bbb.mp4"));
     }
 
     #[test]
     fn only_connected_time_without_a_source_for_any_missing_piece_counts() {
         let mut job = entry(1, 0, Intent::Running, Observed::InEngine(Phase::Downloading));
         let start = Instant::now();
-        let sample = |job: &mut JobEntry, second, peers, unavailable| {
+        let sample = |job: &mut JobEntry, second, connections, unavailable| {
             let missing = Some(Missing { pieces: 2, unavailable });
-            job.sample(Stats { peers, missing, ..Stats::default() }, start + Duration::from_secs(second));
+            job.sample(Stats { connections, missing, ..Stats::default() }, start + Duration::from_secs(second));
             job.unsourced_for().map(|d| d.as_secs())
         };
         assert_eq!(sample(&mut job, 0, 0, 2), None, "nothing connected");
-        assert_eq!(sample(&mut job, 1, 2, 1), None, "a peer has one of the pieces");
+        assert_eq!(sample(&mut job, 1, 2, 1), None, "a server has one of the pieces");
         assert_eq!(sample(&mut job, 2, 2, 2), Some(0));
         assert_eq!(sample(&mut job, 5, 2, 2), Some(3));
         assert_eq!(sample(&mut job, 6, 0, 2), None, "nothing connected to ask");

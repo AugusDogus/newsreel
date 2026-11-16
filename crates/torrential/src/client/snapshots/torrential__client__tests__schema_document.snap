@@ -43,8 +43,8 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
           ]
         },
         {
-          "name": "--min-seeds",
-          "help": "Hide results with fewer reported seeders, and results with unknown seeders",
+          "name": "--min-grabs",
+          "help": "Hide results with fewer reported grabs, and results with unknown grabs",
           "takes_value": true,
           "repeatable": false,
           "value_name": "N"
@@ -58,13 +58,13 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
         },
         {
           "name": "--sort",
-          "help": "Sort order. The default, relevance, ranks match quality above seed count",
+          "help": "Sort order. The default, relevance, ranks match quality above grabs",
           "takes_value": true,
           "repeatable": false,
           "value_name": "SORT",
           "values": [
             "relevance",
-            "seeds",
+            "grabs",
             "size",
             "age"
           ],
@@ -128,7 +128,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
     },
     {
       "name": "sources",
-      "about": "List the torrents of a film or an episode, in the order play tries them",
+      "about": "List the releases of a film or an episode, in the order play tries them",
       "arguments": [
         {
           "name": "VIDEO",
@@ -147,11 +147,11 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
     },
     {
       "name": "files",
-      "about": "List the files in a torrent, fetching its metadata if needed",
+      "about": "List the files in a release, reading its NZB if needed",
       "arguments": [
         {
           "name": "REF",
-          "help": "An ID prefix, infohash, magnet link, .torrent file, or .torrent URL",
+          "help": "An ID prefix, .nzb file, or NZB URL",
           "required": true,
           "repeatable": false
         }
@@ -172,7 +172,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
       "arguments": [
         {
           "name": "REF",
-          "help": "An ID prefix, infohash, magnet link, .torrent file, or .torrent URL, or a title ID such as tt0063350 or tt0903747:3:5",
+          "help": "An ID prefix, .nzb file, or NZB URL, or a title ID such as tt0063350 or tt0903747:3:5",
           "required": true,
           "repeatable": false
         },
@@ -186,7 +186,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
       "flags": [
         {
           "name": "--source",
-          "help": "With a title ID, download only this one of its torrents, by an ID from torrential sources",
+          "help": "With a title ID, download only this one of its releases, by an ID from torrential sources",
           "takes_value": true,
           "repeatable": false,
           "value_name": "ID"
@@ -226,7 +226,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
       "arguments": [
         {
           "name": "WORDS",
-          "help": "A title ID such as tt0063350, tt0903747:3:5, or tt0903747 s03e05, a download or search result ID, magnet link, infohash, or .torrent file or URL, or words to search for",
+          "help": "A title ID such as tt0063350, tt0903747:3:5, or tt0903747 s03e05, a download or search result ID, an .nzb file or URL, or words to search for",
           "required": true,
           "repeatable": true
         }
@@ -234,7 +234,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
       "flags": [
         {
           "name": "--source",
-          "help": "With a title ID, play only this one of its torrents, by an ID from torrential sources",
+          "help": "With a title ID, play only this one of its releases, by an ID from torrential sources",
           "takes_value": true,
           "repeatable": false,
           "value_name": "ID"
@@ -308,11 +308,11 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
         },
         {
           "name": "play",
-          "about": "Play a film, an episode, or a torrent's video on a TV",
+          "about": "Play a film, an episode, or a release's video on a TV",
           "arguments": [
             {
               "name": "WORDS",
-              "help": "A title ID such as tt0063350, tt0903747:3:5, or tt0903747 s03e05, or a download or search result ID, magnet link, infohash, or .torrent file or URL",
+              "help": "A title ID such as tt0063350, tt0903747:3:5, or tt0903747 s03e05, or a download or search result ID, or an .nzb file or URL",
               "required": true,
               "repeatable": true
             }
@@ -327,21 +327,21 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
             },
             {
               "name": "--source",
-              "help": "With a title ID, play only this one of its torrents, by an ID from torrential sources",
+              "help": "With a title ID, play only this one of its releases, by an ID from torrential sources",
               "takes_value": true,
               "repeatable": false,
               "value_name": "ID"
             },
             {
               "name": "--file",
-              "help": "With a torrent, the index of the file to play, from torrential files",
+              "help": "With a release, the index of the file to play, from torrential files",
               "takes_value": true,
               "repeatable": false,
               "value_name": "INDEX"
             },
             {
               "name": "--subtitle",
-              "help": "The index of a subtitle file of the same torrent to show, from torrential files",
+              "help": "The index of a subtitle file of the same release to show, from torrential files",
               "takes_value": true,
               "repeatable": false,
               "value_name": "INDEX"
@@ -466,18 +466,6 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
         }
       ],
       "flags": [
-        {
-          "name": "--until",
-          "help": "Stop when the download is done, or as soon as its file list is available",
-          "takes_value": true,
-          "repeatable": false,
-          "value_name": "UNTIL",
-          "values": [
-            "done",
-            "metadata"
-          ],
-          "default": "done"
-        },
         {
           "name": "--timeout",
           "help": "Stop waiting after this long. Defaults to 100s, or no limit in an interactive terminal",
@@ -880,7 +868,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
       "retryable": false
     },
     {
-      "code": "invalid_torrent",
+      "code": "invalid_release",
       "exit": 3,
       "retryable": false
     },
@@ -906,11 +894,6 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
     },
     {
       "code": "providers_unavailable",
-      "exit": 5,
-      "retryable": true
-    },
-    {
-      "code": "metadata_timeout",
       "exit": 5,
       "retryable": true
     },
@@ -1003,7 +986,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
   "fields": [
     {
       "name": "progress.piece_map",
-      "help": "Where a download's data has arrived, in status, wait, and the TUI's watch stream: 64 characters, one per equal run of the torrent's pieces in order. 0 to 8 are eighths of the run's selected pieces that passed their hash check, and - is a run with no selected piece. Absent before the engine first samples it, which needs the file list, and once the download is done"
+      "help": "Where a download's data has arrived, in status, wait, and the TUI's watch stream: 64 characters, one per equal run of the release's pieces in order. 0 to 8 are eighths of the run's selected pieces that arrived intact, and - is a run with no selected piece. Absent before the engine first samples it, and once the download is done"
     },
     {
       "name": "result.releases[].quality",
@@ -1011,7 +994,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
     },
     {
       "name": "result.query.profile",
-      "help": "What the results were ranked for. screen and playback each carry a value and a source, detected or override, and are null when nothing is known. max_size comes from the preferences that torrential setup saves. room, arch, and language are detected, and room is the bytes a download may take in the download folder. detected is null until the engine finishes detecting the machine after it starts. Within equal relevance, results that fit max_size, the room, and the player come first, then official and lawful sources, then the resolution closest to the screen, then the machine's CPU architecture, then releases in the system language"
+      "help": "What the results were ranked for. screen and playback each carry a value and a source, detected or override, and are null when nothing is known. max_size comes from the preferences that torrential setup saves. room, arch, and language are detected, and room is the bytes a download may take in the download folder. detected is null until the engine finishes detecting the machine after it starts. Within equal relevance, results that fit max_size, the room, and the player come first, then releases TRaSH Guides does not list to avoid, then the resolution closest to the screen, then the machine's CPU architecture, then releases in the system language"
     },
     {
       "name": "result.releases[].span",

@@ -1,5 +1,6 @@
 ---
 source: crates/tui/src/tests/render.rs
+assertion_line: 29
 expression: shot(&scenario(size))
 ---
 "  torrential                      ↓ 10.0 MiB/s "
@@ -15,7 +16,7 @@ expression: shot(&scenario(size))
 "│                                              "
 "│ ranked for this Mac: 1080p screen, HDR  size "
 "● Night of the Living Dead (1968)      1.3 GiB "
-"│   archive.org · public domain                "
+"│   geek                                       "
 "│   9y ago                                     "
 "│ Night of the…Dead (1968) [DVD]       3.4 GiB "
 "│ Night of the…Dead (1968) colorized   734 MiB "

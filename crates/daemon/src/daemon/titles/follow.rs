@@ -10,7 +10,7 @@ use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
 use torrential_core::time::now;
 use torrential_core::watching::SAVE_EVERY;
-use torrential_core::{ReleaseId, VideoRef, Watched};
+use torrential_core::{ResultId, VideoRef, Watched};
 
 use super::watching::{Screen, Watching};
 use crate::log::log;
@@ -26,7 +26,7 @@ const OBSERVED: [&str; 3] = ["time-pos", "duration", "pause"];
 static PLAYERS: AtomicU64 = AtomicU64::new(0);
 
 /// Follows the player at `socket` playing `video` until the player quits, keeping its place.
-pub fn follow(watching: Arc<Watching>, video: VideoRef, release: Option<ReleaseId>, socket: PathBuf) {
+pub fn follow(watching: Arc<Watching>, video: VideoRef, release: Option<ResultId>, socket: PathBuf) {
     let screen = Screen::Player(PLAYERS.fetch_add(1, Ordering::Relaxed));
     tokio::spawn(async move {
         let Some(stream) = open(&socket).await else {
@@ -72,7 +72,7 @@ struct Follower<'a> {
     watching: &'a Watching,
     screen: &'a Screen,
     video: &'a VideoRef,
-    release: Option<ReleaseId>,
+    release: Option<ResultId>,
 }
 
 /// What the player last said.

@@ -1,6 +1,6 @@
 [package]
 name = "torrential"
-description = "Search torrent indexes and download torrents from a terminal or a coding agent"
+description = "Search Usenet indexers, and download or stream releases, from a terminal or a coding agent"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -29,10 +29,10 @@ tokio = { version = "1.53", features = ["rt"] }
 url = "2.5"
 
 [dev-dependencies]
+torrential-usenet = { path = "../usenet", features = ["fake"] }
 assert_cmd = "2.2"
 flate2 = "1"
 insta = { version = "1.49", features = ["json"] }
 sha2 = "0.10"
 tar = { version = "0.4", default-features = false }
 tempfile = "3.27"
-torrential-engine = { path = "../engine" }

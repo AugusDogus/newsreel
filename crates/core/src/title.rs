@@ -1,4 +1,4 @@
-//! Reads which film or episode a video is from the names in its torrent, and tells a wanted
+//! Reads which film or episode a video is from the names in its release, and tells a wanted
 //! title's releases from others.
 
 use std::fmt;
@@ -32,15 +32,15 @@ pub fn title_name(card: &TitleCard, episode: Option<Episode>) -> String {
     }
 }
 
-/// What a file in a torrent is, most likely reading first. `path` is the file's path inside the
-/// torrent, and `torrent` the torrent's name. The file's own name wins when it says enough, as
+/// What a file in a release is, most likely reading first. `path` is the file's path inside the
+/// release, and `release` the release's name. The file's own name wins when it says enough, as
 /// in a season where each file names its episode. A year that may be part of the title, as in
 /// `Blade.Runner.2049.1080p`, gives a second reading.
-pub fn read(path: &str, torrent: &str) -> Vec<Title> {
+pub fn read(path: &str, release: &str) -> Vec<Title> {
     let mut folders: Vec<&str> = path.split('/').collect();
     let file = Reading::of(stem(folders.pop().unwrap_or_default()));
     let around: Vec<Reading> = folders.iter().rev().map(|folder| Reading::of(folder)).collect();
-    let around: Vec<Reading> = around.into_iter().chain([Reading::of(stem(torrent))]).collect();
+    let around: Vec<Reading> = around.into_iter().chain([Reading::of(stem(release))]).collect();
     let readings = || std::iter::once(&file).chain(&around);
     fn named<'a>(mut from: impl Iterator<Item = &'a Reading>) -> Option<Reading> {
         from.find(|r| !r.words.is_empty()).cloned()
@@ -264,10 +264,10 @@ fn bracketed_country(release: &str) -> Option<Country> {
     bracketed.find_map(|inside| Country::of_code(inside.trim()))
 }
 
-/// The episode a file in a torrent plays from its start, as `read` reads it: none for a film, and
+/// The episode a file in a release plays from its start, as `read` reads it: none for a film, and
 /// the first for a file of several such as `S01E01E02`.
-pub fn episode(path: &str, torrent: &str) -> Option<Episode> {
-    read(path, torrent).into_iter().find_map(|title| title.episode)
+pub fn episode(path: &str, release: &str) -> Option<Episode> {
+    read(path, release).into_iter().find_map(|title| title.episode)
 }
 
 /// Whether other titles of the same kind share the wanted one's name, as Dune 1984 and Dune 2021
@@ -472,7 +472,7 @@ fn stem(name: &str) -> &str {
     }
 }
 
-/// What one name says: a file's, a folder's, or the torrent's.
+/// What one name says: a file's, a folder's, or the release's.
 #[derive(Clone, PartialEq, Eq, Debug, Default)]
 struct Reading {
     /// The title: the words before the year, the episode, or the first tag.
@@ -721,8 +721,8 @@ mod tests {
             ("Sintel (2010 - x264 2k - AAC 5.1) En sub En Fr", "", film("Sintel", Some(2010))),
             ("His Girl Friday (Howard Hawks, 1940)", "", film("His Girl Friday", Some(1940))),
         ];
-        for (path, torrent, expected) in cases {
-            assert_eq!(read(path, torrent).first(), Some(&expected), "{path} in {torrent}");
+        for (path, release, expected) in cases {
+            assert_eq!(read(path, release).first(), Some(&expected), "{path} in {release}");
         }
     }
 
@@ -769,8 +769,8 @@ mod tests {
             ("[Group] Show Title S2 - 03v2 [720p].mkv", "", episode("Show Title", None, 2, 3)),
             ("video.mkv", "Show.Name.S01E02.720p.HDTV", episode("Show Name", None, 1, 2)),
         ];
-        for (path, torrent, expected) in cases {
-            assert_eq!(read(path, torrent).first(), Some(&expected), "{path} in {torrent}");
+        for (path, release, expected) in cases {
+            assert_eq!(read(path, release).first(), Some(&expected), "{path} in {release}");
         }
     }
 
@@ -837,7 +837,7 @@ mod tests {
         assert_eq!(spans("Show.S01E01-E02.720p"), [reading("Show", None, "s1e1"), reading("Show", None, "s1e2")]);
         assert_eq!(spans("Show.S01E01-02.720p"), [reading("Show", None, "s1e1"), reading("Show", None, "s1e2")]);
         assert_eq!(spans("Show.S01E02-GRP"), [reading("Show", None, "s1e2")]);
-        let held = |path, torrent| super::episode(path, torrent).map(|e| (e.season, e.episode));
+        let held = |path, release| super::episode(path, release).map(|e| (e.season, e.episode));
         assert_eq!(held("Show.S01E01E02.1080p.mkv", ""), Some((1, 1)));
         assert_eq!(held("Season 2/E07 - The One.mkv", "Show Name (2019)"), Some((2, 7)));
         assert_eq!(held("video.mkv", "Show.Name.S01E02.720p.HDTV"), Some((1, 2)));

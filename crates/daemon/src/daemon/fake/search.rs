@@ -4,9 +4,9 @@ use std::time::Duration;
 
 use tokio::sync::mpsc;
 use torrential_core::{
-    Error, ErrorCode, HexPrefix, Profile, Release, ReleaseId, SearchQuery, SearchResult, SourceOutcome, SourceReport,
+    DownloadId, Error, ErrorCode, HexPrefix, Profile, Release, ResultId, SearchQuery, SearchResult, SourceOutcome,
+    SourceReport,
 };
-use torrential_search::rank;
 
 use crate::daemon::BoxFuture;
 use crate::daemon::search_port::{Progress, RankFor, SavedLink, SearchPort};
@@ -18,12 +18,18 @@ pub struct Search(Arc<Mutex<State>>);
 #[derive(Default)]
 struct State {
     catalog: Vec<Release>,
-    torrents: BTreeMap<String, Vec<u8>>,
+    /// NZBs by URL.
+    nzbs: BTreeMap<String, Vec<u8>>,
+    /// NZB links whose indexer never answers.
+    stalled: std::collections::BTreeSet<String>,
+    /// Serves the NZBs of test releases the network has published, at
+    /// `https://indexer.example/get/{id}.nzb`. Any other there never arrives.
+    network: Option<super::Network>,
     delay: Duration,
     script: Vec<Source>,
     recent: Vec<Release>,
     searches: usize,
-    /// The `.torrent` files fetched, by URL, in order.
+    /// The NZBs fetched, by URL, in order.
     fetched: Vec<String>,
     /// The profile the last answer was ranked for.
     ranked_for: Option<Profile>,
@@ -52,11 +58,13 @@ impl Search {
         Self::scripted(catalog, vec![Source::answers("fake", 0)], BTreeMap::new())
     }
 
-    pub fn scripted(catalog: Vec<Release>, mut script: Vec<Source>, torrents: BTreeMap<String, Vec<u8>>) -> Self {
+    pub fn scripted(catalog: Vec<Release>, mut script: Vec<Source>, nzbs: BTreeMap<String, Vec<u8>>) -> Self {
         script.sort_by_key(|s| s.after);
         Self(Arc::new(Mutex::new(State {
             catalog,
-            torrents,
+            nzbs,
+            stalled: Default::default(),
+            network: None,
             delay: Duration::ZERO,
             script,
             recent: Vec::new(),
@@ -82,8 +90,20 @@ impl Search {
     }
 
     #[cfg(test)]
-    pub fn serve_torrent(&self, url: &str, bytes: Vec<u8>) {
-        self.0.lock().unwrap().torrents.insert(url.to_string(), bytes);
+    pub fn serve_nzb(&self, url: &str, bytes: Vec<u8>) {
+        self.0.lock().unwrap().nzbs.insert(url.to_string(), bytes);
+    }
+
+    /// Serves the NZBs `network` publishes, as an indexer does once a release is posted.
+    #[cfg(test)]
+    pub fn attach(&self, network: super::Network) {
+        self.0.lock().unwrap().network = Some(network);
+    }
+
+    /// Makes the indexer behind `url` never answer a request for its NZB.
+    #[cfg(test)]
+    pub fn stall_nzb(&self, url: &str) {
+        self.0.lock().unwrap().stalled.insert(url.to_string());
     }
 
     #[cfg(test)]
@@ -106,6 +126,17 @@ impl Search {
     }
 }
 
+/// The fake release a catalog row's `fake://` link serves: one file, named and sized as listed.
+fn invented(release: &Release) -> Option<Vec<u8>> {
+    let hex = release.nzb_url.as_deref()?.strip_prefix("fake://")?;
+    let file = super::Posting {
+        id: hex.parse().ok()?,
+        name: release.name.clone(),
+        files: vec![(release.name.clone(), release.size?)],
+    };
+    Some(file.bytes())
+}
+
 fn compose(
     catalog: &[Release],
     answered: &[Source],
@@ -114,13 +145,11 @@ fn compose(
     elapsed: Duration,
 ) -> SearchResult {
     let words: Vec<String> = query.text.split_whitespace().map(str::to_lowercase).collect();
-    // A title's search keeps its releases in the catalog's order, each with what of it it holds
-    // and how its swarm stands, and drops a dead swarm as the real search does.
+    // A title's search keeps its releases in the catalog's order, each with what of it it holds.
     let found = |r: &Release| match &query.wanted {
         Some(wanted) => {
             let span = Some(wanted.fit(&r.name)?.span);
-            let swarm = Some(rank::swarm(r.seeders, r.sources.iter().any(|s| torrential_search::lawful(s)))?);
-            Some(Release { span, swarm, ..r.clone() })
+            Some(Release { span, ..r.clone() })
         }
         None => words.iter().all(|w| r.name.to_lowercase().contains(w.as_str())).then(|| r.clone()),
     };
@@ -172,13 +201,33 @@ impl SearchPort for Search {
         })
     }
 
-    fn fetch_torrent(&self, url: String) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
+    fn fetch_nzb(&self, url: String) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
         Box::pin(async move {
-            let mut state = self.0.lock().unwrap();
-            state.fetched.push(url.clone());
-            state.torrents.get(&url).cloned().ok_or_else(|| {
-                Error::new(ErrorCode::FetchFailed, "could not fetch the .torrent file: HTTP 404")
-                    .with_hint("try the magnet link instead")
+            let published = {
+                let mut state = self.0.lock().unwrap();
+                state.fetched.push(url.clone());
+                let posted =
+                    url.strip_prefix("https://indexer.example/get/").and_then(|rest| rest.strip_suffix(".nzb"));
+                match (&state.network, posted.and_then(|hex| hex.parse::<DownloadId>().ok())) {
+                    _ if state.nzbs.contains_key(&url) => None,
+                    (Some(network), Some(id)) => Some(network.published(id)),
+                    _ => None,
+                }
+            };
+            match published {
+                Some(Some(bytes)) => return Ok(bytes),
+                Some(None) => return std::future::pending().await,
+                None => {}
+            }
+            if self.0.lock().unwrap().stalled.contains(&url) {
+                return std::future::pending().await;
+            }
+            let state = self.0.lock().unwrap();
+            let listed =
+                || state.catalog.iter().find(|r| r.nzb_url.as_deref() == Some(url.as_str())).and_then(invented);
+            state.nzbs.get(&url).cloned().or_else(listed).ok_or_else(|| {
+                Error::new(ErrorCode::FetchFailed, "could not fetch the NZB: HTTP 404")
+                    .with_hint("check the network connection and the indexer, or search again")
             })
         })
     }
@@ -187,11 +236,11 @@ impl SearchPort for Search {
         self.0.lock().unwrap().recent.iter().filter(|r| prefix.matches(&r.id)).cloned().collect()
     }
 
-    fn torrent_url(&self, release: &Release) -> Result<Option<String>, Error> {
-        Ok(release.torrent_url.clone())
+    fn nzb_url(&self, release: &Release) -> Result<Option<String>, Error> {
+        Ok(release.nzb_url.clone())
     }
 
-    fn saved_link(&self, _: &ReleaseId) -> Option<SavedLink> {
+    fn saved_link(&self, _: &ResultId) -> Option<SavedLink> {
         None
     }
 

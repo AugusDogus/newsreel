@@ -27,11 +27,11 @@ pub use catalog::{Art, ArtKind, EpisodeInfo, Kind, Season, TitleCard, TitleDetai
 pub use device::{Device, DeviceList, PairingOffer};
 pub use error::{Error, ErrorCode, Skip, SourceOutcome, SourceReport, Tried};
 pub use filetype::Container;
-pub use id::{HexPrefix, InfoHash, LocatorId, ReleaseId, TorrentId};
-pub use job::{Eighths, FileRisk, Job, JobStatus, PieceMap, Place, Progress, Selection, Slice, TorrentFile};
+pub use id::{DownloadId, HexPrefix, ResultId};
+pub use job::{Eighths, FileRisk, Job, JobStatus, PieceMap, Place, Progress, ReleaseFile, Selection, Slice};
 pub use preferences::{Decoders, Decoding, Playback, Preferences, Screen};
 pub use profile::{Arch, Display, Language, Machine, Os, Player, Profile, Setting, Source, Viewer};
 pub use quality::{Codec, Quality, Resolution};
-pub use release::{Category, Flag, Release, SearchQuery, SearchResult, Sort, Swarm};
+pub use release::{Category, Flag, Release, SearchQuery, SearchResult, Sort};
 pub use target::Target;
 pub use watching::{AttemptEvent, Check, Next, TitleLink, Watched};

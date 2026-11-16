@@ -6,11 +6,10 @@ use std::time::{Duration, Instant};
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use torrential_core::protocol::{Event, Frame, Request, Response, read_frame};
 use torrential_core::text::sanitize;
-use torrential_core::{Error, ErrorCode, Job, JobStatus, TorrentId};
+use torrential_core::{DownloadId, Error, ErrorCode, Job, JobStatus};
 
 use super::connect::{self, Conn};
 use super::rows::{job_row, next_for_stopped, short_ids};
-use crate::cli::Until;
 use crate::output::format;
 use crate::output::theme::Token;
 use crate::output::{Body, Cell, Doc, DocKind, Mode, json_document, json_line};
@@ -24,20 +23,14 @@ pub fn heartbeat(timeout: Option<Duration>) -> Duration {
     timeout.map_or(HUMAN_HEARTBEAT, |t| (t / 20).clamp(Duration::from_secs(60), Duration::from_secs(240)))
 }
 
-pub fn evaluate(watched: &[Watched], until: Until) -> Option<WaitEnd> {
-    let met = |job: &Job| match until {
-        Until::Done => matches!(job.status, JobStatus::Done { .. }),
-        Until::Metadata => job.progress.size.is_some(),
-    };
+pub fn evaluate(watched: &[Watched]) -> Option<WaitEnd> {
+    let met = |job: &Job| matches!(job.status, JobStatus::Done { .. });
     let named = |pred: &dyn Fn(&Job) -> bool| watched.iter().find(|w| pred(&w.job)).map(|w| w.id.clone());
     if let Some(id) = named(&|j| matches!(j.status, JobStatus::Error { .. })) {
         return Some(WaitEnd::Failed { id });
     }
     if watched.iter().all(|w| met(&w.job)) {
-        return Some(match until {
-            Until::Done => WaitEnd::Done,
-            Until::Metadata => WaitEnd::Metadata,
-        });
+        return Some(WaitEnd::Done);
     }
     named(&|j| !met(j) && j.status == JobStatus::Paused).map(|id| WaitEnd::Stopped { id })
 }
@@ -110,7 +103,7 @@ impl State {
         Some(i)
     }
 
-    fn removed(&self, id: &TorrentId) -> Option<String> {
+    fn removed(&self, id: &DownloadId) -> Option<String> {
         self.watched.iter().find(|w| w.job.id == *id).map(|w| w.id.clone())
     }
 }
@@ -189,12 +182,11 @@ fn back(engine: &Engine, ids: &[String]) -> Result<(Vec<Job>, Frames), Error> {
     followed.ok_or_else(stopped)
 }
 
-/// Follows `refs` until `until` holds for each, one fails or stops, or `timeout` passes, and prints
+/// Follows `refs` until each is done, one fails or stops, or `timeout` passes, and prints
 /// a line each time one changes state.
 pub fn run(
     following: (Conn, Engine),
     refs: Vec<String>,
-    until: Until,
     timeout: Option<Duration>,
     printer: &Printer,
 ) -> Result<u8, Error> {
@@ -205,20 +197,14 @@ pub fn run(
         beat: Instant::now(),
         printed: Vec::new(),
     };
-    follow(following, refs, until, timeout, lines)
+    follow(following, refs, timeout, lines)
 }
 
 /// Follows `refs` as `run` does, with a bar for each in a terminal.
-pub fn attach(
-    following: (Conn, Engine),
-    refs: Vec<String>,
-    until: Until,
-    timeout: Option<Duration>,
-) -> Result<u8, Error> {
+pub fn attach(following: (Conn, Engine), refs: Vec<String>, timeout: Option<Duration>) -> Result<u8, Error> {
     follow(
         following,
         refs,
-        until,
         timeout,
         Bars { all: MultiProgress::with_draw_target(ProgressDrawTarget::stderr()), each: Vec::new() },
     )
@@ -241,7 +227,6 @@ trait Show {
 fn follow(
     (conn, engine): (Conn, Engine),
     refs: Vec<String>,
-    until: Until,
     timeout: Option<Duration>,
     mut show: impl Show,
 ) -> Result<u8, Error> {
@@ -255,7 +240,7 @@ fn follow(
         Ok(end.exit_code())
     };
     loop {
-        if let Some(end) = evaluate(&state.watched, until) {
+        if let Some(end) = evaluate(&state.watched) {
             return finish(&mut show, end, &state);
         }
         if deadline.is_some_and(|d| Instant::now() >= d) {
@@ -370,7 +355,7 @@ impl Show for Bars {
 
     fn tick(&mut self, watched: &[Watched], _: Duration) -> Instant {
         for (bar, job) in self.each.iter().zip(watched.iter().map(|w| &w.job)) {
-            bar.set_position(job.progress.fraction().map_or(0, |f| (f * 1000.0) as u64));
+            bar.set_position((job.progress.fraction() * 1000.0) as u64);
             bar.set_message(live_message(job));
         }
         Instant::now() + Duration::from_millis(500)
@@ -394,13 +379,13 @@ impl Show for Bars {
 
 fn live_message(job: &Job) -> String {
     use crate::output::format;
-    let name = job.name.as_deref().map(torrential_core::text::sanitize).unwrap_or_default();
+    let name = torrential_core::text::sanitize(&job.name);
     match job.status {
         JobStatus::Downloading => format!(
             "{}  {}  {}  eta {}  {name}",
             format::percent(&job.progress),
             format::rate(job.progress.down_rate),
-            format::count(job.progress.peers as usize, "peer"),
+            format::count(job.progress.connections as usize, "connection"),
             format::eta(job.progress.eta)
         ),
         ref status => format!("{}  {}  {name}", status.name(), format::percent(&job.progress)),
@@ -410,7 +395,6 @@ fn live_message(job: &Job) -> String {
 #[derive(Clone, PartialEq, Debug)]
 pub enum WaitEnd {
     Done,
-    Metadata,
     Timeout,
     Failed { id: String },
     Stopped { id: String },
@@ -419,7 +403,7 @@ pub enum WaitEnd {
 impl WaitEnd {
     pub fn exit_code(&self) -> u8 {
         match self {
-            Self::Done | Self::Metadata => 0,
+            Self::Done => 0,
             Self::Timeout | Self::Stopped { .. } => torrential_daemon::exit::PENDING,
             Self::Failed { .. } => torrential_daemon::exit::DOWNLOAD,
         }
@@ -428,7 +412,6 @@ impl WaitEnd {
     pub fn outcome(&self) -> &'static str {
         match self {
             Self::Done => "done",
-            Self::Metadata => "metadata",
             Self::Timeout => "timeout",
             Self::Failed { .. } => "error",
             Self::Stopped { .. } => "stopped",
@@ -436,7 +419,7 @@ impl WaitEnd {
     }
 }
 
-pub const WAIT_HEADER: [&str; 9] = ["ELAPSED", "ID", "STATE", "PROGRESS", "SIZE", "DOWN", "PEERS", "ETA", "NAME"];
+pub const WAIT_HEADER: [&str; 9] = ["ELAPSED", "ID", "STATE", "PROGRESS", "SIZE", "DOWN", "CONNS", "ETA", "NAME"];
 
 pub fn wait_row(elapsed: Duration, id: &str, job: &Job) -> Vec<Cell> {
     let mut row = vec![Cell::styled(format::elapsed(elapsed), Token::Muted)];
@@ -461,13 +444,9 @@ pub fn wait_end(end: &WaitEnd, elapsed: Duration, watched: &[Watched]) -> (Vec<S
     let find = |id: &str| watched.iter().find(|w| w.id == id).map(|w| &w.job);
     match end {
         WaitEnd::Done => {
-            let paths: Vec<String> = watched
-                .iter()
-                .map(|w| sanitize(&w.job.path.as_deref().unwrap_or(&w.job.dir).display().to_string()))
-                .collect();
+            let paths: Vec<String> = watched.iter().map(|w| sanitize(&w.job.path.display().to_string())).collect();
             (vec![format!("done after {after} · path {}", paths.join(", "))], None)
         }
-        WaitEnd::Metadata => (vec![format!("file list ready after {after}")], Some(format!("torrential files {all}"))),
         WaitEnd::Timeout => {
             let eta = watched.iter().filter_map(|w| w.job.progress.eta).max();
             let mut line = format!("still running after {after}");
@@ -505,15 +484,14 @@ pub fn wait_end(end: &WaitEnd, elapsed: Duration, watched: &[Watched]) -> (Vec<S
 mod tests {
     use super::*;
     use std::path::PathBuf;
-    use torrential_core::{InfoHash, Progress, Selection};
+    use torrential_core::{Progress, Selection};
 
-    fn job(n: u8, status: JobStatus, size: Option<u64>) -> Job {
+    fn job(n: u8, status: JobStatus, size: u64) -> Job {
         Job {
-            id: TorrentId::from_bytes([n; 20]),
-            info_hash: InfoHash::V1([n; 20]),
-            name: Some(format!("job {n}")),
+            id: DownloadId::from_bytes([n; 20]),
+            name: format!("job {n}"),
             dir: PathBuf::from("/d"),
-            path: None,
+            path: PathBuf::from(format!("/d/job {n}")),
             status,
             progress: Progress { size, ..Progress::default() },
             selection: Selection::All,
@@ -535,15 +513,13 @@ mod tests {
     fn a_wait_ends_on_done_error_or_a_stop() {
         let done = JobStatus::Done { finished_at: 1 };
         let failed = JobStatus::Error { error: Error::new(ErrorCode::DiskFull, "full") };
-        let both_done = [job(1, done.clone(), Some(5)), job(2, done.clone(), Some(5))];
-        assert_eq!(evaluate(&watched(both_done.to_vec()), Until::Done), Some(WaitEnd::Done));
-        let running = [job(1, done.clone(), Some(5)), job(2, JobStatus::Downloading, Some(5))];
-        assert_eq!(evaluate(&watched(running.to_vec()), Until::Done), None);
-        assert_eq!(evaluate(&watched(running.to_vec()), Until::Metadata), Some(WaitEnd::Metadata));
-        let one_failed = [job(1, JobStatus::Downloading, None), job(2, failed, Some(5))];
-        assert_eq!(evaluate(&watched(one_failed.to_vec()), Until::Done), Some(WaitEnd::Failed { id: "020202".into() }));
-        let paused = [job(1, JobStatus::Paused, Some(5)), job(2, done, Some(5))];
-        assert_eq!(evaluate(&watched(paused.to_vec()), Until::Done), Some(WaitEnd::Stopped { id: "010101".into() }));
-        assert_eq!(evaluate(&watched(paused.to_vec()), Until::Metadata), Some(WaitEnd::Metadata));
+        let both_done = [job(1, done.clone(), 5), job(2, done.clone(), 5)];
+        assert_eq!(evaluate(&watched(both_done.to_vec())), Some(WaitEnd::Done));
+        let running = [job(1, done.clone(), 5), job(2, JobStatus::Downloading, 5)];
+        assert_eq!(evaluate(&watched(running.to_vec())), None);
+        let one_failed = [job(1, JobStatus::Downloading, 0), job(2, failed, 5)];
+        assert_eq!(evaluate(&watched(one_failed.to_vec())), Some(WaitEnd::Failed { id: "020202".into() }));
+        let paused = [job(1, JobStatus::Paused, 5), job(2, done, 5)];
+        assert_eq!(evaluate(&watched(paused.to_vec())), Some(WaitEnd::Stopped { id: "010101".into() }));
     }
 }

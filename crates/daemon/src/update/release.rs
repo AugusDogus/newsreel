@@ -19,7 +19,9 @@ use crate::wire::{self, Access, Client};
 
 use super::{Archive, Checked, Version, tag_version, target};
 
-const RELEASES: &str = "https://github.com/nexxeln/torrential/releases";
+/// Where this build's releases are published. The Usenet fork publishes none yet, and the
+/// releases at nexxeln/torrential are BitTorrent builds, so it never installs or announces one.
+const RELEASES: Option<&str> = None;
 const ISSUES: &str = "https://github.com/nexxeln/torrential/issues";
 const CHECK_WITHIN: Duration = Duration::from_secs(10);
 const MAX_ASSET: usize = 256 << 20;
@@ -32,19 +34,20 @@ pub struct Releases {
 }
 
 impl Releases {
-    /// The GitHub releases. A test reads releases only from the server it names in `RELEASES`.
+    /// Where releases come from: none for this build (see [`RELEASES`]). A test reads releases
+    /// only from the server it names in `hooks::RELEASES`.
     pub fn from_env(env: &Env) -> Option<Releases> {
         let base = match env.test() {
             Some(test) => test.var(hooks::RELEASES)?,
-            None => RELEASES,
+            None => RELEASES?,
         };
         Some(Releases { base: base.trim_end_matches('/').to_string() })
     }
 
     pub fn required(env: &Env) -> Result<Releases, Error> {
         Releases::from_env(env).ok_or_else(|| {
-            Error::new(ErrorCode::NetworkUnavailable, "this test environment does not look for releases")
-                .with_hint(format!("set {} to a release server", hooks::RELEASES))
+            Error::new(ErrorCode::NetworkUnavailable, "this build of torrential has no release server to update from")
+                .with_hint("build a newer one from source with git pull and cargo install --path crates/torrential")
         })
     }
 
@@ -534,12 +537,11 @@ mod tests {
     }
 
     #[test]
-    fn a_test_engine_looks_for_releases_only_where_the_test_points_it() {
+    fn releases_come_only_from_a_server_a_test_names() {
         let base = |pairs: &[(&str, &str)]| Releases::from_env(&Env::from_pairs(pairs.iter().copied())).map(|r| r.base);
         let local = (hooks::RELEASES, "http://127.0.0.1:8080/");
-        let github = Some("https://github.com/nexxeln/torrential/releases");
-        assert_eq!(base(&[]).as_deref(), github);
-        assert_eq!(base(&[local]).as_deref(), github, "only a test process reads it");
+        assert_eq!(base(&[]), None, "the Usenet fork publishes no releases");
+        assert_eq!(base(&[local]), None, "only a test process reads it");
         assert_eq!(base(&[(hooks::NETWORK, "loopback")]), None);
         assert_eq!(base(&[(hooks::ENGINE, "fake")]), None);
         assert_eq!(base(&[(hooks::NETWORK, "loopback"), local]).as_deref(), Some("http://127.0.0.1:8080"));

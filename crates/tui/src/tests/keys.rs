@@ -17,7 +17,7 @@ fn opens_on_the_downloads_when_there_are_some() {
 #[test]
 fn downloads_list_active_then_failed_then_paused_then_done() {
     let state = with_downloads((100, 30));
-    let names: Vec<String> = state.downloads.iter().map(|j| j.name.clone().unwrap()).collect();
+    let names: Vec<String> = state.downloads.iter().map(|j| j.name.clone()).collect();
     assert_eq!(
         names,
         [
@@ -149,7 +149,7 @@ fn shift_d_without_a_file_list_fetches_one_and_downloads_the_safe_files() {
 fn a_started_download_shows_at_once_and_keeps_the_cursor_on_the_result() {
     let mut state = searched((100, 30));
     let started = jobs()[0].clone();
-    let job = torrential_core::Job { id: id("4c1e9a"), name: Some("night_of_the_living_dead".into()), ..started };
+    let job = torrential_core::Job { id: id("4c1e9a"), name: "night_of_the_living_dead".into(), ..started };
     let reply = GetReply { outcome: GetOutcome::Started, job, plan: None, previous_selection: None };
     state.update(Msg::Started { release: result_id("4c1e9a"), result: Ok(Box::new(reply)) });
     assert_eq!(state.downloads.len(), 6);
@@ -249,7 +249,11 @@ fn streaming_results_follow_the_top_until_the_user_moves() {
     let row = screen_row(&state);
     let mut ranked = night();
     ranked.rotate_right(2);
-    state.update(Msg::SearchUpdate { search, result: result(ranked, final_sources()), pending: vec!["nyaa".into()] });
+    state.update(Msg::SearchUpdate {
+        search,
+        result: result(ranked, final_sources()),
+        pending: vec!["slowznab".into()],
+    });
     assert_eq!(cursor_name(&state), "Night of the Living Dead (1968) [DVD]");
     assert_eq!(screen_row(&state), row, "the selected row stays on the same screen line");
     let stale = Msg::SearchDone { search: search - 1, result: Ok(result(Vec::new(), Vec::new())) };
@@ -313,7 +317,7 @@ fn remove_asks_first_and_keeps_files() {
 fn remove_says_what_the_engine_did_with_the_files() {
     use torrential_core::protocol::{ChangeResult, Kept};
     let mut state = with_downloads((100, 30));
-    let removed = |id: TorrentId, deleted: &[&str], kept: Option<Kept>| Change {
+    let removed = |id: DownloadId, deleted: &[&str], kept: Option<Kept>| Change {
         deleted: deleted.iter().map(Into::into).collect(),
         kept: kept.into_iter().collect(),
         ..Change::new(id.to_hex(), None, ChangeResult::Removed)
@@ -376,33 +380,13 @@ fn the_ellipsis_moves_on_its_own_beat_whatever_else_arrives() {
 fn toasts_go_away_on_a_tick_after_their_time() {
     let mut state = with_downloads((100, 30));
     press(&mut state, "s");
-    assert_eq!(state.toast.as_ref().unwrap().text, "Sorted by seeds");
+    assert_eq!(state.toast.as_ref().unwrap().text, "Sorted by grabs");
     later(&mut state, 4_900);
     state.update(Msg::Tick);
     assert!(state.toast.is_some());
     later(&mut state, 200);
     state.update(Msg::Tick);
     assert!(state.toast.is_none());
-}
-
-#[test]
-fn a_result_with_a_torrent_link_fetches_its_files_after_the_cursor_rests() {
-    let mut state = searched((100, 30));
-    let mut catalog = night();
-    catalog[1].torrent_url = Some("https://archive.org/download/dvd/dvd_archive.torrent".into());
-    let search = state.search.as_ref().unwrap().id;
-    state.update(Msg::SearchDone { search, result: Ok(result(catalog, final_sources())) });
-    press(&mut state, "j");
-    later(&mut state, 200);
-    assert_eq!(state.update(Msg::Tick), []);
-    press(&mut state, "jk");
-    later(&mut state, 200);
-    assert_eq!(state.update(Msg::Tick), [], "moving on and back restarts the wait");
-    later(&mut state, 150);
-    assert_eq!(state.update(Msg::Tick), [Effect::Files(Item::Result(result_id("b7f20d")))]);
-    press(&mut state, "k");
-    later(&mut state, 400);
-    assert_eq!(state.update(Msg::Tick), [], "a magnet-only result waits for enter");
 }
 
 #[test]
@@ -420,7 +404,7 @@ fn opening_the_top_result_stops_the_cursor_following_new_top_results() {
     state.update(Msg::SearchUpdate {
         search: 1,
         result: result(ranked, final_sources()),
-        pending: vec!["nyaa".into()],
+        pending: vec!["slowznab".into()],
     });
     assert_eq!((state.focus, cursor_name(&state)), (Focus::Files, "Night of the Living Dead (1968)".into()));
 }
@@ -429,7 +413,7 @@ fn opening_the_top_result_stops_the_cursor_following_new_top_results() {
 fn enter_in_a_failed_file_list_asks_again_instead_of_downloading() {
     let mut state = searched((100, 30));
     state.update(key(KeyCode::Enter));
-    let timeout = Error::new(ErrorCode::MetadataTimeout, "no peer sent the file list for 4c1e9a in time");
+    let timeout = Error::new(ErrorCode::FetchFailed, "could not fetch the NZB: HTTP 503");
     state.update(Msg::Files { item: Item::Result(result_id("4c1e9a")), result: Err(timeout) });
     let effects = state.update(key(KeyCode::Enter));
     assert_eq!(effects, [Effect::Files(Item::Result(result_id("4c1e9a")))]);
@@ -470,8 +454,7 @@ fn a_second_file_list_keeps_the_picks() {
 #[test]
 fn a_started_toast_names_the_download_after_the_results_change() {
     let mut state = searched((100, 30));
-    let job =
-        torrential_core::Job { id: id("4c1e9a"), name: Some("night_of_the_living_dead".into()), ..jobs()[0].clone() };
+    let job = torrential_core::Job { id: id("4c1e9a"), name: "night_of_the_living_dead".into(), ..jobs()[0].clone() };
     press(&mut state, "/x");
     state.update(key(KeyCode::Enter));
     let reply = GetReply { outcome: GetOutcome::Started, job, plan: None, previous_selection: None };

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use rusqlite::{Connection, OptionalExtension, Row, params};
-use torrential_core::{Error, ErrorCode, Kind, ReleaseId, TitleCard, TitleId, VideoRef, Watched};
+use torrential_core::{Error, ErrorCode, Kind, ResultId, TitleCard, TitleId, VideoRef, Watched};
 
 use super::db::{Db, sql_error};
 
@@ -44,7 +44,7 @@ impl Shelf {
                     video.title.as_str(),
                     position,
                     duration,
-                    release.as_ref().map(ReleaseId::to_ref),
+                    release.as_ref().map(ResultId::to_ref),
                     at
                 ],
             )
@@ -189,7 +189,7 @@ mod tests {
     fn a_video_saved_again_keeps_one_row_with_the_newest_position_and_its_release() {
         let dir = tempfile::tempdir().unwrap();
         let shelf = shelf(&dir);
-        let release: ReleaseId = serde_json::from_str("\"9b521219bc48550140a666f74a29048ed78e933b\"").unwrap();
+        let release: ResultId = serde_json::from_str("\"u9b521219bc48550140a666f74a29048ed78e933b\"").unwrap();
         shelf.watch(&Watched { release: Some(release), ..at("tt9999901:1:1", 60.0, None, 10) }).unwrap();
         shelf.watch(&at("tt9999901:1:1", 120.5, Some(2640.0), 20)).unwrap();
         shelf.watch(&at("tt9999901:1:2", 30.0, Some(2640.0), 30)).unwrap();

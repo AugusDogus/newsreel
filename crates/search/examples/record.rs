@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use torrential_search::SearchConfig;
+use torrential_search::{IndexerConfig, SearchConfig};
 
 const MAX_BODY: usize = 256 << 10;
 const RSS_ITEMS: usize = 40;
@@ -8,15 +8,21 @@ const RSS_ITEMS: usize = 40;
 #[tokio::main]
 async fn main() {
     let mut args = std::env::args().skip(1);
-    let (Some(source), query) = (args.next(), args.collect::<Vec<_>>().join(" ")) else {
-        eprintln!("usage: record <source> <query words...>");
+    let (Some(source), query, Ok(url)) =
+        (args.next(), args.collect::<Vec<_>>().join(" "), std::env::var("TORRENTIAL_RECORD_URL"))
+    else {
+        eprintln!(
+            "usage: TORRENTIAL_RECORD_URL=<newznab api url> [TORRENTIAL_RECORD_API_KEY=<key>] record <name> <query words...>"
+        );
         std::process::exit(2);
     };
-    let (outcome, bodies) =
-        torrential_search::record(&SearchConfig::default(), &source, &query).await.unwrap_or_else(|e| {
-            eprintln!("{e}");
-            std::process::exit(1);
-        });
+    let api_key = std::env::var("TORRENTIAL_RECORD_API_KEY").ok();
+    let config =
+        SearchConfig { indexers: vec![IndexerConfig { name: source.clone(), url, api_key }], ..Default::default() };
+    let (outcome, bodies) = torrential_search::record(&config, &source, &query).await.unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(1);
+    });
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(&source);
     std::fs::create_dir_all(&dir).expect("create the fixture directory");
     for (url, body) in bodies {
@@ -42,18 +48,15 @@ fn file_name(url: &str, query: &str, body: &[u8]) -> String {
         stem = format!("{stem}-{}", slug(query));
     }
     let start = String::from_utf8_lossy(&body[..body.len().min(256)]).trim_start().to_ascii_lowercase();
-    let ext =
-        if stem.ends_with(".torrent") || stem.ends_with(".json") || stem.ends_with(".xml") || stem.ends_with(".html") {
-            ""
-        } else if start.starts_with('{') || start.starts_with('[') {
-            ".json"
-        } else if start.starts_with("<?xml") || start.starts_with("<rss") {
-            ".xml"
-        } else if start.starts_with('d') && stem.contains("torrent") {
-            ".torrent"
-        } else {
-            ".html"
-        };
+    let ext = if stem.ends_with(".json") || stem.ends_with(".xml") || stem.ends_with(".html") {
+        ""
+    } else if start.starts_with('{') || start.starts_with('[') {
+        ".json"
+    } else if start.starts_with("<?xml") || start.starts_with("<rss") {
+        ".xml"
+    } else {
+        ".html"
+    };
     format!("{stem}{ext}")
 }
 

@@ -1,4 +1,4 @@
-import { ArrowUpIcon, ClipboardDocumentCheckIcon, ClipboardDocumentIcon } from "@heroicons/react/16/solid";
+import { ArrowDownTrayIcon, ClipboardDocumentCheckIcon, ClipboardDocumentIcon } from "@heroicons/react/16/solid";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Codec, Flag, Release, Resolution } from "../api";
 import { age, bytes } from "../lib/format";
@@ -11,12 +11,9 @@ import { SHORT_ID } from "../wire";
 export const RESOLUTIONS: Record<Resolution, string> = { sd: "SD", "720p": "720p", "1080p": "1080p", "2160p": "4K" };
 export const CODECS: Record<Codec, string> = { h264: "H.264", hevc: "HEVC", av1: "AV1" };
 const FLAGS: Record<Flag, { label: string; tone: "good" | "bad" | "plain"; title: string }> = {
-  official: { label: "Official", tone: "good", title: "Published by the project that made it" },
-  trusted: { label: "Trusted", tone: "good", title: "The index marks the uploader as trusted" },
-  public_domain: { label: "Public domain", tone: "good", title: "The source lists a public-domain license" },
-  creative_commons: { label: "CC", tone: "good", title: "The source lists a Creative Commons license" },
   cam: { label: "Cam", tone: "bad", title: "A camera recording, usually low quality" },
   adult: { label: "Adult", tone: "plain", title: "Adult content" },
+  avoid: { label: "Avoid", tone: "bad", title: "TRaSH Guides lists this release or its group as one to avoid" },
 };
 
 /** The command that downloads a release the player cannot show. */
@@ -84,12 +81,11 @@ export function ResultRow({ release, selected = false, copied = false, onPoint, 
           {release.size === null ? "–" : bytes(release.size)}
         </div>
         <div
-          className="flex items-center gap-0.5 data-dead:text-error sm:w-16 sm:justify-end"
-          data-dead={release.seeders === 0 ? "" : undefined}
-          title="Seeders: peers that have the whole torrent"
+          className="flex items-center gap-0.5 sm:w-16 sm:justify-end"
+          title="Grabs: times the indexers say this NZB was downloaded"
         >
-          <ArrowUpIcon className="size-4 shrink-0 fill-pencil" />
-          {release.seeders === null ? "–" : release.seeders.toLocaleString("en")}
+          <ArrowDownTrayIcon className="size-4 shrink-0 fill-pencil" />
+          {release.grabs === null ? "–" : release.grabs.toLocaleString("en")}
         </div>
         <div className="text-pencil sm:w-9 sm:text-right" title="Published">
           {release.published === null ? "–" : age(release.published)}

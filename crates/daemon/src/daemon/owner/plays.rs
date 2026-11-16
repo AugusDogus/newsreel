@@ -8,7 +8,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use tokio::sync::oneshot;
 use torrential_core::protocol::{Change, ChangeResult, Kept};
-use torrential_core::{Error, TorrentId};
+use torrential_core::{DownloadId, Error};
 
 use super::super::admission;
 use super::super::book::{Home, Identity, Intent, JobEntry, Observed, Play};
@@ -49,7 +49,7 @@ pub enum Destination {
 /// A play's share of the plays folder, for choosing which plays leave.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Share {
-    pub id: TorrentId,
+    pub id: DownloadId,
     pub bytes: u64,
     pub watched_at: SystemTime,
     /// Someone streams it, or a title play is testing it.
@@ -59,7 +59,7 @@ pub struct Share {
 /// The plays that leave so the rest fit in `max`, those watched longest ago first. A busy play
 /// never leaves, and neither does the one watched last, so a play larger than `max` still plays
 /// and is there to go on with.
-pub fn leaving(mut shares: Vec<Share>, max: u64) -> Vec<TorrentId> {
+pub fn leaving(mut shares: Vec<Share>, max: u64) -> Vec<DownloadId> {
     let mut total: u64 = shares.iter().map(|s| s.bytes).sum();
     shares.sort_by_key(|s| (s.watched_at, s.id));
     shares.pop();
@@ -79,10 +79,10 @@ pub struct Tending {
     deleter: Deleter,
     /// The folder and the files of each download taken off the list that the engine has yet to
     /// let go of.
-    letting_go: BTreeMap<TorrentId, (PathBuf, Vec<PathBuf>)>,
+    letting_go: BTreeMap<DownloadId, (PathBuf, Vec<PathBuf>)>,
     /// Plays leaving the plays folder, on the list until the engine lets go of them, and when
     /// each may leave.
-    leaving: BTreeMap<TorrentId, Instant>,
+    leaving: BTreeMap<DownloadId, Instant>,
     /// `rm`s that answer once their deletions are done.
     removals: Vec<Removal>,
     tended_at: Option<Instant>,
@@ -113,19 +113,19 @@ impl Tending {
     }
 
     /// The engine has yet to let go of a removed download, whose folder and files are these.
-    pub(super) fn letting_go(&mut self, id: TorrentId, writes: (PathBuf, Vec<PathBuf>)) {
+    pub(super) fn letting_go(&mut self, id: DownloadId, writes: (PathBuf, Vec<PathBuf>)) {
         self.letting_go.insert(id, writes);
     }
 
     /// The engine let go of a removed download.
-    pub(super) fn let_go(&mut self, id: TorrentId) {
+    pub(super) fn let_go(&mut self, id: DownloadId) {
         self.letting_go.remove(&id);
     }
 }
 
 /// An `rm` waiting for its deletions.
 struct Removal {
-    waiting: BTreeSet<TorrentId>,
+    waiting: BTreeSet<DownloadId>,
     changes: Vec<Change>,
     deadline: Instant,
     reply: Reply<Vec<Change>>,
@@ -134,7 +134,7 @@ struct Removal {
 impl Owner {
     /// The folder and the home of a new download a play makes. A play into the plays folder
     /// gets a new folder of its own.
-    pub(super) fn destination(&self, id: TorrentId, to: Destination) -> Result<(Option<PathBuf>, Home), Error> {
+    pub(super) fn destination(&self, id: DownloadId, to: Destination) -> Result<(Option<PathBuf>, Home), Error> {
         match to {
             Destination::Folder(dir) => Ok((dir, Home::Folder)),
             Destination::Plays => {
@@ -159,10 +159,10 @@ impl Owner {
                 Some(Doom::Play { dir: job.record.dir.clone(), folder: play.folder, bytes: self.play_bytes(job) })
             }
             Home::Folder if delete => {
-                let (metainfo, wanted) = (job.metainfo.as_deref()?, job.wanted()?);
-                let chosen = metainfo.files.iter().zip(wanted).filter(|(_, wanted)| *wanted);
-                let files = chosen.map(|(file, _)| files::relative(metainfo, file)).collect();
-                Some(Doom::Files { dir: files::on_disk(&job.record.dir), files })
+                let (layout, wanted) = (job.layout.as_ref(), job.wanted()?);
+                let chosen = layout.files.iter().zip(wanted).filter(|(_, wanted)| *wanted);
+                let files = chosen.map(|(file, _)| files::relative(layout, file)).collect();
+                Some(Doom::Files { dir: job.record.dir.clone(), files })
             }
             Home::Folder => None,
         }
@@ -170,7 +170,7 @@ impl Owner {
 
     /// Someone pressed play on `id`. A play is watched now, and one played to keep is the
     /// person's.
-    pub(super) fn pressed_play(&mut self, id: TorrentId, finish: Finish) -> Result<(), Error> {
+    pub(super) fn pressed_play(&mut self, id: DownloadId, finish: Finish) -> Result<(), Error> {
         self.watched_now(id);
         if finish == Finish::Keep {
             return self.keep_play(id);
@@ -182,7 +182,7 @@ impl Owner {
     /// folder or stops by itself. It is theirs from now on even when that cannot be put on
     /// record, until the engine stops. It is put on record each time, so a record that failed
     /// before is made now.
-    pub(super) fn keep_play(&mut self, id: TorrentId) -> Result<(), Error> {
+    pub(super) fn keep_play(&mut self, id: DownloadId) -> Result<(), Error> {
         let Some(job) = self.jobs.get_mut(&id) else { return Ok(()) };
         let Home::Plays(play) = &mut job.record.home else { return Ok(()) };
         play.by_hand = true;
@@ -206,7 +206,7 @@ impl Owner {
         }
     }
 
-    fn watched_now(&mut self, id: TorrentId) {
+    fn watched_now(&mut self, id: DownloadId) {
         let Some(job) = self.jobs.get_mut(&id) else { return };
         let Home::Plays(play) = &mut job.record.home else { return };
         play.watched_at = SystemTime::now();
@@ -217,7 +217,7 @@ impl Owner {
 
     /// The first stream of `id` opened: marks when the play was watched, and resumes it if it
     /// stopped.
-    pub(super) fn first_stream(&mut self, id: TorrentId) {
+    pub(super) fn first_stream(&mut self, id: DownloadId) {
         self.watched_now(id);
         if let Some(job) = self.jobs.get(&id)
             && job.record.intent == Intent::Paused
@@ -295,12 +295,8 @@ impl Owner {
 
     /// The folder and the files `job` writes.
     pub(super) fn writes(job: &JobEntry) -> (PathBuf, Vec<PathBuf>) {
-        let targets = job
-            .metainfo
-            .as_deref()
-            .zip(job.wanted())
-            .map(|(metainfo, wanted)| files::targets(metainfo, &job.record.dir, &wanted));
-        (files::on_disk(&job.record.dir), targets.unwrap_or_default())
+        let targets = job.wanted().map(|wanted| files::targets(&job.layout, &job.record.dir, &wanted));
+        (job.record.dir.clone(), targets.unwrap_or_default())
     }
 
     /// What the downloads on the list, and those the engine has yet to let go of, write, found by
@@ -330,7 +326,7 @@ impl Owner {
         self.tending.tended_at = Some(at);
         self.closed_streams();
         let (clock, idle_after) = (SystemTime::now(), self.config.plays.idle_after);
-        let idle: Vec<TorrentId> = self
+        let idle: Vec<DownloadId> = self
             .jobs
             .values()
             .filter(|job| self.tended(job))
@@ -352,11 +348,11 @@ impl Owner {
     /// Makes room in the plays folder for a new play of `id` that takes `bytes`, after every check
     /// but the one for room on the disk, so a full plays folder does not stop the play from
     /// starting, and a play refused for another reason sends no play away.
-    pub(super) fn make_room_for(&mut self, id: TorrentId, bytes: u64) {
+    pub(super) fn make_room_for(&mut self, id: DownloadId, bytes: u64) {
         self.make_room(Some(Share { id, bytes, watched_at: SystemTime::now(), busy: true }));
     }
 
-    pub(super) fn leaving(&self, id: TorrentId) -> bool {
+    pub(super) fn leaving(&self, id: DownloadId) -> bool {
         self.tending.leaving.contains_key(&id)
     }
 
@@ -386,7 +382,7 @@ impl Owner {
     }
 
     /// Someone streams `id`, or a title play is testing it.
-    fn playing(&self, id: TorrentId) -> bool {
+    fn playing(&self, id: DownloadId) -> bool {
         self.streamed_now(id) || self.holds.testing(id)
     }
 
@@ -431,7 +427,7 @@ impl Owner {
 
     /// Starts taking `ids` out of the plays folder. Each stays on the list until the engine lets
     /// go of it, so that saving its title, or streaming it, in the meantime keeps it.
-    fn evict(&mut self, ids: Vec<TorrentId>) {
+    fn evict(&mut self, ids: Vec<DownloadId>) {
         for id in ids {
             let Some(job) = self.jobs.get_mut(&id) else { continue };
             if job.observed.in_engine() {
@@ -454,7 +450,7 @@ impl Owner {
     /// by hand, since it started leaving.
     pub(super) fn leave(&mut self) {
         let now = Instant::now();
-        let ready: Vec<TorrentId> = self
+        let ready: Vec<DownloadId> = self
             .tending
             .leaving
             .iter()
@@ -500,7 +496,7 @@ impl Owner {
         };
         self.shelf.save_title(&card, now())?;
         self.saved.insert(card.id.clone());
-        let kept: Vec<TorrentId> = self
+        let kept: Vec<DownloadId> = self
             .tending
             .leaving
             .keys()
@@ -520,14 +516,14 @@ impl Owner {
 
     /// What a play takes up on disk now.
     fn play_bytes(&self, job: &JobEntry) -> u64 {
-        let allocated = job.metainfo.as_deref().zip(job.wanted()).map_or(0, |(metainfo, wanted)| {
-            admission::allocated_bytes(metainfo, &job.record.dir, &wanted, self.disk.as_ref())
-        });
+        let allocated = job
+            .wanted()
+            .map_or(0, |wanted| admission::allocated_bytes(&job.layout, &job.record.dir, &wanted, self.disk.as_ref()));
         allocated.max(job.verified())
     }
 
-    fn named(&self, id: TorrentId) -> String {
-        let name = self.jobs.get(&id).and_then(|job| job.record.name.clone());
+    fn named(&self, id: DownloadId) -> String {
+        let name = self.jobs.get(&id).map(|job| job.record.name.clone());
         name.unwrap_or_else(|| id.to_hex()[..6].to_string())
     }
 }
@@ -536,8 +532,8 @@ impl Owner {
 mod tests {
     use super::*;
 
-    fn id(n: u8) -> TorrentId {
-        TorrentId::from_bytes([n; 20])
+    fn id(n: u8) -> DownloadId {
+        DownloadId::from_bytes([n; 20])
     }
 
     fn share(n: u8, bytes: u64, watched_at: u64, busy: bool) -> Share {
@@ -548,10 +544,10 @@ mod tests {
     fn the_plays_watched_longest_ago_leave_until_the_rest_fit() {
         let shares =
             vec![share(1, 6, 30, false), share(2, 6, 10, false), share(3, 6, 20, true), share(4, 6, 40, false)];
-        assert_eq!(leaving(shares.clone(), 24), Vec::<TorrentId>::new());
+        assert_eq!(leaving(shares.clone(), 24), Vec::<DownloadId>::new());
         assert_eq!(leaving(shares.clone(), 18), [id(2)]);
         assert_eq!(leaving(shares.clone(), 12), [id(2), id(1)], "3 is busy");
         assert_eq!(leaving(shares, 0), [id(2), id(1)], "and the play watched last never leaves");
-        assert_eq!(leaving(vec![share(9, 50, 1, false)], 20), Vec::<TorrentId>::new(), "one play over the cap stays");
+        assert_eq!(leaving(vec![share(9, 50, 1, false)], 20), Vec::<DownloadId>::new(), "one play over the cap stays");
     }
 }

@@ -131,8 +131,8 @@ fn a_failed_download_says_why_in_a_few_words_at_every_width() {
     assert!(row.ends_with("36%     no source"), "{row}");
     let (row, _) = failed(ErrorCode::NoSource, (47, 19));
     assert_eq!(row, "│ openwebtext-2019              no source  36%", "the reason stands in for the bar");
-    let (row, _) = failed(ErrorCode::MetadataTimeout, (40, 19));
-    assert_eq!(row, "│ openwebtext-2019     no metadata  36%", "wider than the bar it stands in for");
+    let (row, _) = failed(ErrorCode::StorageError, (40, 19));
+    assert_eq!(row, "│ openwebtext-2019      disk error  36%", "wider than the bar it stands in for");
 }
 
 fn wikipedia_with(status: JobStatus, map: Option<&str>) -> (State, Buffer, u16) {
@@ -264,18 +264,13 @@ fn every_file_of_a_download_is_one_key_away() {
 }
 
 #[test]
-fn one_peer_reads_as_one_peer() {
+fn one_connection_reads_as_one_connection() {
     let mut state = with_downloads((100, 30));
     let mut job = jobs()[0].clone();
-    job.progress.peers = 1;
+    job.progress.connections = 1;
     state.update(Msg::Watch(Event::Job { job: Box::new(job.clone()) }));
     let buf = render(&state);
-    assert_eq!(line(&buf, 6), "            │   5.3 GiB of 23.0 GiB · 10.0 MiB/s · 1 peer");
-    job.status = JobStatus::Metadata;
-    state.update(Msg::Watch(Event::Job { job: Box::new(job) }));
-    let buf = render(&state);
-    assert!(line(&buf, 4).ends_with("1 peer"), "{}", line(&buf, 4));
-    assert_eq!(line(&buf, 6), "            │   fetching the file list from peers · 1 peer");
+    assert_eq!(line(&buf, 6), "            │   5.3 GiB of 23.0 GiB · 10.0 MiB/s · 1 connection");
 }
 
 #[test]
@@ -344,15 +339,15 @@ fn a_row_shows_the_resolution_and_its_details_spell_out_the_quality() {
     press(&mut state, "jj");
     let buf = render(&state);
     let (_, y) = find(&buf, "BluRay.x264");
-    assert!(line(&buf, y).ends_with("BluRay.x264      trusted   1080p   7.8 GiB    214    3y"), "{}", line(&buf, y));
-    assert_eq!(line(&buf, y + 1), "            │   knaben · trusted uploader · 1080p h264");
+    assert!(line(&buf, y).ends_with("BluRay.x264                1080p   7.8 GiB    214    3y"), "{}", line(&buf, y));
+    assert_eq!(line(&buf, y + 1), "            │   hydra · 1080p h264");
     let (_, y) = find(&buf, "CAM.x264");
     assert!(
         line(&buf, y).ends_with("CAM.x264        cam               1.4 GiB     41   60d"),
         "a blank, never the codec, when no resolution"
     );
     let (_, y) = find(&buf, "(1968) colorized");
-    assert!(line(&buf, y).ends_with("colorized     pd                734 MiB    web    6y"), "{}", line(&buf, y));
+    assert!(line(&buf, y).ends_with("colorized                       734 MiB      –    6y"), "{}", line(&buf, y));
 }
 
 fn heads_row(state: &State) -> String {
@@ -364,17 +359,17 @@ fn heads_row(state: &State) -> String {
 fn a_film_search_says_what_it_ranked_for_in_as_many_parts_as_fit() {
     assert_eq!(
         heads_row(&searched((160, 45))),
-        "    results │ ranked for this Mac: 1080p screen, HDR, HEVC, arm64, English                       size  seeds   age"
+        "    results │ ranked for this Mac: 1080p screen, HDR, HEVC, arm64, English                       size  grabs   age"
     );
     assert_eq!(
         heads_row(&searched((80, 24))),
-        "    results │ ranked for this Mac: 1080p screen, HDR, HEVC   size  seeds   age"
+        "    results │ ranked for this Mac: 1080p screen, HDR, HEVC   size  grabs   age"
     );
-    assert_eq!(heads_row(&searched((70, 20))), "    results │ ranked for this Mac: 1080p screen    size  seeds   age");
-    assert_eq!(heads_row(&searched((60, 16))), "    results │ ranked for this Mac        size  seeds   age");
+    assert_eq!(heads_row(&searched((70, 20))), "    results │ ranked for this Mac: 1080p screen    size  grabs   age");
+    assert_eq!(heads_row(&searched((60, 16))), "    results │ ranked for this Mac        size  grabs   age");
     let mut state = searched((100, 30));
     press(&mut state, "s");
-    assert!(heads_row(&state).contains("results │ most seeds first"), "another order ranks for nothing");
+    assert!(heads_row(&state).contains("results │ most grabbed first"), "another order ranks for nothing");
 }
 
 #[test]
@@ -388,16 +383,16 @@ fn a_search_ranks_for_what_its_results_depend_on() {
     };
     let iso = |name| Release {
         category: Some(Category::Software),
-        ..release("6a1f00", name, "knaben", &[], Some(950), 6_100 * MIB, 400)
+        ..release("6a1f00", name, "hydra", &[], Some(950), 6_100 * MIB, 400)
     };
     assert_eq!(
         found(vec![iso("ubuntu-24.04.1-desktop-amd64.iso")]),
-        "    results │ ranked for this Mac: arm64                                         size  seeds   age",
+        "    results │ ranked for this Mac: arm64                                         size  grabs   age",
         "software that names an architecture"
     );
     assert_eq!(
         found(vec![iso("Ubuntu Linux Bible, 10th Edition")]),
-        "    results │ best match first                                                   size  seeds   age"
+        "    results │ best match first                                                   size  grabs   age"
     );
 }
 
@@ -416,11 +411,11 @@ fn a_search_before_detection_says_so_without_cutting_the_words() {
     let pending = || Profile { detected: None, ..Profile::default() };
     assert_eq!(
         heads_row(&searched_for((80, 24), pending())),
-        "    results │ ranked for this machine, not detected yet      size  seeds   age"
+        "    results │ ranked for this machine, not detected yet      size  grabs   age"
     );
     assert_eq!(
         heads_row(&searched_for((60, 16), pending())),
-        "    results │ best match first           size  seeds   age",
+        "    results │ best match first           size  grabs   age",
         "never \"ranked for this machine\""
     );
 }
@@ -431,20 +426,20 @@ fn a_search_with_overrides_names_them_or_only_the_machine() {
     let tv = || with(Preferences { screen: Some(torrential_core::Screen::Tv4k), ..Preferences::default() });
     assert_eq!(
         heads_row(&searched_for((160, 45), tv())),
-        "    results │ ranked for this Mac: 2160p screen, arm64, English · overrides: screen tv-4k        size  seeds   age"
+        "    results │ ranked for this Mac: 2160p screen, arm64, English · overrides: screen tv-4k        size  grabs   age"
     );
     assert_eq!(
         heads_row(&searched_for((100, 30), tv())),
-        "    results │ ranked for this Mac: 2160p screen · overrides: screen tv-4k        size  seeds   age"
+        "    results │ ranked for this Mac: 2160p screen · overrides: screen tv-4k        size  grabs   age"
     );
     assert_eq!(
         heads_row(&searched_for((80, 24), tv())),
-        "    results │ ranked for this Mac · overrides: screen tv-4k  size  seeds   age"
+        "    results │ ranked for this Mac · overrides: screen tv-4k  size  grabs   age"
     );
     let h264 = with(Preferences { playback: Some(torrential_core::Playback::H264), ..Preferences::default() });
     assert_eq!(
         heads_row(&searched_for((80, 24), h264)),
-        "    results │ ranked for this Mac                            size  seeds   age",
+        "    results │ ranked for this Mac                            size  grabs   age",
         "not \"1080p screen, no HDR\" without the H.264 that the override set"
     );
 }
@@ -471,7 +466,7 @@ fn the_ranking_panel_shows_what_was_detected_and_takes_the_one_mark() {
     let buf = render(&state);
     let marks: Vec<u16> = (0..24).filter(|&y| buf[(MARK, y)].symbol() == "●").collect();
     assert_eq!(marks, [find(&buf, "screen    [auto]").1], "the panel has the keys, not the result under the cursor");
-    assert!(!shot(&state).contains("archive.org · public domain"), "the cursor's details close");
+    assert!(!shot(&state).contains("│   geek "), "the cursor's details close");
     assert!(line(&buf, 23).ends_with("enter save   esc close   ← → choose"), "{}", line(&buf, 23));
     press(&mut state, "l");
     let plain = render_in(&state, ColorMode::NoColor);
@@ -548,18 +543,18 @@ fn help_lists_the_ranking_key() {
 #[test]
 fn a_file_list_error_sits_three_cells_after_the_facts() {
     let mut state = searched((100, 30));
-    let error = Error::new(ErrorCode::MetadataTimeout, "no peer sent the file list");
+    let error = Error::new(ErrorCode::FetchFailed, "could not fetch the NZB");
     state.update(Msg::Files { item: Item::Result(result_id("4c1e9a")), result: Err(error) });
     let buf = render(&state);
-    let (_, y) = find(&buf, "no peer sent");
-    assert_eq!(line(&buf, y), "            │   archive.org · public domain   no peer sent the file list");
+    let (_, y) = find(&buf, "could not fetch");
+    assert_eq!(line(&buf, y), "            │   geek   could not fetch the NZB");
 }
 
 #[test]
 fn a_narrow_window_keeps_the_room_for_names() {
     let buf = render(&searched((60, 16)));
     let (_, y) = find(&buf, "3.4 GiB");
-    assert_eq!(line(&buf, y), "            │ Night…[DVD]  pd         3.4 GiB    web   12y");
+    assert_eq!(line(&buf, y), "            │ Night…[DVD]             3.4 GiB      –   12y");
 }
 
 #[test]
@@ -568,13 +563,12 @@ fn a_search_without_qualities_keeps_the_room_for_names() {
     press(&mut state, "/");
     press(&mut state, "ubuntu");
     state.update(key(KeyCode::Enter));
-    let iso =
-        release("6a1f00", "ubuntu-24.04.1-desktop-amd64.iso", "knaben", &[Flag::Official], Some(950), 6_100 * MIB, 400);
+    let iso = release("6a1f00", "ubuntu-24.04.1-desktop-amd64.iso", "hydra", &[], Some(950), 6_100 * MIB, 400);
     state.update(Msg::SearchDone { search: 1, result: Ok(result(vec![iso], final_sources())) });
     let buf = render(&state);
     let (_, y) = find(&buf, "ubuntu-24.04.1");
     assert!(
-        line(&buf, y).ends_with("amd64.iso                     official   6.0 GiB    950    1y"),
+        line(&buf, y).ends_with("amd64.iso                                6.0 GiB    950    1y"),
         "{}",
         line(&buf, y)
     );
@@ -682,13 +676,10 @@ fn the_margin_labels_each_group_once() {
 fn errors_and_warnings_take_the_error_ink() {
     let state = searched((100, 30));
     let buf = render(&state);
-    let (x, y) = find(&buf, "apibay and nyaa failed");
+    let (x, y) = find(&buf, "dognzb and slowznab failed");
     assert_eq!(buf[(x, y)].fg, theme::ERROR);
     let (x, y) = find(&buf, "cam ");
     assert_eq!(buf[(x, y)].fg, theme::ERROR);
-    let (_, y) = find(&buf, "720p WEB");
-    let zero = (0..100).rev().find(|&x| buf[(x, y)].symbol() == "0").unwrap();
-    assert_eq!(buf[(zero, y)].fg, theme::ERROR, "no seeds is in the red");
 }
 
 #[test]

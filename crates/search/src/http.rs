@@ -38,8 +38,8 @@ pub(crate) enum FetchError {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Retry {
     Once,
-    /// Asking twice can cost twice: a Torznab search fans out to the user's
-    /// private trackers.
+    /// Asking twice can cost twice: indexers count each request against the user's
+    /// daily limit.
     Never,
 }
 
@@ -78,10 +78,6 @@ impl Http {
         Ok(Http { client: builder.build()?, recorded: None })
     }
 
-    pub fn detached(&self) -> Http {
-        Http { client: self.client.clone(), recorded: None }
-    }
-
     pub async fn get(&self, url: &Url, cap: usize, deadline: Instant) -> Result<Vec<u8>, FetchError> {
         self.fetch(url, cap, deadline, Retry::Once).await
     }
@@ -95,20 +91,6 @@ impl Http {
             recorded.lock().unwrap_or_else(|e| e.into_inner()).push((url.to_string(), body.clone()));
         }
         Ok(body)
-    }
-
-    /// Where a request for the first byte of `url` lands once its redirects are followed.
-    pub async fn landing(&self, url: &Url, deadline: Instant) -> Result<Url, FetchError> {
-        let started = Instant::now();
-        let asked = self.client.get(url.clone()).header(reqwest::header::RANGE, "bytes=0-0").send();
-        let response = timeout_at(deadline, asked)
-            .await
-            .map_err(|_| FetchError::Timeout(started.elapsed()))?
-            .map_err(|e| classify(e, started))?;
-        if !response.status().is_success() {
-            return Err(FetchError::Status(response.status().as_u16()));
-        }
-        Ok(response.url().clone())
     }
 
     pub fn take_recorded(&self) -> Recorded {
@@ -294,7 +276,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_fetch_with_no_answer_says_how_long_it_waited() {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = Url::parse(&format!("http://{}/a.torrent", listener.local_addr().unwrap())).unwrap();
+        let url = Url::parse(&format!("http://{}/a.nzb", listener.local_addr().unwrap())).unwrap();
         let held = tokio::spawn(async move { listener.accept().await });
         let http = Http::new().unwrap();
         let error = http.fetch(&url, 1 << 20, Instant::now() + Duration::from_millis(1200), Retry::Never).await;

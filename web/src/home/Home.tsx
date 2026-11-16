@@ -4,7 +4,7 @@ import { count, minutesLeft, sentence } from "../lib/format";
 import { useJobs } from "../lib/jobs";
 import { useLatest } from "../lib/useLatest";
 import { SearchField, useSearchText } from "../search/SearchField";
-import { homePath, Link, navigate, playPath, titlePath, torrentsPath } from "../router";
+import { homePath, Link, navigate, playPath, titlePath, releasesPath } from "../router";
 import { Blank, Picture } from "../titles/Picture";
 import { TitleGrid } from "../titles/TitleGrid";
 import { type TitlesState, useTitles } from "../titles/useTitles";
@@ -28,11 +28,11 @@ function describe(state: TitlesState): string {
   }
 }
 
-/** The way to today's torrent search, for what the catalog does not list. */
+/** The way to a search of the Usenet indexers, for what the catalog does not list. */
 function TorrentsLink({ query }: { query: string }) {
   return (
-    <Link href={torrentsPath(query, false)} className="self-start rounded-sm text-sm text-pencil hover:text-ink pointer-coarse:py-3">
-      Search torrents for “{query}”
+    <Link href={releasesPath(query, false)} className="self-start rounded-sm text-sm text-pencil hover:text-ink pointer-coarse:py-3">
+      Search Usenet for “{query}”
     </Link>
   );
 }

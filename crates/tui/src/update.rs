@@ -7,8 +7,8 @@ use torrential_core::protocol::{
 use torrential_core::text::sanitize;
 use torrential_core::units::count;
 use torrential_core::{
-    Arch, AttemptEvent, Error, Job, JobStatus, Machine, Preferences, ReleaseId, SearchQuery, SearchResult, TitleCard,
-    TitleId, TorrentId, VideoRef,
+    Arch, AttemptEvent, DownloadId, Error, Job, JobStatus, Machine, Preferences, ResultId, SearchQuery, SearchResult,
+    TitleCard, TitleId, VideoRef,
 };
 
 use crate::format::{first_fit, home_path};
@@ -30,9 +30,9 @@ pub enum Msg {
     SearchUpdate { search: u64, result: SearchResult, pending: Vec<String> },
     SearchDone { search: u64, result: Result<SearchResult, Error> },
     Files { item: Item, result: Result<FilesReply, Error> },
-    Started { release: ReleaseId, result: Result<Box<GetReply>, Error> },
+    Started { release: ResultId, result: Result<Box<GetReply>, Error> },
     Played(Result<String, Error>),
-    Changed { id: TorrentId, action: JobAction, result: Result<Vec<Change>, Error> },
+    Changed { id: DownloadId, action: JobAction, result: Result<Vec<Change>, Error> },
     Preferences(Preferences),
     Machine(Machine),
     Saved { edit: Edit, result: Result<Preferences, Error> },
@@ -49,9 +49,9 @@ pub enum Msg {
 pub enum Effect {
     Search { search: u64, query: Box<SearchQuery> },
     Files(Item),
-    Get { release: ReleaseId, files: Option<Vec<String>> },
+    Get { release: ResultId, files: Option<Vec<String>> },
     Play(Item),
-    Job { id: TorrentId, action: JobAction },
+    Job { id: DownloadId, action: JobAction },
     FreeSpace,
     Open(PathBuf),
     Copy(String),
@@ -116,7 +116,7 @@ impl State {
         if self.toast.as_ref().is_some_and(|t| t.until <= self.now) {
             self.toast = None;
         }
-        let mut effects = self.prefetch_due();
+        let mut effects = Vec::new();
         effects.extend(match msg {
             Msg::Key(key) => self.key(key),
             Msg::Resize(w, h) => {
@@ -199,39 +199,9 @@ impl State {
                 Vec::new()
             }
         });
-        self.plan_prefetch();
         self.settle(before);
         self.settle_titles();
         effects
-    }
-
-    fn plan_prefetch(&mut self) {
-        let wanted = match self.cursor {
-            Some(Item::Result(id))
-                if self.focus != Focus::Query
-                    && !self.files.contains_key(&id)
-                    && self.release(id).is_some_and(|r| r.torrent_url.is_some()) =>
-            {
-                Some(id)
-            }
-            _ => None,
-        };
-        match (wanted, self.prefetch) {
-            (Some(id), Some((planned, _))) if planned == id => {}
-            (Some(id), _) => self.prefetch = Some((id, self.now + crate::state::PREFETCH_AFTER)),
-            (None, _) => self.prefetch = None,
-        }
-    }
-
-    fn prefetch_due(&mut self) -> Vec<Effect> {
-        match self.prefetch {
-            Some((id, at)) if at <= self.now => {
-                self.prefetch = None;
-                self.files.insert(id, Files::Loading { since: self.now, then_download: false });
-                vec![Effect::Files(Item::Result(id))]
-            }
-            _ => Vec::new(),
-        }
     }
 
     fn anchor(&self) -> Option<(Item, i32)> {
@@ -418,7 +388,7 @@ impl State {
             }
             Action::CopyPath => {
                 if let Some(job) = self.selected_job() {
-                    let path = job.path.clone().unwrap_or_else(|| job.dir.clone());
+                    let path = job.path.clone();
                     self.say(Tone::Success, "Copied path");
                     return vec![Effect::Copy(path.display().to_string())];
                 }
@@ -690,7 +660,7 @@ impl State {
         }
     }
 
-    fn open_files(&mut self, id: ReleaseId, then_download: bool) -> Vec<Effect> {
+    fn open_files(&mut self, id: ResultId, then_download: bool) -> Vec<Effect> {
         self.collapsed = false;
         match self.files.get_mut(&id) {
             Some(Files::Ready(_)) => {
@@ -710,7 +680,7 @@ impl State {
         }
     }
 
-    fn download(&mut self, id: ReleaseId) -> Vec<Effect> {
+    fn download(&mut self, id: ResultId) -> Vec<Effect> {
         let Some(Files::Ready(tree)) = self.files.get(&id) else { return self.open_files(id, true) };
         if tree.picked_count() == 0 {
             self.say(Tone::Warning, "Nothing picked. Press space to pick a file.");
@@ -722,7 +692,7 @@ impl State {
         vec![Effect::Get { release: id, files }]
     }
 
-    fn job_action(&mut self, id: TorrentId, action: JobAction) -> Vec<Effect> {
+    fn job_action(&mut self, id: DownloadId, action: JobAction) -> Vec<Effect> {
         if self.pending.contains_key(&id) {
             return Vec::new();
         }
@@ -864,7 +834,7 @@ impl State {
                 effects
             }
             Event::Removed { id } => {
-                let Ok(id) = id.parse::<TorrentId>() else { return Vec::new() };
+                let Ok(id) = id.parse::<DownloadId>() else { return Vec::new() };
                 self.forget(id);
                 Vec::new()
             }
@@ -872,7 +842,7 @@ impl State {
         }
     }
 
-    fn forget(&mut self, id: TorrentId) {
+    fn forget(&mut self, id: DownloadId) {
         if self.cursor == Some(Item::Download(id)) {
             let items = self.items();
             let at = items.iter().position(|i| *i == Item::Download(id)).unwrap_or(0);
@@ -887,15 +857,14 @@ impl State {
         self.resort();
     }
 
-    fn refresh_files(&mut self, id: TorrentId, just_selected: bool) -> Vec<Effect> {
+    fn refresh_files(&mut self, id: DownloadId, just_selected: bool) -> Vec<Effect> {
         let Some(job) = self.job(id) else { return Vec::new() };
-        let known = job.progress.size.is_some();
         let changing = matches!(job.status, JobStatus::Downloading | JobStatus::Checking);
         let due = match self.download_files.get(&id) {
             None => true,
             Some(f) => (just_selected || changing) && self.now.duration_since(f.asked).as_millis() >= 1_000,
         };
-        if !known || !due {
+        if !due {
             return Vec::new();
         }
         let entry = self.download_files.entry(id).or_insert_with(|| DownloadFiles::new(self.now));
@@ -917,8 +886,7 @@ impl State {
                 let then_download = matches!(self.files.get(&id), Some(Files::Loading { then_download: true, .. }));
                 match result {
                     Ok(reply) => {
-                        let name = reply.name.clone().or_else(|| self.release(id).map(|r| r.name.clone()));
-                        let tree = Tree::new(&name.unwrap_or_default(), reply.files);
+                        let tree = Tree::new(&reply.name, reply.files);
                         self.files.insert(id, Files::Ready(tree));
                         if then_download {
                             return self.download(id);
@@ -936,12 +904,12 @@ impl State {
         }
     }
 
-    fn started(&mut self, release: ReleaseId, result: Result<Box<GetReply>, Error>) -> Vec<Effect> {
+    fn started(&mut self, release: ResultId, result: Result<Box<GetReply>, Error>) -> Vec<Effect> {
         let titled = self.release(release).map(|r| r.name.clone());
         match result {
             Ok(reply) => {
-                let name =
-                    titled.or_else(|| reply.job.name.clone()).unwrap_or_else(|| release.to_ref()[..6].to_string());
+                self.became.insert(release, reply.job.id);
+                let name = titled.unwrap_or_else(|| reply.job.name.clone());
                 let text = match reply.outcome {
                     GetOutcome::Existing => "Already in downloads. Press d to view it.".to_string(),
                     GetOutcome::Updated => format!("Updated file selection for {name}"),
@@ -966,9 +934,9 @@ impl State {
         }
     }
 
-    fn changed(&mut self, id: TorrentId, action: JobAction, result: Result<Vec<Change>, Error>) -> Vec<Effect> {
+    fn changed(&mut self, id: DownloadId, action: JobAction, result: Result<Vec<Change>, Error>) -> Vec<Effect> {
         self.pending.remove(&id);
-        let name = self.job(id).and_then(|j| j.name.clone()).unwrap_or_else(|| id.to_hex()[..6].to_string());
+        let name = self.job(id).map_or_else(|| id.to_hex()[..6].to_string(), |j| j.name.clone());
         match result {
             Ok(changes) => {
                 let text = match action {
@@ -1006,7 +974,7 @@ impl State {
         Vec::new()
     }
 
-    fn confirm_key(&mut self, id: TorrentId, key: KeyEvent) -> Vec<Effect> {
+    fn confirm_key(&mut self, id: DownloadId, key: KeyEvent) -> Vec<Effect> {
         match key.code {
             KeyCode::Enter | KeyCode::Char('x' | 'y') => {
                 self.confirm = None;

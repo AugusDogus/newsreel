@@ -1,4 +1,4 @@
-//! `torrential search`: torrents that match the words.
+//! `torrential search`: releases that match the words.
 
 use torrential_core::protocol::{Request, Response};
 use torrential_core::text::sanitize;
@@ -17,7 +17,7 @@ pub fn run(mut conn: Conn, args: SearchArgs, mode: Mode) -> Result<u8, Error> {
         text: args.words.join(" "),
         sources: args.source,
         category: args.category.map(Into::into),
-        min_seeds: args.min_seeds,
+        min_grabs: args.min_grabs,
         max_size: args.max_size,
         sort: args.sort.into(),
         limit: args.limit,
@@ -67,8 +67,8 @@ pub fn search(result: &SearchResult, now: i64) -> Doc {
     if let Some(category) = query.category {
         filters.push(format!("--category {}", category.as_str()));
     }
-    if let Some(min) = query.min_seeds {
-        filters.push(format!("--min-seeds {min}"));
+    if let Some(min) = query.min_grabs {
+        filters.push(format!("--min-grabs {min}"));
     }
     if let Some(max) = query.max_size {
         filters.push(format!("--max-size {}", size_text(max)));
@@ -87,7 +87,7 @@ pub fn search(result: &SearchResult, now: i64) -> Doc {
             next
         }
     };
-    let header = vec!["ID", "SEEDS", "SIZE", "QUALITY", "AGE", "SOURCE", "FLAGS", "NAME"];
+    let header = vec!["ID", "GRABS", "SIZE", "QUALITY", "AGE", "SOURCE", "FLAGS", "NAME"];
     let profile = &result.query.profile;
     if video {
         summary.push(format!("ranked for {}", ranked_for(profile)));

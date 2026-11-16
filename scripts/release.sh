@@ -57,11 +57,11 @@ case "$target" in
     docker run --rm --init -v "$PWD:/src" -w /src -e OWNER="$(id -u):$(id -g)" -e CARGO="$cargo" -e LANG=C.UTF-8 \
       -e TORRENTIAL_WEB_DIST=/src/target/linux/web \
       -e RUSTUP_HOME=/src/target/linux/rustup -e CARGO_HOME=/src/target/linux/cargo alpine:3.24 sh -euc '
-      apk add --no-cache build-base cmake samurai boost-dev openssl-dev openssl-libs-static linux-headers curl file >/dev/null
+      apk add --no-cache build-base linux-headers curl file >/dev/null
       [ -x "$CARGO_HOME/bin/cargo" ] || curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path >/dev/null 2>&1
       export PATH="$CARGO_HOME/bin:$PATH"
       status=0
-      BOOST_ROOT=/usr OPENSSL_INCLUDE_DIR=/usr/include OPENSSL_LIB_DIR=/usr/lib $CARGO --target-dir target/linux || status=$?
+      $CARGO --target-dir target/linux || status=$?
       chown -R "$OWNER" target/linux
       exit $status
     '

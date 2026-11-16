@@ -12,11 +12,11 @@ pub(crate) mod engine_port;
 pub mod fake;
 pub mod files;
 pub(crate) mod http;
-pub(crate) mod libtorrent;
-pub(crate) mod magnet;
+mod journal;
+pub(crate) mod layout;
 pub(crate) mod media;
-pub(crate) mod metainfo;
 pub(crate) mod names;
+pub(crate) mod nzb_port;
 pub(crate) mod owner;
 pub(crate) mod playing;
 pub mod resolve;
@@ -27,6 +27,7 @@ pub(crate) mod store;
 pub(crate) mod subtitle_port;
 pub(crate) mod switch;
 pub(crate) mod titles;
+pub(crate) mod usenet;
 pub(crate) mod web;
 
 #[cfg(test)]
@@ -54,14 +55,14 @@ use ctx::{Ctx, OwnerHandle};
 use db::Db;
 use detector::Detector;
 use engine_port::Engine;
-use libtorrent::{Libtorrent, Network};
-use metainfo::ParseTorrent;
+use layout::ParseLayout;
+use nzb_port::NzbPort;
 use owner::{Ended, Owner, OwnerConfig};
 use search_port::SearchPort;
 use store::Store;
 
 const SAVE_RESUME_EVERY: Duration = Duration::from_secs(5 * 60);
-/// Longer than libtorrent's 15-minute DHT announce, so a new source gets a round of discovery.
+/// How long a download may go without any server sending the articles it still needs.
 const STALL_AFTER: Duration = Duration::from_secs(20 * 60);
 pub const MAX_ACTIVE: usize = 3;
 
@@ -70,9 +71,9 @@ pub type BoxFuture<'a, T> = std::pin::Pin<Box<dyn std::future::Future<Output = T
 
 pub struct Ports {
     pub engine: Box<dyn Engine>,
-    /// Looks up web seeds for the torrents the engine downloads.
-    pub web_seeds: torrential_search::WebSeeds,
-    pub parse: ParseTorrent,
+    pub parse: ParseLayout,
+    /// Resolves the NZBs of releases into the manifests `parse` reads.
+    pub nzb: Arc<dyn NzbPort>,
     pub search: Arc<dyn SearchPort>,
     pub disk: Box<dyn Disk>,
     pub machine: Arc<Detector>,
@@ -87,7 +88,7 @@ pub struct Ports {
 }
 
 impl Ports {
-    fn from_env(env: &Env, paths: &Paths, settings: &Config) -> Result<Self, Error> {
+    fn from_env(env: &Env, paths: &Paths, settings: &Config, runtime: &tokio::runtime::Handle) -> Result<Self, Error> {
         let (config, path) = (paths.clone(), env.var("PATH").map(String::from));
         let preferences: Arc<dyn Fn() -> Preferences + Send + Sync> = Arc::new(move || {
             let read = crate::config::preferences(&config);
@@ -118,16 +119,15 @@ impl Ports {
             None => cast::Find::Multicast,
         };
         if let Some(test) = test.filter(TestHooks::fake_engine) {
-            let swarm = fake::fixture::swarm(test.fake_rate());
-            // Torrents no peer sends a piece of, so a title play moves past them.
+            let network = fake::fixture::network(test.fake_rate());
+            // Releases whose articles no server has, so a title play moves past them.
             for id in test.dead() {
-                swarm.withhold(id, u32::MAX);
+                network.withhold(id, u32::MAX);
             }
             return Ok(Self {
-                engine: Box::new(fake::Engine::new(swarm)),
-                // The fake engine's torrents list no web seeds, so nothing is looked up.
-                web_seeds: torrential_search::WebSeeds::new(&torrential_search::SearchConfig::default())?,
+                engine: Box::new(fake::Engine::new(network)),
                 parse: fake::parse,
+                nzb: Arc::new(nzb_port::Passthrough),
                 search: Arc::new(fake::fixture::search(torrential_core::time::now())),
                 disk: Box::new(crate::disk::RoomyDisk),
                 machine: Detector::start(env, settings.downloads_dir(paths), Arc::new(crate::disk::RoomyDisk)),
@@ -138,25 +138,18 @@ impl Ports {
                 tvs,
             });
         }
-        let network = match test.map(|test| test.loopback_peers()).transpose()?.flatten() {
-            Some(peers) => Network::Loopback { peers },
-            None => Network::Public,
-        };
         let roomy = test.is_some_and(|test| test.roomy_disk());
         let disk = || -> Box<dyn Disk> {
             if roomy { Box::new(crate::disk::RoomyDisk) } else { Box::new(crate::disk::RealDisk) }
         };
-        let search =
-            torrential_search::SearchConfig { cache_dir: Some(paths.cache.join("search")), ..settings.search.clone() };
-        let search = torrential_search::Search::new(&search, torrential_search::ResultCache::new())?;
-        // The engine's web-seed lookups share the search's, so servers asked for with a `.torrent` are not asked again.
-        let web_seeds = search.web_seeds();
+        let search = torrential_search::Search::new(&settings.search, torrential_search::ResultCache::new())?;
         let search: Arc<dyn SearchPort> = Arc::new(search);
+        let pool = torrential_usenet::Pool::new(settings.usenet.clone());
         Ok(Self {
-            engine: Box::new(Libtorrent::start(&paths.state, network)?),
-            web_seeds,
+            engine: Box::new(usenet::Usenet::new(pool.clone(), runtime.clone(), paths.state.join("usenet"))),
             search,
-            parse: libtorrent::parse,
+            parse: usenet::parse,
+            nzb: Arc::new(usenet::Resolver::new(pool)),
             disk: disk(),
             machine: Detector::start(env, settings.downloads_dir(paths), Arc::from(disk())),
             preferences,
@@ -228,16 +221,8 @@ pub fn start(
     let (events_tx, events) = mpsc::unbounded_channel();
     let (engine, thread) = engine_port::spawn(ports.engine, events_tx);
     let playing = playing::Playing::new();
-    let owner = Owner::new(
-        store,
-        shelf.clone(),
-        engine.clone(),
-        ports.web_seeds,
-        ports.parse,
-        Arc::from(ports.disk),
-        playing.clone(),
-        config,
-    )?;
+    let owner =
+        Owner::new(store, shelf.clone(), engine.clone(), ports.parse, Arc::from(ports.disk), playing.clone(), config)?;
     let (commands_tx, commands) = mpsc::unbounded_channel();
     let task = runtime.spawn(owner.run(commands, events));
     let ctx = Arc::new_cyclic(|ctx| Ctx {
@@ -246,6 +231,7 @@ pub fn start(
         machine: ports.machine,
         engine,
         parse: ports.parse,
+        nzb: ports.nzb,
         version,
         preferences: ports.preferences,
         http_port,
@@ -337,7 +323,6 @@ fn serve(env: &Env, paths: &Paths, service: bool, http_port: Option<u16>) -> Res
     let pause = |hook| test.map_or(Duration::ZERO, |test| test.pause(hook));
     let config = OwnerConfig {
         default_dir,
-        probe_dir: paths.cache.join("probes"),
         max_active: MAX_ACTIVE,
         save_resume_every: asked(hooks::SAVE_RESUME_EVERY).unwrap_or(SAVE_RESUME_EVERY),
         stall_after: asked(hooks::STALL_AFTER).unwrap_or(STALL_AFTER),
@@ -352,7 +337,7 @@ fn serve(env: &Env, paths: &Paths, service: bool, http_port: Option<u16>) -> Res
         .build()
         .map_err(|e| Error::internal(format!("cannot start the async runtime: {e}")))?;
     let version = env.version();
-    let ports = Ports::from_env(env, paths, &settings)?;
+    let ports = Ports::from_env(env, paths, &settings, runtime.handle())?;
     let (engine, ended) = runtime.block_on(async {
         let wanted = http_port.or(test.and_then(|test| test.http_port())).unwrap_or(http::PORT);
         // Open pages reconnect to the address they loaded from, so the engine serves where it last did.

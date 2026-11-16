@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use torrential_core::{Error, TorrentId};
+use torrential_core::{DownloadId, Error};
 
 use super::super::book::{Intent, JobEntry, Observed, Phase};
 use super::Hold;
@@ -11,23 +11,23 @@ use super::Hold;
 /// The downloads title plays are testing or have yet to put back. Only in memory: after a
 /// restart no play is running, so nothing is under test and every download stays as it is.
 #[derive(Default)]
-pub(super) struct Holds(BTreeMap<TorrentId, UnderTest>);
+pub(super) struct Holds(BTreeMap<DownloadId, UnderTest>);
 
 impl Holds {
     /// `hold` tests `id`, which was `before` when the first play reached it.
-    pub(super) fn test(&mut self, id: TorrentId, hold: Hold, before: Before) {
+    pub(super) fn test(&mut self, id: DownloadId, hold: Hold, before: Before) {
         self.0.entry(id).or_insert(UnderTest { holds: BTreeSet::new(), before }).holds.insert(hold);
     }
 
     /// The person took `id` over, so whatever it was before, it stays theirs.
-    pub(super) fn adopt(&mut self, id: TorrentId) {
+    pub(super) fn adopt(&mut self, id: DownloadId) {
         if let Some(test) = self.0.get_mut(&id) {
             test.before = Before::Kept;
         }
     }
 
     /// `id` is owed nothing more: it played, it is gone, or it was put back.
-    pub(super) fn end(&mut self, id: TorrentId) {
+    pub(super) fn end(&mut self, id: DownloadId) {
         self.0.remove(&id);
     }
 
@@ -38,11 +38,11 @@ impl Holds {
         }
     }
 
-    pub(super) fn testing(&self, id: TorrentId) -> bool {
+    pub(super) fn testing(&self, id: DownloadId) -> bool {
         self.0.contains_key(&id)
     }
 
-    pub(super) fn ids(&self) -> Vec<TorrentId> {
+    pub(super) fn ids(&self) -> Vec<DownloadId> {
         self.0.keys().copied().collect()
     }
 
@@ -50,7 +50,7 @@ impl Holds {
     /// no longer on the list is owed nothing.
     pub(super) fn owed(
         &self,
-        id: TorrentId,
+        id: DownloadId,
         job: Option<&JobEntry>,
         on_disk: impl FnOnce(&JobEntry) -> OnDisk,
     ) -> Option<PutBack> {

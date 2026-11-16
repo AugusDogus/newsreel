@@ -48,7 +48,7 @@ expression: value
           "verified": 0
         }
       ],
-      "metadata_source": "torrent_url",
+      "source": "nzb_url",
       "elapsed_ms": "[redacted]"
     },
     "next": "torrential get 4c1e9a"

@@ -5,17 +5,16 @@ use sha1::{Digest, Sha1};
 use torrential_core::error::Details;
 use torrential_core::title::{Namesakes, Wanted};
 use torrential_core::{
-    Arch, Error, ErrorCode, Flag, InfoHash, Language, LocatorId, Profile, Quality, Release, ReleaseId, Resolution,
-    SearchQuery, SearchResult, SourceOutcome, SourceReport, Swarm, TorrentId,
+    Arch, Error, ErrorCode, Flag, Language, Profile, Quality, Release, Resolution, ResultId, SearchQuery, SearchResult,
+    SourceOutcome, SourceReport,
 };
 
 use crate::classify;
-use crate::observation::{Identity, Observation, VideoFile, build_magnet};
+use crate::observation::Observation;
 use crate::rank::{self, FAKE_MBPS};
 use crate::sources::{Failure, SourceMeta};
 use crate::terms::{Relevance, Terms};
-
-const MAX_TRACKERS: usize = 32;
+use crate::trash;
 
 #[derive(Clone)]
 pub(crate) struct Run {
@@ -37,7 +36,8 @@ pub(crate) fn vet(terms: &Terms, rows: Vec<Observation>) -> Result<Vec<Observati
     if (total - kept.len()) * 2 > total { Err(Failure::Irrelevant) } else { Ok(kept) }
 }
 
-pub(crate) type Linked = (Release, Option<String>);
+/// A release and the indexer whose link it carries, which saves the link without its key.
+pub(crate) type Linked = (Release, String);
 
 pub(crate) fn assemble(
     query: &SearchQuery,
@@ -77,7 +77,7 @@ pub(crate) fn merged(
     let releases = kept.iter().map(Candidate::shown).collect();
     let query = SearchQuery { profile, ..query.clone() };
     let result = SearchResult { query, releases, total, hidden_adult, sources, elapsed_ms };
-    (result, kept.into_iter().map(|c| (c.release, c.private_url)).collect())
+    (result, kept.into_iter().map(|c| (c.release, c.source)).collect())
 }
 
 /// One source's report over its runs, one for each of a title's queries.
@@ -119,31 +119,24 @@ fn all_failed(sources: Vec<SourceReport>) -> Error {
 
 pub(crate) struct Candidate {
     pub release: Release,
-    hash: Option<InfoHash>,
-    private_url: Option<String>,
-    /// The trackers came from a private source and carry the user's passkey.
-    private_trackers: bool,
-    /// The page link came from a private source, which may put a passkey in it.
-    private_info: bool,
+    /// The indexer whose link the release carries.
+    source: String,
     pub(crate) relevance: Relevance,
     pub(crate) extra_words: u16,
     /// A trailer, a clip, or another extra, by a word the query does not hold.
     extra: bool,
-    pub(crate) downloads: Option<u64>,
-    pub(crate) lawful: bool,
     pub(crate) quality: Quality,
     pub(crate) resolution: Option<Resolution>,
     pub(crate) arches: Vec<Arch>,
     pub(crate) languages: Vec<Language>,
+    /// How high TRaSH Guides ranks the group, when the release is of the query's title.
+    pub(crate) tier: u8,
     /// Set only in a title's search, for a release of the wanted title.
     pub(crate) title: Option<TitleFit>,
-    /// The video files its catalog lists, in a title's search.
-    pub(crate) videos: Vec<VideoFile>,
 }
 
 /// How a release of the wanted title plays here. Its span is in `release.span`.
 pub(crate) struct TitleFit {
-    pub(crate) swarm: Swarm,
     /// Other titles share the name and this release names no year.
     pub(crate) undated: bool,
     /// Mbit/s per film or episode. `None` when the size or the runtime is unknown.
@@ -153,56 +146,35 @@ pub(crate) struct TitleFit {
 }
 
 impl Candidate {
+    /// The release as output shows it: NZB links carry the user's API key, so they stay inside.
     fn shown(&self) -> Release {
-        let mut release = self.release.clone();
-        if self.private_url.is_some() {
-            release.torrent_url = None;
-        }
-        if self.private_trackers {
-            release.magnet = self.hash.map(|h| build_magnet(&h, &release.name, &[]));
-        }
-        if self.private_info {
-            release.info_url = None;
-        }
-        release
+        Release { nzb_url: None, ..self.release.clone() }
     }
 }
 
 type Sighting<'a> = (&'a SourceMeta, &'a Observation);
 
+/// The ID of the search result an NZB link names.
+pub(crate) fn result_id(nzb_url: &str) -> ResultId {
+    ResultId::from_bytes(Sha1::digest(nzb_url.as_bytes()).into())
+}
+
 fn merge<'a>(sightings: impl Iterator<Item = Sighting<'a>>, terms: &Terms) -> Vec<Candidate> {
-    let sightings: Vec<Sighting<'a>> = sightings.collect();
-    let mut aliases: HashMap<TorrentId, TorrentId> = HashMap::new();
-    for (_, o) in &sightings {
-        if let Identity::Hash { hash: InfoHash::Hybrid { v1, v2 }, .. } = o.identity {
-            let v1 = TorrentId::from_bytes(v1);
-            aliases.entry(InfoHash::V2(v2).id()).and_modify(|known| *known = (*known).min(v1)).or_insert(v1);
-        }
-    }
-    let mut groups: HashMap<ReleaseId, Vec<Sighting<'a>>> = HashMap::new();
+    let mut groups: HashMap<ResultId, Vec<Sighting<'a>>> = HashMap::new();
     for sighting in sightings {
-        let id = match &sighting.1.identity {
-            Identity::Hash { hash, .. } => {
-                let id = hash.id();
-                ReleaseId::Torrent(aliases.get(&id).copied().unwrap_or(id))
-            }
-            Identity::Locator { torrent_url } => {
-                ReleaseId::Locator(LocatorId::from_bytes(Sha1::digest(torrent_url.as_bytes()).into()))
-            }
-        };
-        groups.entry(id).or_default().push(sighting);
+        groups.entry(result_id(&sighting.1.nzb_url)).or_default().push(sighting);
     }
     groups.into_iter().map(|(id, group)| combine(id, &group, terms)).collect()
 }
 
-fn combine(id: ReleaseId, group: &[Sighting<'_>], terms: &Terms) -> Candidate {
+fn combine(id: ResultId, group: &[Sighting<'_>], terms: &Terms) -> Candidate {
     fn first<T: Ord + Clone>(group: &[Sighting<'_>], field: impl Fn(&Observation) -> Option<T>) -> Option<T> {
         group.iter().filter_map(|(s, o)| field(o).map(|v| (s.authority, v))).min().map(|(_, v)| v)
     }
     let name = group
         .iter()
         .map(|(s, o)| {
-            // Indexes cut long titles and mark the cut with an ellipsis, which
+            // Indexers cut long titles and mark the cut with an ellipsis, which
             // makes the cut name longer than the whole one.
             let name = o.name();
             let whole = name.strip_suffix("...").or_else(|| name.strip_suffix('…')).map(str::trim_end);
@@ -212,7 +184,6 @@ fn combine(id: ReleaseId, group: &[Sighting<'_>], terms: &Terms) -> Candidate {
         .map(|(.., name)| name.to_string())
         .unwrap_or_default();
     let category = first(group, |o| o.category);
-    let peers = group.iter().filter_map(|(_, o)| o.peers).max();
     let mut flags: BTreeSet<Flag> = group.iter().flat_map(|(_, o)| o.flags.iter().copied()).collect();
     if group.iter().any(|(_, o)| classify::is_cam(o.name(), category)) {
         flags.insert(Flag::Cam);
@@ -220,17 +191,20 @@ fn combine(id: ReleaseId, group: &[Sighting<'_>], terms: &Terms) -> Candidate {
     if group.iter().any(|(_, o)| classify::is_adult(o.name())) {
         flags.insert(Flag::Adult);
     }
+    let standing = trash::standing(&name);
+    if standing.is_avoid() {
+        flags.insert(Flag::Avoid);
+    }
+    // A ranked group's release of another title is no better a match for it.
+    let tier = if terms.is_title_of(&name) { standing.tier_rank() } else { 0 };
     let mut authorities: Vec<(u16, &str)> = group.iter().map(|(s, _)| (s.authority, s.name.as_str())).collect();
     authorities.sort();
     authorities.dedup();
-    let any_public = group.iter().any(|(s, _)| s.public);
-    let trackers: BTreeSet<&String> =
-        group.iter().filter(|(s, _)| s.public || !any_public).flat_map(|(_, o)| &o.trackers).collect();
-    let trackers: Vec<String> = trackers.into_iter().take(MAX_TRACKERS).cloned().collect();
-    let hash = combined_hash(group);
-    let link =
-        group.iter().filter_map(|(s, o)| o.torrent_url().map(|url| (s.authority, !s.public, url, &s.name))).min();
-    let info = group.iter().filter_map(|(s, o)| o.info_url.as_deref().map(|url| (s.authority, !s.public, url))).min();
+    let (_, source, nzb_url) = group
+        .iter()
+        .map(|(s, o)| (s.authority, &s.name, &o.nzb_url))
+        .min()
+        .expect("a group holds at least one sighting");
     let relevance = group.iter().map(|(_, o)| terms.relevance(o.name())).max().unwrap_or(terms.relevance(""));
     let extra_words = terms.extra_words(&name);
     let quality = Quality::parse(&name);
@@ -240,52 +214,29 @@ fn combine(id: ReleaseId, group: &[Sighting<'_>], terms: &Terms) -> Candidate {
     let arches = Arch::named_in(&name);
     let languages = Language::named_in(&name, terms.words());
     Candidate {
-        hash,
-        private_url: link.filter(|(_, private, ..)| *private).map(|(.., source)| source.clone()),
-        private_trackers: !any_public && !trackers.is_empty(),
-        private_info: info.is_some_and(|(_, private, _)| private),
+        source: source.clone(),
         release: Release {
             id,
-            magnet: hash.map(|h| build_magnet(&h, &name, &trackers)),
             name,
             size,
-            seeders: peers.map(|p| p.seeders),
-            leechers: peers.and_then(|p| p.leechers),
+            grabs: group.iter().filter_map(|(_, o)| o.grabs).max(),
             published: first(group, |o| o.published),
             category,
             flags,
             sources: authorities.into_iter().map(|(_, name)| name.to_string()).collect(),
-            torrent_url: link.map(|(_, _, url, _)| url.to_string()),
-            info_url: info.map(|(.., url)| url.to_string()),
+            nzb_url: Some(nzb_url.clone()),
             span: None,
-            swarm: None,
             failed: None,
         },
         relevance,
         extra_words,
         extra,
-        downloads: group.iter().filter_map(|(_, o)| o.downloads).max(),
-        lawful: group.iter().any(|(s, _)| s.lawful),
         quality,
         resolution,
         arches,
         languages,
         title: None,
-        videos: group.iter().map(|(_, o)| &o.videos).find(|videos| !videos.is_empty()).cloned().unwrap_or_default(),
-    }
-}
-
-fn combined_hash(group: &[Sighting<'_>]) -> Option<InfoHash> {
-    let hashes = group.iter().filter_map(|(_, o)| match &o.identity {
-        Identity::Hash { hash, .. } => Some(*hash),
-        Identity::Locator { .. } => None,
-    });
-    let (v1, v2) = hashes.fold((None, None), |(v1, v2), h| (v1.max(h.v1()), v2.max(h.v2())));
-    match (v1, v2) {
-        (Some(v1), Some(v2)) => Some(InfoHash::Hybrid { v1, v2 }),
-        (Some(v1), None) => Some(InfoHash::V1(v1)),
-        (None, Some(v2)) => Some(InfoHash::V2(v2)),
-        (None, None) => None,
+        tier,
     }
 }
 
@@ -296,7 +247,7 @@ fn filter(candidates: Vec<Candidate>, q: &SearchQuery) -> (Vec<Candidate>, u32) 
         .filter(|c| {
             let r = &c.release;
             q.category.is_none_or(|want| r.category == Some(want))
-                && q.min_seeds.is_none_or(|min| r.seeders.is_some_and(|s| s >= min))
+                && q.min_grabs.is_none_or(|min| r.grabs.is_some_and(|g| g >= min))
                 && q.max_size.is_none_or(|max| r.size.is_some_and(|s| s <= max))
         })
         .filter_map(|c| match &q.wanted {
@@ -313,22 +264,20 @@ fn filter(candidates: Vec<Candidate>, q: &SearchQuery) -> (Vec<Candidate>, u32) 
 }
 
 /// The candidate as a release of the wanted title, or `None` when it is another title or an
-/// extra such as its trailer, when its swarm is known to be dead, or when its bitrate says it
-/// is a fake.
+/// extra such as its trailer, or when its bitrate says it is a fake.
 fn fitted(mut c: Candidate, wanted: &Wanted) -> Option<Candidate> {
     if c.extra {
         return None;
     }
     let reading = wanted.fit(&c.release.name)?;
-    let swarm = rank::swarm(c.release.seeders, c.lawful)?;
     let bitrate = rank::bitrate(c.release.size, reading.span, wanted);
     if bitrate.is_some_and(|mbps| mbps < FAKE_MBPS) {
         return None;
     }
     c.release.span = Some(reading.span);
-    c.release.swarm = Some(swarm);
+    // The fit already says it is the wanted title, so a ranked group counts whatever the name.
+    c.tier = trash::standing(&c.release.name).tier_rank();
     c.title = Some(TitleFit {
-        swarm,
         undated: wanted.namesakes == Namesakes::Leading && reading.year.is_none(),
         mbps: bitrate,
         other_words: wanted.other_words(&c.release.name),

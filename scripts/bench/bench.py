@@ -11,8 +11,8 @@ Suites:
   search-words  A search for words the engine has not searched, without --fresh, spread over time.
   cache-idle  Whether a search is still cached after the engine sat idle.
   rest        Engine CPU, wakeups, and memory with nothing to do.
-  tui-download  TUI CPU in tmux while the real engine downloads --torrent.
-  download    torrential against aria2c on one .torrent, alternating, checked by SHA-256.
+  tui-download  TUI CPU in tmux while the real engine downloads --nzb.
+  download    torrential downloading one --nzb, checked by SHA-256, optionally alternating with http.
   http        The same file over plain HTTP, to show what the link carries.
   summary     Median, p95, and range per case from runs.jsonl.
 
@@ -31,7 +31,6 @@ import itertools
 import json
 import math
 import os
-import re
 import shutil
 import socket
 import statistics
@@ -452,7 +451,7 @@ def suite_tui_download(a, record):
         home = Home(a.bin, a.out, f"tui-dl{i}")
         session = f"bench-tui-{os.getpid()}-{i}"
         try:
-            home.run("--json", "get", a.torrent, "--dir", str(home.downloads))
+            home.run("--json", "get", a.nzb, "--dir", str(home.downloads))
             engine = home.engine_pid()
             env = f"TORRENTIAL_HOME={home.root} TERM=xterm-256color COLORTERM=truecolor"
             tui_cmd = f"exec env {env} {a.bin} tui"
@@ -501,7 +500,7 @@ def torrential_once(a, i, record):
         sampler.start()
         series = []
         started = time.perf_counter()
-        _, _, out = home.run("--json", "get", a.torrent, "--dir", str(home.downloads))
+        _, _, out = home.run("--json", "get", a.nzb, "--dir", str(home.downloads))
         job = json.loads(out)["reply"]["job"]
         short = job["id"][:6]
         waiter = subprocess.Popen(
@@ -511,7 +510,7 @@ def torrential_once(a, i, record):
             _, _, out = home.run("--json", "status", short)
             p = json.loads(out)["jobs"][0]["progress"]
             elapsed = round(time.perf_counter() - started, 1)
-            series.append([elapsed, p["verified"], p["down_rate"], p["peers"], p["seeds"]])
+            series.append([elapsed, p["verified"], p["down_rate"], p["connections"]])
             time.sleep(a.poll)
         finished = time.perf_counter()
         wait_out = waiter.stdout.read()
@@ -543,76 +542,8 @@ def torrential_once(a, i, record):
         home.remove()
 
 
-AQ = re.compile(r"\[#\w+ ([\d.]+)(\w+)/([\d.]+)\w+\(\d+%\) CN:(\d+)(?: SD:(\d+))? DL:([\d.]+)(\w+)")
-UNITS = {"B": 1, "KiB": 1 << 10, "MiB": MIB, "GiB": 1 << 30}
-
-
-def aria2_once(a, i, record, args=None, side="aria2c"):
-    args = a.aria2_arg if args is None else args
-    root = Path(a.out) / f"dl-a{i}"
-    shutil.rmtree(root, ignore_errors=True)
-    root.mkdir(parents=True)
-    cmd = [
-        a.aria2c,
-        "--no-conf",
-        "--seed-time=0",
-        f"--dir={root}",
-        f"--dht-file-path={root}/dht.dat",
-        f"--dht-file-path6={root}/dht6.dat",
-        f"--summary-interval={int(a.poll)}",
-        "--console-log-level=warn",
-        "--enable-color=false",
-        "--show-console-readout=false",
-        *args,
-        a.torrent,
-    ]
-    try:
-        started = time.perf_counter()
-        child = subprocess.Popen(cmd, env=dict(os.environ, HOME=str(root)), stdout=subprocess.PIPE, text=True)
-        sampler = Sampler(child.pid)
-        sampler.start()
-        series = []
-        for line in child.stdout:
-            m = AQ.search(line)
-            if m:
-                done, rate = float(m[1]) * UNITS.get(m[2], 1), float(m[6]) * UNITS.get(m[7], 1)
-                elapsed = round(time.perf_counter() - started, 1)
-                series.append([elapsed, int(done), int(rate), int(m[4]), int(m[5] or 0)])
-        _, status, ru = os.wait4(child.pid, 0)
-        finished = time.perf_counter()
-        sampler.stop()
-        path = root / Path(a.torrent).name.removesuffix(".torrent")
-        digest = sha256(path) if path.exists() else None
-        wall = finished - started
-        last = sampler.last or {}
-        record(
-            "download",
-            side=side,
-            run=i,
-            ok=os.waitstatus_to_exitcode(status) == 0 and digest == a.sha256,
-            exit=os.waitstatus_to_exitcode(status),
-            sha256_ok=digest == a.sha256,
-            wall_s=round(wall, 2),
-            mib_per_s=round(path.stat().st_size / MIB / wall, 2) if path.exists() else None,
-            cpu_s=round(ru.ru_utime + ru.ru_stime, 2),
-            peak_rss_mib=round(ru.ru_maxrss / MIB, 1),
-            peak_footprint_mib=round(last.get("max_footprint", 0) / MIB, 1),
-            disk_written_mib=round(last.get("disk_written", 0) / MIB, 1),
-            args=args,
-            first_byte_s=next((s[0] for s in series if s[1] > 0), None),
-            series=series,
-        )
-    finally:
-        shutil.rmtree(root, ignore_errors=True)
-
-
 def suite_download(a, record):
-    sides = {
-        "t": torrential_once,
-        "a": aria2_once,
-        "A": lambda a, i, record: aria2_once(a, i, record, a.aria2_tuned_arg, "aria2c-tuned"),
-        "h": http_once,
-    }
+    sides = {"t": torrential_once, "h": http_once}
     for i in range(a.start, a.start + a.runs):
         k = i % len(a.order) if a.rotate else 0
         for side in a.order[k:] + a.order[:k]:
@@ -750,7 +681,7 @@ def download_summary(rows):
             print(f"wall_s torrential vs {side}: exact rank-sum p = {p:.3f} (n = {len(base)} and {len(other)})")
     cpu_base = [r["cpu_s"] for r in sides.get("torrential", [])]
     for side, group in sides.items():
-        if side not in ("torrential", "http") and cpu_base:
+        if side != "torrential" and side != "http" and cpu_base:
             other = [r["cpu_s"] for r in group]
             print(f"cpu_s torrential vs {side}: exact rank-sum p = {rank_sum_p(cpu_base, other):.3f}")
 
@@ -774,24 +705,17 @@ def main():
     p.add_argument("--idle", type=float, default=150, help="cache-idle: seconds to leave the engine alone")
     p.add_argument("--settle", type=float, default=5, help="rest, tui-download: seconds after start before measuring")
     p.add_argument("--seconds", type=float, default=60, help="rest, tui-download: measurement window")
-    p.add_argument("--torrent", help="download: the .torrent both clients fetch")
+    p.add_argument("--nzb", help="download, tui-download: the NZB file or URL to download")
     p.add_argument("--sha256", help="download, http: expected SHA-256 of the file")
-    p.add_argument("--aria2c", default="aria2c")
-    p.add_argument("--aria2-arg", action="append", default=[], help="download: extra aria2c flag, repeatable")
-    p.add_argument(
-        "--order",
-        default="ta",
-        help="download: t torrential, a aria2c, A aria2c with --aria2-tuned-arg, h HTTP from --url",
-    )
+    p.add_argument("--order", default="t", help="download: t torrential, h HTTP from --url")
     p.add_argument("--rotate", action="store_true", help="download: start each round one side later")
-    p.add_argument("--aria2-tuned-arg", action="append", default=[], help="download: aria2c flag for side A")
     p.add_argument("--poll", type=float, default=2, help="download: seconds between progress samples")
     p.add_argument("--url", help="http: the file to fetch")
     p.add_argument("--floor", action="append", default=[], help="startup: a binary to launch for comparison")
     a = p.parse_args()
     a.bin = str(Path(a.bin).resolve())
-    if a.torrent:
-        a.torrent = str(Path(a.torrent).resolve())
+    if a.nzb and "://" not in a.nzb:
+        a.nzb = str(Path(a.nzb).resolve())
     if not a.out.startswith("/tmp/"):
         sys.exit("--out must be under /tmp, so no run touches a real home")
     Path(a.out).mkdir(parents=True, exist_ok=True)

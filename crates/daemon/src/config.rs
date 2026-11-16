@@ -7,7 +7,7 @@ use torrential_core::units::{parse_size, size_text};
 use torrential_core::{Error, ErrorCode, Playback, Preferences, Screen};
 use torrential_search::catalog::CatalogConfig;
 use torrential_search::subtitles::SubtitleConfig;
-use torrential_search::{SearchConfig, TorznabConfig};
+use torrential_search::{IndexerConfig, SearchConfig};
 
 use crate::env::{Env, hooks};
 use crate::fsutil::{Writes, write_atomic};
@@ -23,6 +23,8 @@ pub struct Config {
     pub updates: Policy,
     pub player: Option<Choice>,
     pub subtitles: SubtitleConfig,
+    /// NNTP servers, tried by priority.
+    pub usenet: Vec<torrential_usenet::Server>,
     pub catalog: CatalogConfig,
     pub ffmpeg: FfmpegConfig,
     pub plays_max: PlaysMax,
@@ -62,6 +64,7 @@ struct File {
     catalog: Catalog,
     ffmpeg: Ffmpeg,
     plays: Plays,
+    usenet: Usenet,
 }
 
 #[derive(Deserialize, Default)]
@@ -69,6 +72,25 @@ struct File {
 struct Plays {
     /// A size, or none to keep every play.
     max: Option<Spanned<String>>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct Usenet {
+    servers: Vec<UsenetServer>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UsenetServer {
+    host: String,
+    port: Option<u16>,
+    tls: Option<bool>,
+    username: String,
+    /// The environment variable that holds the password, so the file holds no secret.
+    password_env: Spanned<String>,
+    connections: Option<u16>,
+    priority: Option<i32>,
 }
 
 #[derive(Deserialize, Default)]
@@ -124,12 +146,12 @@ struct Downloads {
 #[serde(default, deny_unknown_fields)]
 struct Sources {
     disabled: Vec<String>,
-    torznab: Vec<Torznab>,
+    newznab: Vec<Indexer>,
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Torznab {
+struct Indexer {
     name: String,
     url: String,
     api_key_env: Option<Spanned<String>>,
@@ -151,7 +173,6 @@ impl Config {
             }
         };
         if let Some(test) = env.test() {
-            config.search.endpoints = test.endpoints(hooks::ENDPOINTS)?;
             config.subtitles.endpoints = test.endpoints(hooks::SUBTITLE_ENDPOINTS)?;
             if let Some(endpoint) = test.var(hooks::CATALOG_ENDPOINT) {
                 config.catalog.endpoint = Some(endpoint.to_string());
@@ -371,11 +392,11 @@ fn parse(text: &str, env: &Env) -> Result<Config, Problem> {
             }
         })
         .transpose()?;
-    let torznab = file
+    let indexers = file
         .sources
-        .torznab
+        .newznab
         .into_iter()
-        .map(|Torznab { name, url, api_key_env }| {
+        .map(|Indexer { name, url, api_key_env }| {
             let api_key = match api_key_env {
                 None => None,
                 Some(Spanned { value: var, referenced, .. }) => match env.var(&var) {
@@ -388,10 +409,10 @@ fn parse(text: &str, env: &Env) -> Result<Config, Problem> {
                     }
                 },
             };
-            Ok(TorznabConfig { name, url, api_key })
+            Ok(IndexerConfig { name, url, api_key })
         })
         .collect::<Result<_, _>>()?;
-    let search = SearchConfig { torznab, disabled: file.sources.disabled, ..SearchConfig::default() };
+    let search = SearchConfig { indexers, disabled: file.sources.disabled };
     let preferences = file.preferences.unwrap_or_default().read()?;
     let player = file
         .player
@@ -418,7 +439,42 @@ fn parse(text: &str, env: &Env) -> Result<Config, Problem> {
             (Some(referenced.line()), format!("plays.max {value:?} is not a size; use a form like 20GiB, or none"))
         })?),
     };
-    Ok(Config { downloads, search, file: None, preferences, updates, player, subtitles, catalog, ffmpeg, plays_max })
+    let usenet = file
+        .usenet
+        .servers
+        .into_iter()
+        .map(|s| {
+            let Spanned { value: var, referenced, .. } = s.password_env;
+            let password = env.var(&var).ok_or_else(|| {
+                (
+                    Some(referenced.line()),
+                    format!("the {:?} usenet server takes its password from {var}, which is not set", s.host),
+                )
+            })?;
+            Ok(torrential_usenet::Server {
+                port: s.port.unwrap_or(if s.tls == Some(false) { 119 } else { 563 }),
+                tls: s.tls.unwrap_or(true),
+                username: s.username,
+                password: password.to_string(),
+                connections: s.connections.unwrap_or(8),
+                priority: s.priority.unwrap_or(0),
+                host: s.host,
+            })
+        })
+        .collect::<Result<_, Problem>>()?;
+    Ok(Config {
+        downloads,
+        search,
+        file: None,
+        preferences,
+        updates,
+        player,
+        subtitles,
+        catalog,
+        ffmpeg,
+        plays_max,
+        usenet,
+    })
 }
 
 fn describe(error: &serde_saphyr::Error) -> String {
@@ -449,7 +505,7 @@ mod tests {
     const PLAYER: &str = if cfg!(windows) { r"C:\Tools\play.exe" } else { "/usr/local/bin/play" };
 
     fn env() -> Env {
-        Env::from_pairs([("HOME", HOME), ("JACKETT_KEY", "k3y")])
+        Env::from_pairs([("HOME", HOME), ("JACKETT_KEY", "k3y"), ("NEWS_PASS", "s3cret")])
     }
 
     fn load(text: &str) -> Result<Config, Error> {
@@ -479,7 +535,7 @@ downloads:
   dir: ~/isos
 sources:
   disabled: [nyaa, apibay]
-  torznab:
+  newznab:
     - name: jackett
       url: http://127.0.0.1:9117/api
       api_key_env: JACKETT_KEY
@@ -488,8 +544,8 @@ sources:
         assert_eq!(config.downloads, Some(Path::new(HOME).join("isos")));
         assert_eq!(config.search.disabled, ["nyaa", "apibay"]);
         assert_eq!(
-            config.search.torznab,
-            [TorznabConfig {
+            config.search.indexers,
+            [IndexerConfig {
                 name: "jackett".into(),
                 url: "http://127.0.0.1:9117/api".into(),
                 api_key: Some("k3y".into())
@@ -497,6 +553,44 @@ sources:
         );
         assert_eq!(parse("", &env()).unwrap(), Config::default());
         assert_eq!(parse("# nothing yet\n", &env()).unwrap(), Config::default());
+    }
+
+    #[test]
+    fn reads_usenet_servers_and_newznab_indexers() {
+        let text = "
+sources:
+  newznab:
+    - name: hydra
+      url: http://127.0.0.1:5076/api
+      api_key_env: JACKETT_KEY
+usenet:
+  servers:
+    - host: news.example.com
+      username: ada
+      password_env: NEWS_PASS
+    - host: backup.example.com
+      port: 119
+      tls: false
+      username: ada
+      password_env: NEWS_PASS
+      connections: 4
+      priority: 1
+";
+        let config = parse(text, &env()).unwrap();
+        assert_eq!(config.search.indexers[0].name, "hydra");
+        assert_eq!(config.search.indexers[0].api_key.as_deref(), Some("k3y"));
+        let summary: Vec<_> =
+            config.usenet.iter().map(|s| (s.host.as_str(), s.port, s.tls, s.connections, s.priority)).collect();
+        assert_eq!(summary, [("news.example.com", 563, true, 8, 0), ("backup.example.com", 119, false, 4, 1)]);
+        assert_eq!(config.usenet[0].password, "s3cret");
+    }
+
+    #[test]
+    fn a_usenet_password_must_come_from_a_set_variable() {
+        let text = "usenet:\n  servers:\n    - host: h\n      username: u\n      password_env: MISSING\n";
+        let (line, message) = parse(text, &env()).unwrap_err();
+        assert_eq!(line, Some(5));
+        assert_eq!(message, "the \"h\" usenet server takes its password from MISSING, which is not set");
     }
 
     #[test]
@@ -811,26 +905,26 @@ sources:
 
     #[test]
     fn names_that_yaml_1_1_reads_as_booleans_stay_strings() {
-        let text = "sources:\n  disabled: [no, off, yes]\n  torznab:\n    - name: no\n      url: http://x/api\n";
+        let text = "sources:\n  disabled: [no, off, yes]\n  newznab:\n    - name: no\n      url: http://x/api\n";
         let config = parse(text, &env()).unwrap();
         assert_eq!(config.search.disabled, ["no", "off", "yes"]);
-        assert_eq!(config.search.torznab[0].name, "no");
+        assert_eq!(config.search.indexers[0].name, "no");
     }
 
     #[test]
     fn a_bad_file_is_an_error_that_names_the_line() {
-        let indexer = "sources:\n  torznab:\n    - name: j\n      url: http://x/api\n";
+        let indexer = "sources:\n  newznab:\n    - name: j\n      url: http://x/api\n";
         let cases = [
             (
                 format!("downloads:\n  dir: {HOME}\nsources:\n  disable: [nyaa]\n"),
-                "line 4: unknown field `disable`, expected one of disabled, torznab",
+                "line 4: unknown field `disable`, expected one of disabled, newznab",
             ),
             ("sources:\n  disabled: [nyaa, apibay\n".to_string(), "line 2: unclosed bracket '['"),
             (
                 "sources:\n  disabled: [nyaa]\n  disabled: [apibay]\n".to_string(),
                 "line 3: duplicate mapping key: disabled not allowed here",
             ),
-            ("sources:\n  torznab: 3\n".to_string(), "line 2: expected sequence start"),
+            ("sources:\n  newznab: 3\n".to_string(), "line 2: expected sequence start"),
             (
                 "downloads:\n  dir: isos\n".to_string(),
                 "line 2: downloads.dir \"isos\" must be an absolute path or start with ~/",

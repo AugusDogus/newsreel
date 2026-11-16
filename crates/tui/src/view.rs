@@ -5,12 +5,12 @@ use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use torrential_core::units::{count, format_duration};
 use torrential_core::{
-    Eighths, ErrorCode, Flag, Job, JobStatus, Machine, Preferences, Profile, Quality, Release, ReleaseId, Resolution,
-    Slice, SourceOutcome, TorrentFile,
+    Eighths, ErrorCode, Flag, Job, JobStatus, Machine, Preferences, Profile, Quality, Release, ReleaseFile, Resolution,
+    ResultId, Slice, SourceOutcome,
 };
 
 use crate::format::{
-    self, age, ellipsize, first_fit, home_path, middle, percent, rate, seeds, shortenings, size, width,
+    self, age, ellipsize, first_fit, grabs, home_path, middle, percent, rate, shortenings, size, width,
 };
 use crate::layout::{self, Block, Indent, MASTHEAD, SEARCH, Screen};
 use crate::state::{
@@ -93,7 +93,7 @@ pub(crate) fn rule(buf: &mut Buffer, at: Indent, top: u16, bottom: u16) {
 }
 
 enum Meter {
-    Share { verified: u64, size: Option<u64>, getting: bool },
+    Share { verified: u64, size: u64, getting: bool },
     Pieces(Vec<Eighths>),
 }
 
@@ -119,8 +119,8 @@ impl Meter {
         }
     }
 
-    fn file(state: &State, job: &Job, file: &TorrentFile) -> Self {
-        Self::Share { verified: file.verified, size: Some(file.size), getting: state.getting(job) }
+    fn file(state: &State, job: &Job, file: &ReleaseFile) -> Self {
+        Self::Share { verified: file.verified, size: file.size, getting: state.getting(job) }
     }
 }
 
@@ -128,11 +128,7 @@ fn progress_mark(buf: &mut Buffer, x: u16, y: u16, cells: u16, meter: Meter) {
     match meter {
         Meter::Share { verified, size, getting } => {
             let ink = if getting { ACTION } else { PENCIL };
-            let fraction = match size {
-                Some(0) => 1.0,
-                Some(size) => verified as f64 / size as f64,
-                None => 0.0,
-            };
+            let fraction = if size == 0 { 1.0 } else { verified as f64 / size as f64 };
             let halves = (fraction.clamp(0.0, 1.0) * f64::from(cells) * 2.0).floor() as u16;
             for i in 0..cells {
                 let (glyph, color) = match halves.saturating_sub(i * 2) {
@@ -258,7 +254,7 @@ fn short_of_space(state: &State) -> bool {
         .downloads
         .iter()
         .filter(|j| crate::state::group(&j.status) == 0)
-        .filter_map(|j| j.progress.size.map(|s| s.saturating_sub(j.progress.verified)))
+        .map(|j| j.progress.size.saturating_sub(j.progress.verified))
         .sum();
     state.free_space.is_some_and(|free| free < needed.max(1 << 30))
 }
@@ -405,7 +401,7 @@ struct Columns {
     flag: Option<u16>,
     quality: Option<u16>,
     size: u16,
-    seeds: Option<u16>,
+    grabs: Option<u16>,
     age: Option<u16>,
     right: u16,
 }
@@ -415,15 +411,15 @@ fn result_columns(screen: &Screen, with_quality: bool) -> Columns {
     if at.narrow() {
         let quality = (with_quality && right - 15 >= at.content + 17).then_some(right - 15);
         let names = quality.map_or(right - 10, |x| x - 1);
-        return Columns { at, names, flag: None, quality, size: right, seeds: None, age: None, right };
+        return Columns { at, names, flag: None, quality, size: right, grabs: None, age: None, right };
     }
-    let seeds = right - 6;
-    let size = seeds - 7;
+    let grabs = right - 6;
+    let size = grabs - 7;
     let quality = size - 15;
     let names = (quality - 10).saturating_sub(at.content + 2);
     let quality = (with_quality && names >= 20).then_some(quality);
     let flag = quality.unwrap_or(size - 8) - 10;
-    Columns { at, names: flag - 2, flag: Some(flag), quality, size, seeds: Some(seeds), age: Some(right), right }
+    Columns { at, names: flag - 2, flag: Some(flag), quality, size, grabs: Some(grabs), age: Some(right), right }
 }
 
 fn before_size(c: &Columns) -> u16 {
@@ -594,10 +590,10 @@ fn download_row(buf: &mut Buffer, state: &State, job: &Job, g: &Grid, y: u16) {
         (false, true) => fg(PENCIL),
         (false, false) => fg(TEXT),
     };
-    let name = job.name.clone().unwrap_or_else(|| job.id.to_hex());
+    let name = job.name.clone();
     let p = &job.progress;
     if done {
-        let total = p.size.map_or("–".into(), size);
+        let total = size(p.size);
         let room = g.tail.unwrap_or(g.right - width(&total) as u16) - 2 - content;
         put(buf, content, y, room, &format::name(&name, room.into()), ink);
         put_right(buf, g.right, y, &total, ink);
@@ -620,7 +616,7 @@ fn download_row(buf: &mut Buffer, state: &State, job: &Job, g: &Grid, y: u16) {
         Some(why) => _ = put_right(buf, bar_end, y, why, fg(ERROR)),
         None => progress_mark(buf, g.rule, y, g.rule_cells, Meter::job(state, job)),
     }
-    let pct = p.size.map_or("–".to_string(), |size| percent(p.verified, size));
+    let pct = percent(p.verified, p.size);
     put_right(buf, g.percent, y, &pct, ink);
     let Some(tail) = g.tail else { return };
     if let Some(pending) = &pending {
@@ -639,10 +635,9 @@ fn failure(code: ErrorCode) -> String {
     match code {
         ErrorCode::StorageError => "disk error",
         ErrorCode::VerificationFailed => "bad data",
-        ErrorCode::MetadataTimeout => "no metadata",
         ErrorCode::NetworkUnavailable => "offline",
         ErrorCode::NoSelection => "no files",
-        ErrorCode::InvalidTorrent => "bad torrent",
+        ErrorCode::InvalidRelease => "bad release",
         ErrorCode::PathConflict => "path conflict",
         ErrorCode::SandboxNetworkBlocked | ErrorCode::SandboxWriteBlocked => "sandboxed",
         code => code.as_str(),
@@ -658,7 +653,6 @@ fn tail_text(state: &State, job: &Job) -> String {
             _ if state.stalled(job) => "stalled".into(),
             _ => String::new(),
         },
-        JobStatus::Metadata => count(p.peers as usize, "peer"),
         JobStatus::Error { error } => failure(error.code),
         _ => String::new(),
     }
@@ -682,18 +676,16 @@ fn download_detail(buf: &mut Buffer, state: &State, job: &Job, g: &Grid, (y, vie
         }
         row += 1;
     }
-    let path = job.path.as_ref().unwrap_or(&job.dir);
-    put(buf, detail, row, room, &middle(&home_path(path, home), room as usize), fg(PENCIL));
+    put(buf, detail, row, room, &middle(&home_path(&job.path, home), room as usize), fg(PENCIL));
     let p = &job.progress;
     let mut facts = Vec::new();
-    match (&job.status, p.size) {
-        (JobStatus::Metadata, _) | (_, None) => facts.push("fetching the file list from peers".to_string()),
-        (JobStatus::Done { finished_at }, Some(total)) => {
-            facts.push(size(total));
+    match &job.status {
+        JobStatus::Done { finished_at } => {
+            facts.push(size(p.size));
             let ago = torrential_core::units::ago(state.clock.saturating_sub(*finished_at).max(0) as u64);
             facts.push(format!("finished {ago}"));
         }
-        (_, Some(total)) => facts.push(format!("{} of {}", size(p.verified), size(total))),
+        _ => facts.push(format!("{} of {}", size(p.verified), size(p.size))),
     }
     if job.status == JobStatus::Downloading {
         facts.push(rate(p.down_rate));
@@ -704,8 +696,8 @@ fn download_detail(buf: &mut Buffer, state: &State, job: &Job, g: &Grid, (y, vie
             facts.push(left);
         }
     }
-    if matches!(job.status, JobStatus::Downloading | JobStatus::Metadata) {
-        facts.push(count(p.peers as usize, "peer"));
+    if job.status == JobStatus::Downloading {
+        facts.push(count(p.connections as usize, "connection"));
     }
     while facts.len() > 1 && width(&facts.join(" · ")) > usize::from(room) {
         facts.pop();
@@ -766,14 +758,14 @@ fn heads(buf: &mut Buffer, state: &State, c: &Columns, y: u16) {
     let order = match (state.sort, ranked) {
         (Sort::BestMatch, Some(ranked)) => format!("ranked for {ranked}{saved}"),
         (Sort::BestMatch, None) => "best match first".into(),
-        (Sort::Seeds, _) => "most seeds first".into(),
+        (Sort::Grabs, _) => "most grabbed first".into(),
         (Sort::Size, _) => "largest first".into(),
         (Sort::Age, _) => "newest first".into(),
     };
     put(buf, c.at.content, y, room, &order, fg(PENCIL));
     put_right(buf, c.size, y, "size", fg(PENCIL));
-    if let Some(x) = c.seeds {
-        put_right(buf, x, y, "seeds", fg(PENCIL));
+    if let Some(x) = c.grabs {
+        put_right(buf, x, y, "grabs", fg(PENCIL));
     }
     if let Some(x) = c.age {
         put_right(buf, x, y, "age", fg(PENCIL));
@@ -792,18 +784,14 @@ fn ranked_lines(ranked: &RankedFor) -> Vec<String> {
 }
 
 fn first_flag(release: &Release) -> Option<Flag> {
-    let rank = [Flag::Cam, Flag::Official, Flag::PublicDomain, Flag::CreativeCommons, Flag::Trusted, Flag::Adult];
-    rank.into_iter().find(|f| release.flags.contains(f))
+    [Flag::Cam, Flag::Avoid, Flag::Adult].into_iter().find(|f| release.flags.contains(f))
 }
 
 fn flag_words(flag: Flag) -> &'static str {
     match flag {
-        Flag::Official => "official release",
-        Flag::Trusted => "trusted uploader",
-        Flag::PublicDomain => "public domain",
-        Flag::CreativeCommons => "creative commons",
         Flag::Cam => "camera recording",
         Flag::Adult => "adult",
+        Flag::Avoid => "on a TRaSH Guides list to avoid",
     }
 }
 
@@ -821,9 +809,8 @@ fn result_row(buf: &mut Buffer, state: &State, release: &Release, c: &Columns, y
     put(buf, c.at.content, y, room, &format::name(&release.name, room.into()), pick(TEXT));
     if let (Some(x), Some(flag)) = (c.flag, first_flag(release)) {
         let style = match flag {
-            Flag::Cam => fg(ERROR),
-            Flag::Trusted | Flag::Adult => pick(PENCIL),
-            _ => pick(TEXT),
+            Flag::Cam | Flag::Avoid => fg(ERROR),
+            Flag::Adult => pick(PENCIL),
         };
         put(buf, x, y, 8, flag.as_str(), style);
     }
@@ -831,14 +818,9 @@ fn result_row(buf: &mut Buffer, state: &State, release: &Release, c: &Columns, y
         put(buf, x, y, 5, word, pick(TEXT));
     }
     put_right(buf, c.size, y, &release.size.map_or("–".into(), size), pick(TEXT));
-    if let Some(x) = c.seeds {
-        let seeds_style = match release.seeders {
-            Some(0) => fg(ERROR),
-            None | Some(1..=9) => pick(PENCIL),
-            Some(_) => pick(TEXT),
-        };
-        let web = release.seeders.is_none() && release.sources.iter().any(|s| s == "archive.org");
-        put_right(buf, x, y, &if web { "web".into() } else { seeds(release.seeders) }, seeds_style);
+    if let Some(x) = c.grabs {
+        let style = if release.grabs.is_some() { pick(TEXT) } else { pick(PENCIL) };
+        put_right(buf, x, y, &grabs(release.grabs), style);
     }
     if let Some(x) = c.age {
         let published = release.published.map_or("–".into(), |p| age(p, state.clock));
@@ -846,7 +828,7 @@ fn result_row(buf: &mut Buffer, state: &State, release: &Release, c: &Columns, y
     }
 }
 
-fn result_detail(buf: &mut Buffer, state: &State, id: ReleaseId, c: &Columns, y: u16, height: u16) {
+fn result_detail(buf: &mut Buffer, state: &State, id: ResultId, c: &Columns, y: u16, height: u16) {
     let detail = c.at.detail;
     let room = c.right - detail;
     let files = state.files.get(&id);
@@ -856,10 +838,10 @@ fn result_detail(buf: &mut Buffer, state: &State, id: ReleaseId, c: &Columns, y:
             Some(Files::Loading { since, .. }) => {
                 margin(buf, c.at, y, "files", fg(PENCIL));
                 let secs = state.now.duration_since(*since).as_secs();
-                let parts = [("fetching the file list", fg(TEXT)), (state.spinner(), fg(TEXT))];
+                let parts = [("reading the release", fg(TEXT)), (state.spinner(), fg(TEXT))];
                 let used = spans(buf, detail, y, room, &parts);
                 put(buf, detail + used, y, room.saturating_sub(used), &format!(" {secs}s"), fg(PENCIL));
-                let note = "A magnet link has no file list until a peer sends one.";
+                let note = "The NZB and the archive headers say what is inside.";
                 put(buf, detail, y + 1, room, note, fg(PENCIL));
             }
             Some(Files::Failed(error)) => {
@@ -871,7 +853,7 @@ fn result_detail(buf: &mut Buffer, state: &State, id: ReleaseId, c: &Columns, y:
         }
         return;
     }
-    if matches!(id, ReleaseId::Torrent(t) if state.job(t).is_some()) {
+    if state.downloaded(id) {
         put(buf, detail, y, room, "in downloads · press d to view it", fg(PENCIL));
         return;
     }
@@ -884,8 +866,8 @@ fn result_detail(buf: &mut Buffer, state: &State, id: ReleaseId, c: &Columns, y:
         what.push(quality);
     }
     if c.at.narrow() {
-        if let Some(n) = release.seeders {
-            what.push(count(n as usize, "seed"));
+        if let Some(n) = release.grabs {
+            what.push(count(n as usize, "grab"));
         }
         if let Some(published) = release.published {
             what.push(match age(published, state.clock).as_str() {
@@ -1051,7 +1033,7 @@ const HELP: [(&str, &[(&str, &str)]); 6] = [
 const NOTES: [&str; 4] = [
     "Typing filters the results already loaded.",
     "Downloads keep running after you quit.",
-    "Downloads stop at 100% and never seed.",
+    "Downloads stop at 100%; nothing is uploaded.",
     "Removing a download keeps its files.",
 ];
 
@@ -1157,7 +1139,7 @@ fn download_hints(state: &State, screen: &Screen) -> Vec<(&'static str, &'static
         Some(job) if matches!(job.status, JobStatus::Paused | JobStatus::Error { .. }) => "resume",
         _ => "pause",
     };
-    let downloaded = matches!(state.cursor, Some(Item::Result(ReleaseId::Torrent(t))) if state.job(t).is_some());
+    let downloaded = matches!(state.cursor, Some(Item::Result(id)) if state.downloaded(id));
     let (sideways, down) = if screen.narrow() { ("h l", "tab") } else { ("← →", "↓") };
     match (state.focus, state.cursor) {
         _ if state.confirm.is_some() => Vec::new(),

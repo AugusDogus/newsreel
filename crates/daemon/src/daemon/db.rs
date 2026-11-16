@@ -6,29 +6,26 @@ use std::time::Duration;
 use rusqlite::Connection;
 use torrential_core::{Error, ErrorCode};
 
-pub(super) const MIGRATIONS: &[&str] = &[
-    r#"
+pub(super) const MIGRATIONS: &[&str] = &[r#"
 CREATE TABLE jobs (
     id TEXT PRIMARY KEY,
-    info_hash TEXT NOT NULL,
-    name TEXT,
+    name TEXT NOT NULL,
     dir BLOB NOT NULL,
     selection TEXT NOT NULL,
     max_size INTEGER NOT NULL,
-    magnet TEXT,
+    max_size_from_setup INTEGER NOT NULL,
     intent TEXT NOT NULL CHECK (intent IN ('running', 'paused', 'done', 'failed')),
     finished_at INTEGER,
     error TEXT,
     added_at INTEGER NOT NULL,
     verified INTEGER NOT NULL DEFAULT 0,
+    piece_map TEXT,
+    files_verified TEXT,
     CHECK ((intent = 'done') = (finished_at IS NOT NULL)),
     CHECK ((intent = 'failed') = (error IS NOT NULL))
 ) STRICT;
-CREATE TABLE aliases (
-    hash TEXT PRIMARY KEY,
-    job TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE
-) STRICT;
-CREATE TABLE metainfo (
+-- Each job's manifest, and recently resolved releases that are not jobs.
+CREATE TABLE layout (
     id TEXT PRIMARY KEY,
     bytes BLOB NOT NULL,
     saved_at INTEGER NOT NULL
@@ -47,14 +44,15 @@ CREATE TABLE tombstones (
 CREATE TABLE results (
     id TEXT PRIMARY KEY,
     release TEXT NOT NULL,
+    link TEXT,
     seen_at INTEGER NOT NULL
 ) STRICT;
-"#,
-    "ALTER TABLE jobs ADD COLUMN piece_map TEXT;",
-    "ALTER TABLE jobs ADD COLUMN files_verified TEXT;",
-    "ALTER TABLE jobs ADD COLUMN max_size_from_setup INTEGER NOT NULL DEFAULT 0;",
-    "ALTER TABLE results ADD COLUMN link TEXT;",
-    r#"
+-- A search result, and the download its NZB turned out to be.
+CREATE TABLE became (
+    result TEXT PRIMARY KEY,
+    download TEXT NOT NULL,
+    saved_at INTEGER NOT NULL
+) STRICT;
 CREATE TABLE job_titles (
     job TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
@@ -81,8 +79,6 @@ CREATE TABLE library (
     rating REAL,
     saved_at INTEGER NOT NULL
 ) STRICT;
-"#,
-    r#"
 CREATE TABLE devices (
     id TEXT PRIMARY KEY,
     token_hash BLOB NOT NULL UNIQUE CHECK (length(token_hash) = 32),
@@ -90,8 +86,6 @@ CREATE TABLE devices (
     added_at INTEGER NOT NULL,
     seen_at INTEGER NOT NULL
 ) STRICT;
-"#,
-    r#"
 CREATE TABLE plays (
     job TEXT PRIMARY KEY REFERENCES jobs(id) ON DELETE CASCADE,
     watched_at INTEGER NOT NULL,
@@ -111,8 +105,7 @@ CREATE TABLE deletions (
     inode INTEGER NOT NULL,
     bytes INTEGER NOT NULL
 ) STRICT;
-"#,
-];
+"#];
 
 /// The engine's database file, checked and migrated to this version's schema. The store, the
 /// shelf and the devices each open their own connection to it, so none can reach it unmigrated.

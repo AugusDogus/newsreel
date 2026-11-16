@@ -8,18 +8,17 @@ import { Button, buttonClass } from "../ui/Button";
 import { Header } from "../ui/Header";
 import { Meter } from "../ui/Meter";
 import { trashed } from "./trashed";
-import { SHORT_ID } from "../wire";
 
 function facts(job: Job): string {
   const { progress } = job;
   const size = progress.size;
-  const have = size === null ? null : job.state === "done" ? bytes(size) : `${bytes(progress.verified)} of ${bytes(size)}`;
+  const have = job.state === "done" ? bytes(size) : `${bytes(progress.verified)} of ${bytes(size)}`;
   const moving = job.state === "downloading";
   return [
     STATE_WORDS[job.state],
     have,
     moving ? rate(progress.down_rate) : null,
-    moving ? count(progress.peers, "peer") : null,
+    moving ? count(progress.connections, "connection") : null,
     moving && progress.eta !== null ? `${span(progress.eta)} left` : null,
   ]
     .filter(Boolean)
@@ -32,7 +31,7 @@ function Row({ job, onFailed, onTrashed }: { job: Job; onFailed: (error: ApiErro
   const [busy, setBusy] = useState<Action | null>(null);
   // A download in the person's own folder asks what becomes of its files before it goes.
   const [asking, setAsking] = useState(false);
-  const name = readable(job.name ?? job.id.slice(0, SHORT_ID));
+  const name = readable(job.name);
   const { progress } = job;
   const fraction = job.state === "done" ? 1 : progress.size ? progress.verified / progress.size : 0;
   const stopped = job.state === "paused" || job.state === "error";
@@ -48,7 +47,7 @@ function Row({ job, onFailed, onTrashed }: { job: Job; onFailed: (error: ApiErro
   return (
     <li className="grid grid-cols-1 items-center gap-x-6 gap-y-2 py-4 sm:grid-cols-[minmax(0,1fr)_--spacing(60)]">
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="truncate text-base font-medium text-ink sm:text-sm" title={job.name ?? undefined}>
+        <div className="truncate text-base font-medium text-ink sm:text-sm" title={job.name}>
           {name.title} <span className="font-normal text-pencil">{name.tags}</span>
         </div>
         <Meter fraction={fraction} label="Downloaded" tone={job.state === "downloading" || job.state === "done" ? "action" : "muted"} />

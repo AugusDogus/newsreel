@@ -1,7 +1,7 @@
 // The engine's JSON, as the Rust types that write it describe it. `cargo test` writes this file
 // from crates/core and crates/daemon/src/daemon/web, and fails when it was out of date.
 
-export type ErrorCode = "usage" | "confirmation_required" | "invalid_ref" | "invalid_torrent" | "not_found" | "ambiguous_ref" | "job_conflict" | "path_conflict" | "providers_unavailable" | "metadata_timeout" | "network_unavailable" | "fetch_failed" | "sandbox_network_blocked" | "sandbox_write_blocked" | "daemon_unavailable" | "daemon_version" | "state_corrupt" | "disk_full" | "too_large" | "no_selection" | "storage_error" | "verification_failed" | "no_source" | "interrupted" | "not_paired" | "local_only" | "internal";
+export type ErrorCode = "usage" | "confirmation_required" | "invalid_ref" | "invalid_release" | "not_found" | "ambiguous_ref" | "job_conflict" | "path_conflict" | "providers_unavailable" | "network_unavailable" | "fetch_failed" | "sandbox_network_blocked" | "sandbox_write_blocked" | "daemon_unavailable" | "daemon_version" | "state_corrupt" | "disk_full" | "too_large" | "no_selection" | "storage_error" | "verification_failed" | "no_source" | "interrupted" | "not_paired" | "local_only" | "internal";
 
 export type Details = { "candidates": Array<Candidate> } | { "sources": Array<SourceReport> } | { "space": { required: number, available: number, } } | { "sandbox": { signal: string, harness: string | null, } } | { "versions": { client: string, daemon: string, } } | { "paths": Array<string> } | { "tried": Array<Tried> };
 
@@ -13,7 +13,7 @@ export type Error = { code: ErrorCode, message: string, hint?: string | null, de
 
 export type Category = "video" | "audio" | "software" | "book" | "game" | "dataset" | "other";
 
-export type Flag = "official" | "trusted" | "public_domain" | "creative_commons" | "cam" | "adult";
+export type Flag = "cam" | "adult" | "avoid";
 
 export type Resolution = "sd" | "720p" | "1080p" | "2160p";
 
@@ -30,9 +30,7 @@ resolution: Resolution | null, codec: Codec | null,
  */
 hdr: boolean, };
 
-export type Swarm = "strong" | "fair" | "weak" | "unknown";
-
-export type Release = { id: string, name: string, size: number | null, seeders: number | null, leechers: number | null, published: number | null, category: Category | null, quality: Quality, flags: Array<Flag>, sources: Array<string>, magnet: string | null, torrent_url: string | null, info_url: string | null, span?: string, swarm?: Swarm, failed?: Skip, };
+export type Release = { id: string, name: string, size: number | null, grabs: number | null, published: number | null, category: Category | null, quality: Quality, flags: Array<Flag>, sources: Array<string>, nzb_url: string | null, span?: string, failed?: Skip, };
 
 export type SourceOutcome = { "outcome": "ok", results: number, } | { "outcome": "cached", results: number, } | { "outcome": "timeout" } | { "outcome": "http", status: number, } | { "outcome": "connect", reason: string, } | { "outcome": "bad_response", reason: string, } | { "outcome": "irrelevant" };
 
@@ -60,21 +58,25 @@ export type Place = "folder" | "plays";
 
 export type Selection = { "kind": "all" } | { "kind": "patterns", "value": Array<string> };
 
-export type JobStatus = { "state": "queued" } | { "state": "metadata" } | { "state": "checking" } | { "state": "downloading" } | { "state": "paused" } | { "state": "done", finished_at: number, } | { "state": "error", error: Error, };
+export type JobStatus = { "state": "queued" } | { "state": "checking" } | { "state": "downloading" } | { "state": "paused" } | { "state": "done", finished_at: number, } | { "state": "error", error: Error, };
 
 export type Progress = {
 /**
- * Bytes selected for download. `None` until metadata arrives.
+ * Bytes selected for download.
  */
-size: number | null,
+size: number,
 /**
- * Selected bytes in pieces that passed their hash check.
+ * Selected bytes in pieces that arrived intact.
  */
 verified: number, piece_map?: string | null,
 /**
  * Payload bytes per second.
  */
-down_rate: number, up_rate: number, peers: number, seeds: number,
+down_rate: number,
+/**
+ * NNTP connections fetching articles now.
+ */
+connections: number,
 /**
  * Seconds to completion at the current rate. `None` until the rate has stayed
  * above zero for ten seconds.
@@ -87,15 +89,11 @@ export type TitleLink = { title: string, span: string,
  */
 release: string | null, };
 
-export type Job = { id: string, info_hash: string,
+export type Job = { id: string, name: string, dir: string,
 /**
- * Unknown until metadata arrives for a bare infohash.
+ * `dir` joined with the release's name.
  */
-name: string | null, dir: string,
-/**
- * `dir` joined with the torrent's name, once the name is known.
- */
-path: string | null, progress: Progress, selection: Selection,
+path: string, progress: Progress, selection: Selection,
 /**
  * Unix seconds.
  */
@@ -103,21 +101,21 @@ added_at: number,
 /**
  * The title the download was made for, when playing a title made it.
  */
-title?: TitleLink | null, place: Place, } & ({ "state": "queued" } | { "state": "metadata" } | { "state": "checking" } | { "state": "downloading" } | { "state": "paused" } | { "state": "done", finished_at: number, } | { "state": "error", error: Error, });
+title?: TitleLink | null, place: Place, } & ({ "state": "queued" } | { "state": "checking" } | { "state": "downloading" } | { "state": "paused" } | { "state": "done", finished_at: number, } | { "state": "error", error: Error, });
 
 export type Event = { "event": "snapshot", jobs: Array<Job>, } | { "event": "job", job: Job, } | { "event": "removed", id: string, } | { "event": "heartbeat", at: number, } | { "event": "search_update", result: SearchResult, pending: Array<string>, };
 
 export type FileRisk = "executable";
 
-export type TorrentFile = { index: number,
+export type ReleaseFile = { index: number,
 /**
- * Relative to the torrent's folder, sanitized.
+ * Relative to the release's folder, sanitized.
  */
 path: string, size: number, selected: boolean, verified: number, risk?: FileRisk | null, };
 
-export type MetadataSource = "download" | "cache" | "torrent_file" | "torrent_url" | "peers";
+export type FileListSource = "download" | "cache" | "nzb_file" | "nzb_url";
 
-export type FilesReply = { id: string, name: string | null, total_size: number, files: Array<TorrentFile>, metadata_source: MetadataSource, elapsed_ms: number, };
+export type FilesReply = { id: string, name: string, total_size: number, files: Array<ReleaseFile>, source: FileListSource, elapsed_ms: number, };
 
 export type ChangeResult = "paused" | "already_paused" | "already_done" | "already_stopped" | "resumed" | "already_running" | "removed" | "already_removed" | "checking";
 
@@ -321,7 +319,7 @@ video: string | null,
  */
 download: string | null, file: number | null,
 /**
- * The subtitle file sent with the video, relative to the torrent's folder.
+ * The subtitle file sent with the video, relative to the release's folder.
  */
 subtitle: string | null,
 /**
@@ -347,11 +345,11 @@ export type StreamedFile = { index: number, path: string, size: number,
  */
 url: string,
 /**
- * Where the file starts in the torrent, in bytes.
+ * Where the file starts in the release, in bytes.
  */
 offset: number, };
 
-export type PlayInfo = { id: string, name: string, job: Job, files: Array<TorrentFile>, total_size: number, video: StreamedFile, subtitles: Array<StreamedFile>, };
+export type PlayInfo = { id: string, name: string, job: Job, files: Array<ReleaseFile>, total_size: number, video: StreamedFile, subtitles: Array<StreamedFile>, };
 
 export type Readiness = "ready" | "fetch" | "missing";
 
@@ -399,7 +397,7 @@ export type OnlineSubtitle = { id: string, language: string, name: string | null
 
 export type OnlineSubtitles = {
 /**
- * What the names in the torrent say the video is.
+ * What the names in the release say the video is.
  */
 title: OnlineTitle | null, subtitles: Array<OnlineSubtitle>,
 /**
@@ -523,7 +521,7 @@ export type CastStart = {
  */
 tv?: string,
 /**
- * A film or an episode to play, or with `ref`, the one the torrent holds.
+ * A film or an episode to play, or with `ref`, the one the release holds.
  */
 video?: string,
 /**
@@ -531,14 +529,14 @@ video?: string,
  */
 source?: string,
 /**
- * A download or search result ID, an infohash, a magnet link, or the URL of a .torrent file.
+ * A download or search result ID, or an NZB's URL.
  */
 ref?: string, file?: number, subtitle?: number, start_at?: number, };
 
 /** Hex digits every screen shows of an ID. */
 export const SHORT_ID = 6;
 
-/** Equal runs of a torrent's pieces in `Progress.piece_map`. */
+/** Equal runs of a release's pieces in `Progress.piece_map`. */
 export const SLICES = 64;
 
 /** Equal runs of a file's bytes in `GET /api/pieces`. */

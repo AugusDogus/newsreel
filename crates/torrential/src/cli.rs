@@ -11,9 +11,9 @@ use crate::completions::complete_download_ids;
 #[command(
     name = "torrential",
     version,
-    about = "Search torrent indexes and download torrents",
+    about = "Search Usenet indexers, and download or stream releases",
     disable_help_subcommand = true,
-    after_help = "Examples:\n  torrential search arch linux iso\n  torrential get 9b5212 --dir ~/isos\n  torrential wait 9b5212\n  torrential titles night of the living dead\n  torrential play tt0063350\n\nAgents: run torrential skill install to add the torrential skill."
+    after_help = "Examples:\n  torrential search sintel 2010\n  torrential get u9b5212 --dir ~/films\n  torrential wait 9b5212\n  torrential titles night of the living dead\n  torrential play tt0063350\n\nAgents: run torrential skill install to add the torrential skill."
 )]
 pub struct Cli {
     /// Print JSON on stdout instead of text
@@ -28,7 +28,7 @@ pub struct Cli {
 pub enum Command {
     /// Search the enabled sources
     #[command(
-        after_help = "Examples:\n  torrential search ubuntu 24.04 desktop --limit 5\n  torrential search night of the living dead --source archive.org"
+        after_help = "Examples:\n  torrential search ubuntu 24.04 desktop --limit 5\n  torrential search night of the living dead --source hydra"
     )]
     Search(SearchArgs),
     /// Find films and series by name
@@ -39,19 +39,19 @@ pub enum Command {
     /// Show a film, or a series and its episodes, with where you stopped
     #[command(after_help = "Examples:\n  torrential title tt0063350\n  torrential title tt9999901 --json")]
     Title(TitleArgs),
-    /// List the torrents of a film or an episode, in the order play tries them
+    /// List the releases of a film or an episode, in the order play tries them
     #[command(
         after_help = "Examples:\n  torrential sources tt0063350\n  torrential sources tt0903747 s03e05\n  torrential sources tt0903747"
     )]
     Sources(SourcesArgs),
-    /// List the files in a torrent, fetching its metadata if needed
+    /// List the files in a release, reading its NZB if needed
     #[command(
         after_help = "Examples:\n  torrential files 6bc1af\n  torrential files 6bc1af --files '*.mp4' --files '*.srt'"
     )]
     Files(FilesArgs),
     /// Start a download, or change its file selection
     #[command(
-        after_help = "Examples:\n  torrential get 9b5212\n  torrential get 'magnet:?xt=urn:btih:…' --dir ~/isos\n  torrential get 6bc1af --files '*.mp4' --dry-run\n  torrential get tt0063350"
+        after_help = "Examples:\n  torrential get u9b5212\n  torrential get ~/Downloads/release.nzb --dir ~/films\n  torrential get u6bc1af --files '*.mkv' --dry-run\n  torrential get tt0063350"
     )]
     Get(GetArgs),
     /// Play a video in your media player while it downloads
@@ -81,9 +81,7 @@ pub enum Command {
     /// List downloads, or show one in detail
     Status(StatusArgs),
     /// Follow downloads until they finish or the timeout is reached
-    #[command(
-        after_help = "Examples:\n  torrential wait 9b5212\n  torrential wait 9b5212 --timeout 110m\n  torrential wait 9b5212 --until metadata"
-    )]
+    #[command(after_help = "Examples:\n  torrential wait 9b5212\n  torrential wait 9b5212 --timeout 110m")]
     Wait(WaitArgs),
     /// Pause downloads and return once disk writes stop
     Pause(RefsArgs),
@@ -151,13 +149,13 @@ pub struct SearchArgs {
     /// Show only this kind of content
     #[arg(long, value_enum)]
     pub category: Option<CategoryArg>,
-    /// Hide results with fewer reported seeders, and results with unknown seeders
+    /// Hide results with fewer reported grabs, and results with unknown grabs
     #[arg(long, value_name = "N")]
-    pub min_seeds: Option<u32>,
+    pub min_grabs: Option<u64>,
     /// Hide results larger than this, for example 8GiB, and results with unknown size
     #[arg(long, value_name = "SIZE", value_parser = parse_size)]
     pub max_size: Option<u64>,
-    /// Sort order. The default, relevance, ranks match quality above seed count
+    /// Sort order. The default, relevance, ranks match quality above grabs
     #[arg(long, value_enum, default_value_t = SortArg::Relevance)]
     pub sort: SortArg,
     /// Number of results to show
@@ -229,7 +227,7 @@ pub struct DoctorArgs {
 
 #[derive(Args, Debug)]
 pub struct FilesArgs {
-    /// An ID prefix, infohash, magnet link, .torrent file, or .torrent URL
+    /// An ID prefix, .nzb file, or NZB URL
     #[arg(value_name = "REF", add = ArgValueCandidates::new(complete_download_ids))]
     pub reference: String,
     /// List only files matching this glob or exact path, the same way get --files selects them. `*` matches across folders and case is ignored. Repeat to add more
@@ -239,13 +237,13 @@ pub struct FilesArgs {
 
 #[derive(Args, Debug)]
 pub struct GetArgs {
-    /// An ID prefix, infohash, magnet link, .torrent file, or .torrent URL, or a title ID such as tt0063350 or tt0903747:3:5
+    /// An ID prefix, .nzb file, or NZB URL, or a title ID such as tt0063350 or tt0903747:3:5
     #[arg(value_name = "REF", add = ArgValueCandidates::new(complete_download_ids))]
     pub reference: String,
     /// With a series ID, the episode, such as s03e05 or 3x05
     #[arg(value_name = "EPISODE")]
     pub episode: Option<String>,
-    /// With a title ID, download only this one of its torrents, by an ID from torrential sources
+    /// With a title ID, download only this one of its releases, by an ID from torrential sources
     #[arg(long, value_name = "ID")]
     pub source: Option<String>,
     /// Download only files matching this glob or exact path. `*` matches across folders and case is ignored. Repeat to add more
@@ -264,10 +262,10 @@ pub struct GetArgs {
 
 #[derive(Args, Debug)]
 pub struct PlayArgs {
-    /// A title ID such as tt0063350, tt0903747:3:5, or tt0903747 s03e05, a download or search result ID, magnet link, infohash, or .torrent file or URL, or words to search for
+    /// A title ID such as tt0063350, tt0903747:3:5, or tt0903747 s03e05, a download or search result ID, an .nzb file or URL, or words to search for
     #[arg(value_name = "WORDS", required = true, num_args = 1.., add = ArgValueCandidates::new(complete_download_ids))]
     pub words: Vec<String>,
-    /// With a title ID, play only this one of its torrents, by an ID from torrential sources
+    /// With a title ID, play only this one of its releases, by an ID from torrential sources
     #[arg(long, value_name = "ID")]
     pub source: Option<String>,
     /// The folder to download into, if this starts a new download
@@ -287,9 +285,6 @@ pub struct WaitArgs {
     /// Download IDs from torrential status
     #[arg(value_name = "ID", required = true, num_args = 1.., add = ArgValueCandidates::new(complete_download_ids))]
     pub references: Vec<String>,
-    /// Stop when the download is done, or as soon as its file list is available
-    #[arg(long, value_enum, default_value_t = Until::Done)]
-    pub until: Until,
     /// Stop waiting after this long. Defaults to 100s, or no limit in an interactive terminal
     #[arg(long, value_name = "DURATION", value_parser = parse_duration)]
     pub timeout: Option<Duration>,
@@ -350,7 +345,7 @@ pub enum DevicesCommand {
 pub enum TvCommand {
     /// List the TVs on the home network and what plays on them, the default
     List,
-    /// Play a film, an episode, or a torrent's video on a TV
+    /// Play a film, an episode, or a release's video on a TV
     Play(TvPlayArgs),
     /// Pause what plays on the TV
     Pause(TvArgs),
@@ -385,19 +380,19 @@ pub struct TvArgs {
 
 #[derive(Args, Debug)]
 pub struct TvPlayArgs {
-    /// A title ID such as tt0063350, tt0903747:3:5, or tt0903747 s03e05, or a download or search result ID, magnet link, infohash, or .torrent file or URL
+    /// A title ID such as tt0063350, tt0903747:3:5, or tt0903747 s03e05, or a download or search result ID, or an .nzb file or URL
     #[arg(value_name = "WORDS", required = true, num_args = 1..=2, add = ArgValueCandidates::new(complete_download_ids))]
     pub words: Vec<String>,
     /// The TV, by a part of its name, its address, or its ID from torrential tv, when more than one answers
     #[arg(long, value_name = "NAME")]
     pub tv: Option<String>,
-    /// With a title ID, play only this one of its torrents, by an ID from torrential sources
+    /// With a title ID, play only this one of its releases, by an ID from torrential sources
     #[arg(long, value_name = "ID")]
     pub source: Option<String>,
-    /// With a torrent, the index of the file to play, from torrential files
+    /// With a release, the index of the file to play, from torrential files
     #[arg(long, value_name = "INDEX")]
     pub file: Option<u32>,
-    /// The index of a subtitle file of the same torrent to show, from torrential files
+    /// The index of a subtitle file of the same release to show, from torrential files
     #[arg(long, value_name = "INDEX")]
     pub subtitle: Option<u32>,
     /// Start at this time, such as 1:02:30 or 90s, instead of where you stopped
@@ -433,12 +428,6 @@ pub enum DaemonCommand {
     /// answer: SIGTERM, or Ctrl-C on its console on Windows
     #[command(hide = true)]
     Interrupt { pid: u32 },
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
-pub enum Until {
-    Done,
-    Metadata,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
@@ -529,7 +518,7 @@ impl PlaybackArg {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
 pub enum SortArg {
     Relevance,
-    Seeds,
+    Grabs,
     Size,
     Age,
 }
@@ -538,7 +527,7 @@ impl From<SortArg> for Sort {
     fn from(arg: SortArg) -> Self {
         match arg {
             SortArg::Relevance => Sort::Relevance,
-            SortArg::Seeds => Sort::Seeds,
+            SortArg::Grabs => Sort::Grabs,
             SortArg::Size => Sort::Size,
             SortArg::Age => Sort::Age,
         }

@@ -1,6 +1,6 @@
 use torrential_core::error::Details;
 use torrential_core::{Error, SearchQuery, SourceOutcome, SourceReport};
-use torrential_search::{ResultCache, Search, SearchConfig};
+use torrential_search::{ResultCache, Search};
 
 use super::Checked;
 use super::{Check, CheckStatus};
@@ -12,10 +12,8 @@ const PROBE: &str = "linux";
 
 pub fn checks(paths: &Paths, settings: Result<Config, Error>, network: bool) -> Vec<Check> {
     let check = |check: Checked, status, detail: String| Check { check, status, detail };
-    let search = settings.and_then(|settings| {
-        let config = SearchConfig { cache_dir: Some(paths.cache.join("search")), ..settings.search };
-        Search::new(&config, ResultCache::new()).map(|search| (search, settings.file))
-    });
+    let search = settings
+        .and_then(|settings| Search::new(&settings.search, ResultCache::new()).map(|search| (search, settings.file)));
     let (search, file) = match search {
         Ok(found) => found,
         Err(error) => {

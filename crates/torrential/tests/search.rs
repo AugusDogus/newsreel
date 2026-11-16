@@ -1,168 +1,211 @@
 use std::path::{Path, PathBuf};
-use std::time::Duration;
 
 use serde_json::Value;
+use torrential_usenet::fake::{FakeServer, Posting};
 
 mod common;
-use common::{Home, Reply, Run, Server, fixture, hooks, ok, status};
+use common::{Home, Run, Server, hooks, ok, status};
 
-const BUILTIN: [&str; 8] =
-    ["archlinux", "ubuntu", "debian", "archive.org", "academictorrents", "knaben", "apibay", "nyaa"];
-
-fn torrent(name: &str) -> Vec<u8> {
-    let (length, piece) = (1usize << 20, 1usize << 18);
-    let pieces = vec![0x5a; 20 * length / piece];
-    let mut info =
-        format!("d6:lengthi{length}e4:name{}:{name}12:piece lengthi{piece}e6:pieces{}:", name.len(), pieces.len())
-            .into_bytes();
-    info.extend_from_slice(&pieces);
-    info.push(b'e');
-    [b"d4:info".as_slice(), &info, b"e"].concat()
+/// One Newznab search result.
+struct Item {
+    title: &'static str,
+    size: u64,
+    grabs: u32,
+    /// Where the NZB is, under the server's base URL.
+    link: &'static str,
 }
 
+const GIB: u64 = 1 << 30;
+const MIB: u64 = 1 << 20;
+
+/// A Newznab answer listing `items`, each a movie, with links under `base`.
+fn feed(base: &str, items: &[Item]) -> Vec<u8> {
+    let mut xml = String::from(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<rss version=\"2.0\" \
+         xmlns:newznab=\"http://www.newznab.com/DTD/2010/feeds/attributes/\"><channel><title>indexer</title>\n",
+    );
+    for item in items {
+        let link = format!("{base}{}", item.link).replace('&', "&amp;");
+        xml.push_str(&format!(
+            "<item><title>{}</title><guid isPermaLink=\"false\">{}</guid><link>{link}</link>\
+             <pubDate>Thu, 15 Oct 2026 14:00:32 -0000</pubDate>\
+             <enclosure url=\"{link}\" length=\"{}\" type=\"application/x-nzb\"/>\
+             <newznab:attr name=\"category\" value=\"2040\"/><newznab:attr name=\"size\" value=\"{}\"/>\
+             <newznab:attr name=\"grabs\" value=\"{}\"/></item>\n",
+            item.title, item.link, item.size, item.size, item.grabs
+        ));
+    }
+    xml.push_str("</channel></rss>\n");
+    xml.into_bytes()
+}
+
+impl Server {
+    /// A `sources.newznab` entry for an indexer this server answers at `/{name}/api`.
+    fn indexer(&self, name: &str, key_env: Option<&str>) -> String {
+        let key = key_env.map(|env| format!("      api_key_env: {env}\n")).unwrap_or_default();
+        format!("    - name: {name}\n      url: {}/{name}/api\n{key}", self.base)
+    }
+}
+
+const PASSWORD_ENV: &str = "TEST_NNTP_PASSWORD";
+
 impl Home {
-    /// A home whose only sources are `enabled`, each answered by `server`, with `sources` added
-    /// to the sources part of its config.
-    fn searching(server: &Server, enabled: &[&str], sources: &str) -> Home {
-        let disabled: Vec<String> = BUILTIN.iter().filter(|s| !enabled.contains(s)).map(|s| format!("{s:?}")).collect();
-        let endpoints: Vec<String> = enabled.iter().map(|s| format!("{s}={}/{s}/", server.base)).collect();
-        let home = Home::new().with(hooks::DISK, "roomy").with(hooks::ENDPOINTS, &endpoints.join(","));
-        home.write_config(&format!("sources:\n  disabled: [{}]\n{sources}", disabled.join(", ")));
+    /// A home whose config lists `indexers` under `sources.newznab`.
+    fn searching(indexers: &[String]) -> Home {
+        let home = Home::new().with(hooks::DISK, "roomy").with(PASSWORD_ENV, torrential_usenet::fake::PASSWORD);
+        let sources =
+            if indexers.is_empty() { String::new() } else { format!("sources:\n  newznab:\n{}", indexers.concat()) };
+        home.write_config(&sources);
         home
     }
+
+    /// Adds a Usenet server to the config.
+    fn served_by(self, server: &FakeServer) -> Home {
+        let s = server.config(4, 0);
+        let config = std::fs::read_to_string(self.path("th/config/config.yaml")).unwrap();
+        self.write_config(&format!(
+            "{config}usenet:\n  servers:\n    - host: {}\n      port: {}\n      tls: false\n      username: {}\n      \
+             password_env: {PASSWORD_ENV}\n",
+            s.host, s.port, s.username
+        ));
+        self
+    }
+}
+
+fn sintel(base: &str) -> Vec<u8> {
+    feed(
+        base,
+        &[
+            Item { title: "Sintel.2010.720p.WEB.x264-GRP", size: 800 * MIB, grabs: 300, link: "/getnzb/b.nzb" },
+            Item { title: "Sintel.2010.1080p.BluRay.x264-GRP", size: 4 * GIB, grabs: 900, link: "/getnzb/a.nzb" },
+        ],
+    )
+}
+
+fn sintel_4k(base: &str) -> Vec<u8> {
+    feed(
+        base,
+        &[Item { title: "Sintel.2010.2160p.UHD.BluRay.x265-GRP", size: 20 * GIB, grabs: 120, link: "/getnzb/c.nzb" }],
+    )
+}
+
+/// Rows of a plain search table, without the AGE column, which depends on today.
+fn rows(run: &Run) -> Vec<String> {
+    let lines: Vec<&str> = run.stdout.lines().take_while(|l| !l.starts_with('#')).collect();
+    let age = lines[0].split('\t').position(|h| h == "AGE").unwrap();
+    lines
+        .iter()
+        .map(|l| l.split('\t').enumerate().filter(|(i, _)| *i != age).map(|(_, c)| c).collect::<Vec<_>>().join(" | "))
+        .collect()
+}
+
+fn locators(found: &Value) -> Vec<String> {
+    found["result"]["releases"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()[..7].to_string()).collect()
 }
 
 #[test]
-fn search_ranks_what_the_sources_answered() {
-    let server = Server::start(|_| {
-        vec![
-            ("/knaben/", vec![ok(fixture("knaben/v2-search-ubuntu.json"))]),
-            ("/apibay/", vec![ok(fixture("apibay/q.php-ubuntu.json"))]),
-        ]
-    });
-    let home = Home::searching(&server, &["knaben", "apibay"], "");
+fn search_ranks_what_the_indexers_answered() {
+    let server =
+        Server::start(|base| vec![("/hydra/api", vec![ok(sintel(base))]), ("/geek/api", vec![ok(sintel_4k(base))])]);
+    let home = Home::searching(&[server.indexer("hydra", None), server.indexer("geek", None)]);
 
-    let plain = home.run(&["search", "ubuntu", "--limit", "3"]);
-    let json = home.run(&["search", "ubuntu", "--limit", "3", "--json"]).json();
+    let plain = home.run(&["search", "sintel"]);
+    let json = home.run(&["search", "sintel", "--json"]).json();
 
     assert_eq!(plain.code, 0, "{}", plain.stderr);
-    let table: Vec<String> = plain
-        .stdout
-        .lines()
-        .take_while(|l| !l.starts_with('#'))
-        .map(|l| l.split('\t').enumerate().filter(|(i, _)| *i != 4).map(|(_, c)| c).collect::<Vec<_>>().join(" | "))
-        .collect();
+    let table = rows(&plain);
+    assert_eq!(table[0], "ID | GRABS | SIZE | QUALITY | SOURCE | FLAGS | NAME");
+    let named: Vec<String> =
+        table[1..].iter().map(|r| r.split(" | ").skip(1).collect::<Vec<_>>().join(" | ")).collect();
     assert_eq!(
-        table,
+        named,
         [
-            "ID | SEEDS | SIZE | QUALITY | SOURCE | FLAGS | NAME",
-            "dafc8c | 143 | 6.1 GiB | - | knaben | - | ubuntu-26.04-desktop-amd64.iso",
-            "4a3f5e | 52 | 5.8 GiB | - | knaben+1 | trusted | ubuntu-24.04.1-desktop-amd64.iso",
-            "2c6b68 | 37 | 3.4 GiB | - | knaben+1 | trusted | Ubuntu 22.04 LTS",
-        ]
+            "900 | 4.0 GiB | 1080p h264 | hydra | - | Sintel.2010.1080p.BluRay.x264-GRP",
+            "300 | 800 MiB | 720p h264 | hydra | - | Sintel.2010.720p.WEB.x264-GRP",
+            "120 | 20.0 GiB | 2160p hevc | geek | - | Sintel.2010.2160p.UHD.BluRay.x265-GRP",
+        ],
+        "ranked for a 1080p screen: closest resolution first"
     );
     let result = &json["result"];
-    let ids: Vec<&str> = result["releases"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
-    assert_eq!(
-        ids,
-        [
-            "dafc8c076ca2f3ed376eeae7c76a0d6be2415c45",
-            "4a3f5e08bcef825718eda30637230585e3330599",
-            "2c6b6858d61da9543d4231a71db4b1c9264b0685"
-        ]
-    );
-    assert_eq!(result["total"], 158);
+    let grabs: Vec<u64> = result["releases"].as_array().unwrap().iter().map(|r| r["grabs"].as_u64().unwrap()).collect();
+    assert_eq!(grabs, [900, 300, 120]);
+    assert!(locators(&json).iter().all(|id| id.starts_with('u')), "results are named by their NZB link");
     let sources: Vec<String> =
         result["sources"].as_array().unwrap().iter().map(|s| format!("{} {}", s["source"], s["outcome"])).collect();
-    assert_eq!(sources, [r#""knaben" "cached""#, r#""apibay" "cached""#]);
-    assert_eq!((server.asked("/knaben/").len(), server.asked("/apibay/").len()), (1, 1));
+    assert_eq!(sources, [r#""hydra" "cached""#, r#""geek" "cached""#]);
+    assert_eq!((server.asked("/hydra/").len(), server.asked("/geek/").len()), (1, 1));
 }
 
-const NETINST: &str = "/debian/debian-cd/current/arm64/bt-cd/debian-13.7.0-arm64-netinst.iso.torrent";
-
-fn debian(netinst: Vec<Reply>) -> impl FnOnce(&str) -> Vec<(&'static str, Vec<Reply>)> {
-    |_| {
-        vec![
-            (NETINST, netinst),
-            ("/debian/debian-cd/current/arm64/bt-cd/", vec![ok(fixture("debian/debian-cd-current-arm64-bt-cd.html"))]),
-            (
-                "/debian/debian-cd/current/arm64/bt-dvd/",
-                vec![ok(fixture("debian/debian-cd-current-arm64-bt-dvd.html"))],
-            ),
-            ("/debian/debian-cd/current/amd64/bt-cd/", vec![ok(fixture("debian/debian-cd-current-amd64-bt-cd.html"))]),
-            (
-                "/debian/debian-cd/current/amd64/bt-dvd/",
-                vec![ok(fixture("debian/debian-cd-current-amd64-bt-dvd.html"))],
-            ),
-        ]
-    }
+/// A release posted to `server`, as one file of `size` bytes.
+fn post(server: &FakeServer, title: &str, file: &str, size: usize) -> Posting {
+    let data: Vec<u8> = (0..size as u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8).collect();
+    let posting = Posting::new(title, &[(file, &data)], 16 * 1024);
+    server.add(&posting);
+    posting
 }
 
 #[test]
 fn get_on_a_search_result_downloads_into_the_configured_folder() {
-    let server = Server::start(debian(vec![ok(torrent("debian-13.7.0-arm64-netinst.iso"))]));
-    let home = Home::searching(&server, &["debian"], "");
-    let isos = home.path("isos");
+    let usenet = FakeServer::start();
+    let posting = post(&usenet, "Sintel.2010.1080p.BluRay.x264-GRP", "Sintel.2010.1080p.BluRay.x264-GRP.mkv", 300_000);
+    let server = Server::start(|base| {
+        vec![("/hydra/api", vec![ok(sintel(base))]), ("/getnzb/a.nzb", vec![ok(posting.nzb.clone())])]
+    });
+    let home = Home::searching(&[server.indexer("hydra", None)]).served_by(&usenet);
+    let films = home.path("films");
     home.write_config(&format!(
         "{}downloads:\n  dir: '{}'\n",
         std::fs::read_to_string(home.path("th/config/config.yaml")).unwrap(),
-        isos.display()
+        films.display()
     ));
 
-    let found = home.run(&["search", "debian", "13", "arm64", "netinst", "--json"]).json();
+    let found = home.run(&["search", "sintel", "1080p", "--json"]).json();
     let release = &found["result"]["releases"][0];
-    let id = release["id"].as_str().unwrap();
-    let get = home.run(&["get", &id[..6]]);
-    let status = home.run(&["status", &id[..6], "--json"]).json();
+    let locator = &release["id"].as_str().unwrap()[..7];
+    let get = home.run(&["get", locator]);
+    let id = get.stdout.split_whitespace().nth(1).unwrap_or_default().to_string();
+    let status = home.run(&["status", &id, "--json"]).json();
+    // The result's ID keeps naming the download it became.
+    let by_result = home.run(&["status", locator, "--json"]).json();
+    let wait = home.run(&["wait", locator, "--timeout", "60s"]);
+    let again = home.run(&["get", locator, "--json"]).json();
+    let files = home.run(&["files", locator, "--json"]).json();
 
-    assert_eq!(
-        (release["name"].as_str(), release["flags"].clone()),
-        (Some("debian-13.7.0-arm64-netinst.iso"), serde_json::json!(["official"]))
-    );
+    assert_eq!(release["name"], "Sintel.2010.1080p.BluRay.x264-GRP");
     assert_eq!(get.code, 0, "{}{}", get.stdout, get.stderr);
-    assert!(
-        get.stdout.starts_with(&format!("started {} debian-13.7.0-arm64-netinst.iso\n", &id[..6])),
-        "{}",
-        get.stdout
-    );
+    assert!(get.stdout.starts_with(&format!("started {id} Sintel.2010.1080p.BluRay.x264-GRP.mkv\n")), "{}", get.stdout);
     let job = &status["jobs"][0];
-    assert_eq!((job["id"].as_str(), job["dir"].as_str()), (Some(id), isos.to_str()));
-    assert_eq!(job["name"], "debian-13.7.0-arm64-netinst.iso");
-    assert_eq!(server.asked(NETINST).len(), 2);
+    assert_eq!(job["dir"].as_str(), films.to_str());
+    assert_eq!(job["name"], "Sintel.2010.1080p.BluRay.x264-GRP.mkv");
+    assert_eq!(by_result["jobs"][0]["id"].as_str().map(|full| &full[..6]), Some(id.as_str()));
+    assert_eq!(wait.code, 0, "{}{}", wait.stdout, wait.stderr);
+    assert_eq!(again["reply"]["outcome"], "existing", "{again:#}");
+    assert_eq!(files["files"]["source"], "download");
+    assert_eq!(server.asked("/getnzb/").len(), 1, "the NZB is fetched once, when the download starts");
 }
 
 #[test]
 fn private_indexer_links_never_reach_the_output() {
+    let usenet = FakeServer::start();
+    let posting = post(&usenet, "Ubuntu.Private", "ubuntu-private.iso", 100_000);
     let server = Server::start(|base| {
-        let feed = String::from_utf8(fixture("torznab/jackett-ubuntu.xml"))
-            .unwrap()
-            .replace("http://127.0.0.1:9117", base)
-            .replace(
-                "<comments>https://privatehd.example/torrents/4471",
-                "<comments>https://privatehd.example/t/4471?passkey=s3cret",
-            );
+        let feed = String::from_utf8(feed(
+            base,
+            &[Item { title: "ubuntu-private.iso", size: 100_000, grabs: 4, link: "/getnzb/x.nzb?apikey=k3y" }],
+        ))
+        .unwrap()
+        .replace("</title><guid", "</title><comments>https://indexer.example/details/7?passkey=s3cret</comments><guid");
         vec![
-            ("/torznab/api", vec![ok(feed.into_bytes())]),
-            ("/dl/privatehd/", vec![status(404), status(404), ok(torrent("ubuntu-private.iso"))]),
+            ("/hydra/api", vec![ok(feed.into_bytes())]),
+            ("/getnzb/", vec![status(404), status(404), ok(posting.nzb.clone())]),
         ]
     });
-    let sources = format!(
-        "  torznab:\n    - name: jackett\n      url: {}/torznab/api\n      api_key_env: TEST_JACKETT_KEY\n",
-        server.base
-    );
-    let mut home = Home::searching(&server, &[], &sources);
-    home.set("TEST_JACKETT_KEY", "k3y");
+    let mut home = Home::searching(&[server.indexer("hydra", Some("TEST_HYDRA_KEY"))]).served_by(&usenet);
+    home.set("TEST_HYDRA_KEY", "k3y");
 
     let plain = home.run(&["search", "ubuntu"]);
     let json = home.run(&["search", "ubuntu", "--json"]);
-    let locator: String = json.json()["result"]["releases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|r| r["id"].as_str())
-        .find(|id| id.starts_with('u'))
-        .unwrap()[..7]
-        .to_string();
+    let locator = locators(&json.json())[0].clone();
     let refused = home.run(&["get", &locator]);
     let refused_json = home.run(&["get", &locator, "--json"]);
     let started = home.run(&["get", &locator]);
@@ -174,7 +217,7 @@ fn private_indexer_links_never_reach_the_output() {
 
     assert_eq!(plain.code, 0, "{}", plain.stderr);
     assert_eq!(refused.code, 5);
-    assert!(refused.stderr.contains("could not fetch the .torrent file: HTTP 404"), "{}", refused.stderr);
+    assert!(refused.stderr.contains("could not fetch the NZB: HTTP 404"), "{}", refused.stderr);
     assert_eq!(refused_json.json()["error"]["code"], "fetch_failed");
     assert_eq!(started.code, 0, "{}{}", started.stdout, started.stderr);
     assert_eq!(files_json.json()["files"]["name"], "ubuntu-private.iso");
@@ -186,69 +229,68 @@ fn private_indexer_links_never_reach_the_output() {
             "a private link reached the output: {out}"
         );
     }
-    assert_eq!(server.asked("/torznab/api"), ["/torznab/api?t=search&q=ubuntu&apikey=k3y"]);
-    assert_eq!(server.asked("/dl/privatehd/"), vec!["/dl/privatehd/?jackett_apikey=k3y&path=def&file=ubuntu"; 3]);
+    assert_eq!(server.asked("/hydra/api"), ["/hydra/api?t=search&q=ubuntu&apikey=k3y"]);
+    assert_eq!(server.asked("/getnzb/"), vec!["/getnzb/x.nzb?apikey=k3y"; 3]);
 }
 
 #[test]
 fn a_private_locator_resolves_after_a_restart_with_the_key_from_the_environment() {
+    let usenet = FakeServer::start();
+    let posting = post(&usenet, "Ubuntu.Private", "ubuntu-private.iso", 100_000);
     let server = Server::start(|base| {
-        let feed =
-            String::from_utf8(fixture("torznab/jackett-ubuntu.xml")).unwrap().replace("http://127.0.0.1:9117", base);
-        vec![("/torznab/api", vec![ok(feed.into_bytes())]), ("/dl/privatehd/", vec![ok(torrent("ubuntu-private.iso"))])]
+        let item = |link| Item { title: "ubuntu-private.iso", size: 100_000, grabs: 4, link };
+        let items =
+            [item("/getnzb/x.nzb?apikey=k3y"), item("/getnzb/y.nzb?apikey=k3y"), item("/getnzb/z.nzb?apikey=k3y")];
+        vec![("/hydra/api", vec![ok(feed(base, &items))]), ("/getnzb/", vec![ok(posting.nzb.clone())])]
     });
-    let indexer =
-        |key_env: &str| format!("  torznab:\n    - name: jackett\n      url: {}/torznab/api\n{key_env}", server.base);
-    let mut home = Home::searching(&server, &[], &indexer("      api_key_env: TEST_JACKETT_KEY\n"));
+    let mut home = Home::searching(&[server.indexer("hydra", Some("TEST_HYDRA_KEY"))]).served_by(&usenet);
     let config = std::fs::read_to_string(home.path("th/config/config.yaml")).unwrap();
-    home.set("TEST_JACKETT_KEY", "k3y");
+    home.set("TEST_HYDRA_KEY", "k3y");
     let name = |run: &Run| run.json()["files"]["name"].as_str().map(String::from);
 
     let found = home.run(&["search", "ubuntu", "--json"]).json();
-    let locator = found["result"]["releases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .filter_map(|r| r["id"].as_str())
-        .find(|id| id.starts_with('u'))
-        .unwrap()[..7]
-        .to_string();
-    let before = home.run(&["files", &locator, "--json"]);
+    // Each step reads a result whose NZB no earlier step fetched, so none is answered from the cache.
+    let [first, second, third] = <[String; 3]>::try_from(locators(&found)).unwrap();
+    let before = home.run(&["files", &first, "--json"]);
     home.run(&["daemon", "stop"]);
     let on_disk: Vec<String> = walk(&home.path("th"))
         .into_iter()
         .filter(|path| std::fs::read(path).unwrap().windows(3).any(|w| w == b"k3y"))
         .map(|path| path.display().to_string())
         .collect();
-    home.set("TEST_JACKETT_KEY", "n3w");
-    let after = home.run(&["files", &locator, "--json"]);
+    home.set("TEST_HYDRA_KEY", "n3w");
+    let cached = home.run(&["files", &first, "--json"]);
+    let after = home.run(&["files", &second, "--json"]);
     home.run(&["daemon", "stop"]);
-    home.write_config(&config.replace("      api_key_env: TEST_JACKETT_KEY\n", ""));
-    let keyless = home.run(&["files", &locator]);
+    let fetched = server.asked("/getnzb/");
+    home.write_config(&config.replace("      api_key_env: TEST_HYDRA_KEY\n", ""));
+    let keyless = home.run(&["files", &third]);
     home.run(&["daemon", "stop"]);
-    home.write_config(&config.replace(&indexer("      api_key_env: TEST_JACKETT_KEY\n"), ""));
-    let removed = home.run(&["files", &locator]);
+    home.write_config(&config.replace(
+        &server.indexer("hydra", Some("TEST_HYDRA_KEY")),
+        "    - name: other\n      url: http://127.0.0.1:9/api\n",
+    ));
+    let removed = home.run(&["files", &third]);
     home.run(&["daemon", "stop"]);
     home.write_config(&config);
-    home.unset("TEST_JACKETT_KEY");
-    let unset = home.run(&["files", &locator]);
+    home.unset("TEST_HYDRA_KEY");
+    let unset = home.run(&["files", &third]);
 
     assert_eq!(name(&before), Some("ubuntu-private.iso".into()), "{}{}", before.stdout, before.stderr);
     assert_eq!(on_disk, Vec::<String>::new(), "the API key reached the disk");
+    assert_eq!(name(&cached), Some("ubuntu-private.iso".into()), "{}{}", cached.stdout, cached.stderr);
     assert_eq!(name(&after), Some("ubuntu-private.iso".into()), "{}{}", after.stdout, after.stderr);
-    assert_eq!(
-        server.asked("/dl/privatehd/"),
-        [
-            "/dl/privatehd/?jackett_apikey=k3y&path=def&file=ubuntu",
-            "/dl/privatehd/?path=def&file=ubuntu&jackett_apikey=n3w"
-        ]
+    let keys: Vec<(&str, &str)> = fetched.iter().filter_map(|path| path.split_once("?apikey=")).collect();
+    assert!(
+        matches!(keys.as_slice(), [(a, "k3y"), (b, "n3w")] if a != b),
+        "an NZB already fetched is not fetched again, and a new one takes the key set now: {fetched:?}"
     );
     assert_eq!(
         (keyless.code, keyless.stderr.as_str()),
         (
             2,
-            "error[usage]: this result's .torrent link needs an API key for the jackett indexer, which has none\n\
-             hint: set api_key_env for jackett in the torrential config and run torrential engine stop, or search \
+            "error[usage]: this result's NZB link needs an API key for the hydra indexer, which has none\n\
+             hint: set api_key_env for hydra in the torrential config and run torrential engine stop, or search \
              again\n"
         )
     );
@@ -256,8 +298,8 @@ fn a_private_locator_resolves_after_a_restart_with_the_key_from_the_environment(
         (removed.code, removed.stderr.as_str()),
         (
             2,
-            "error[usage]: this result's .torrent link needs an API key for the jackett indexer, which is not \
-             configured\nhint: add jackett back to sources.torznab in the torrential config and run torrential \
+            "error[usage]: this result's NZB link needs an API key for the hydra indexer, which is not \
+             configured\nhint: add hydra back to sources.newznab in the torrential config and run torrential \
              engine stop, or search again\n"
         )
     );
@@ -267,7 +309,7 @@ fn a_private_locator_resolves_after_a_restart_with_the_key_from_the_environment(
         (
             2,
             &*format!(
-                "error[usage]: {config_file} line 6: the \"jackett\" indexer takes its API key from TEST_JACKETT_KEY, \
+                "error[usage]: {config_file} line 5: the \"hydra\" indexer takes its API key from TEST_HYDRA_KEY, \
                  which is not set\nhint: fix {config_file}\n"
             )
         )
@@ -287,17 +329,19 @@ fn walk(dir: &Path) -> Vec<PathBuf> {
 
 #[test]
 fn the_engine_refuses_a_config_that_does_not_parse() {
-    let server = Server::start(|_| Vec::<(&str, _)>::new());
-    let home = Home::searching(&server, &[], "  torznab: 3\n");
+    let home = Home::searching(&[]);
+    home.write_config("sources:\n  newznab: 3\n");
 
     let refused = home.run(&["status"]);
     let doctor = home.run(&["doctor", "--json"]).json();
-    home.write_config("sources:\n  disabled: [nyaa]\n");
+    home.write_config(
+        "sources:\n  disabled: [hydra]\n  newznab:\n    - name: hydra\n      url: http://127.0.0.1:9/api\n",
+    );
     let fixed = home.run(&["status"]);
     let fixed_doctor = home.run(&["doctor", "--json"]).json();
 
     let file = home.path("th/config/config.yaml").display().to_string();
-    let message = format!("{file} line 3: expected sequence start");
+    let message = format!("{file} line 2: expected sequence start");
     assert_eq!(refused.code, 2, "{}{}", refused.stdout, refused.stderr);
     assert!(refused.stderr.contains(&message), "{}", refused.stderr);
     let config = |doctor: &Value| {
@@ -310,15 +354,23 @@ fn the_engine_refuses_a_config_that_does_not_parse() {
 }
 
 #[test]
-fn doctor_network_asks_each_enabled_source() {
-    let server = Server::start(|_| {
+fn doctor_network_asks_each_indexer() {
+    let server = Server::start(|base| {
+        let linux = feed(
+            base,
+            &[
+                Item { title: "Linux.Foundation.Talks.2024.1080p", size: 2 * GIB, grabs: 10, link: "/getnzb/l1.nzb" },
+                Item { title: "Linux.Basics.2023.720p", size: GIB, grabs: 3, link: "/getnzb/l2.nzb" },
+            ],
+        );
         vec![
-            ("/knaben/", vec![status(503)]),
-            ("/apibay/", vec![ok(fixture("apibay/q.php-zzqqxxnotarealthing987.json"))]),
-            ("/nyaa/", vec![ok(fixture("nyaa/index-linux.xml"))]),
+            ("/down/api", vec![status(503)]),
+            ("/empty/api", vec![ok(feed(base, &[]))]),
+            ("/geek/api", vec![ok(linux)]),
         ]
     });
-    let home = Home::searching(&server, &["knaben", "apibay", "nyaa"], "");
+    let home =
+        Home::searching(&[server.indexer("down", None), server.indexer("empty", None), server.indexer("geek", None)]);
 
     let doctor = home.run(&["doctor", "--network", "--json"]).json();
 
@@ -334,71 +386,38 @@ fn doctor_network_asks_each_enabled_source() {
             (c["check"].as_str().unwrap().to_string(), c["status"].as_str().unwrap().to_string(), outcome.to_string())
         })
         .collect();
-    let expected = [
-        ("source knaben", "fail", "HTTP 503"),
-        ("source apibay", "ok", "0 results"),
-        ("source nyaa", "ok", "30 results"),
-    ];
+    let expected =
+        [("source down", "fail", "HTTP 503"), ("source empty", "ok", "0 results"), ("source geek", "ok", "2 results")];
     assert_eq!(sources, expected.map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string())));
     let summary = doctor["checks"].as_array().unwrap().iter().find(|c| c["check"] == "sources").unwrap();
     assert_eq!((&summary["status"], &summary["detail"]), (&"fail".into(), &"2 of 3 responded".into()));
-    assert_eq!(server.asked("/nyaa/"), ["/nyaa/?page=rss&q=linux&c=0_0&f=0"]);
-}
-
-#[test]
-fn files_on_an_archive_org_result_reads_its_torrent_url_not_the_bare_magnet() {
-    let item = "/archive.org/download/night_of_the_living_dead_dvd/night_of_the_living_dead_dvd_archive.torrent";
-    let server = Server::start(|_| {
-        vec![
-            (
-                "/archive.org/advancedsearch.php",
-                vec![ok(fixture("archive.org/advancedsearch.php-night-of-the-living-dead.json"))],
-            ),
-            (item, vec![ok(torrent("night_of_the_living_dead_dvd"))]),
-            ("/archive.org/download/Night_Of_The_Living_Dead_raw_HD_WS/", vec![status(503)]),
-        ]
-    });
-    let home = Home::searching(&server, &["archive.org"], "");
-
-    let found = home.run(&["search", "night", "of", "the", "living", "dead", "--limit", "50", "--json"]).json();
-    let files = home.run(&["files", "6bc1af", "--json"]).json();
-    let asked = std::time::Instant::now();
-    let unreachable = home.run(&["files", "27f32a"]);
-    let took = asked.elapsed();
-
-    let release = found["result"]["releases"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .find(|r| r["id"] == "6bc1af23a17fd62156ab2f0e41d3c86769c2c66c")
-        .unwrap();
-    assert_eq!(
-        release["magnet"],
-        "magnet:?xt=urn:btih:6bc1af23a17fd62156ab2f0e41d3c86769c2c66c&dn=Night%20of%20the%20Living%20Dead"
-    );
-    assert_eq!(
-        (files["files"]["metadata_source"].as_str(), files["files"]["name"].as_str()),
-        (Some("torrent_url"), Some("night_of_the_living_dead_dvd"))
-    );
-    assert_eq!(server.asked(item).len(), 1);
-    assert_eq!(unreachable.code, 5, "{}", unreachable.stderr);
-    assert!(
-        unreachable.stderr.starts_with("error[fetch_failed]: could not fetch the .torrent file: HTTP 503\n"),
-        "{}",
-        unreachable.stderr
-    );
-    assert!(took < Duration::from_secs(15), "took {took:?}");
+    assert_eq!(server.asked("/geek/"), ["/geek/api?t=search&q=linux"]);
 }
 
 #[test]
 fn the_machine_and_preferences_rank_a_film_search_and_say_so() {
-    let server = Server::start(|_| {
-        vec![(
-            "/archive.org/advancedsearch.php",
-            vec![ok(fixture("archive.org/advancedsearch.php-night-of-the-living-dead-1968.json"))],
-        )]
+    let server = Server::start(|base| {
+        let films = [
+            ("Night.of.the.Living.Dead.1968.2160p.UHD.BluRay.HDR.x265-GRP", 50 * GIB, 40),
+            ("Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP", 8 * GIB, 300),
+            ("Night.of.the.Living.Dead.1968.1080p.BluRay.HEVC.x265-GRP", 4 * GIB, 120),
+            ("Night.of.the.Living.Dead.1968.1080p.WEB.H264-GRP", 1800 * MIB, 90),
+            ("Night.of.the.Living.Dead.1968.720p.BluRay.x264-GRP", GIB, 60),
+            ("Night.of.the.Living.Dead.1968.DVDRip.XviD-GRP", 700 * MIB, 20),
+        ];
+        let items: Vec<Item> = films
+            .iter()
+            .enumerate()
+            .map(|(i, (title, size, grabs))| Item {
+                title,
+                size: *size,
+                grabs: *grabs,
+                link: ["/n/0", "/n/1", "/n/2", "/n/3", "/n/4", "/n/5"][i],
+            })
+            .collect();
+        vec![("/hydra/api", vec![ok(feed(base, &items))])]
     });
-    let home = Home::searching(&server, &["archive.org"], "");
+    let home = Home::searching(&[server.indexer("hydra", None)]);
     let search = ["search", "night", "of", "the", "living", "dead", "1968", "--category", "video", "--limit", "6"];
     let shown = |run: &Run| -> Vec<String> {
         assert_eq!(run.code, 0, "{}", run.stderr);
@@ -422,12 +441,12 @@ fn the_machine_and_preferences_rank_a_film_search_and_say_so() {
         shown(&before),
         [
             "SIZE | QUALITY | NAME",
-            "3.4 GiB | 1080p | Night Of The Living Dead ( 1968) English FULL HD",
-            "16.8 GiB | 1080p | Night of the Living Dead (1968) [P&M] 1080p Alternate Crop (16GB)",
-            "3.4 GiB | 1080p | Night Of The Living Dead ( 1968) Doblada Al Español FULL HD",
-            "1.0 GiB | 720p | Night Of The Living Dead 720p 1968",
-            "54.7 GiB | 2160p | Night of the Living Dead (1968) (4k Remaster)",
-            "6.4 GiB | 2160p | Night of the Living Dead (1968) [colorised, 4k, 60FPS]",
+            "8.0 GiB | 1080p h264 | Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP",
+            "4.0 GiB | 1080p hevc | Night.of.the.Living.Dead.1968.1080p.BluRay.HEVC.x265-GRP",
+            "1.8 GiB | 1080p h264 | Night.of.the.Living.Dead.1968.1080p.WEB.H264-GRP",
+            "1.0 GiB | 720p h264 | Night.of.the.Living.Dead.1968.720p.BluRay.x264-GRP",
+            "50.0 GiB | 2160p hevc hdr | Night.of.the.Living.Dead.1968.2160p.UHD.BluRay.HDR.x265-GRP",
+            "700 MiB | sd | Night.of.the.Living.Dead.1968.DVDRip.XviD-GRP",
             "# ranked for this Mac: 1080p screen, HDR, HEVC, arm64, English",
         ]
     );
@@ -435,12 +454,12 @@ fn the_machine_and_preferences_rank_a_film_search_and_say_so() {
         shown(&after),
         [
             "SIZE | QUALITY | NAME",
-            "1.0 GiB | 720p | Night Of The Living Dead 720p 1968",
-            "1.1 GiB | ? | Night of the Living Dead (1968)",
-            "1.1 GiB | ? | Night of the Living Dead (1968)",
-            "528 MiB | ? | Night of the Living Dead (1968)",
-            "1.8 GiB | ? | Night of the Living Dead (1968)",
-            "742 MiB | ? | Night Of The Living Dead ( 1968)",
+            "1.8 GiB | 1080p h264 | Night.of.the.Living.Dead.1968.1080p.WEB.H264-GRP",
+            "1.0 GiB | 720p h264 | Night.of.the.Living.Dead.1968.720p.BluRay.x264-GRP",
+            "700 MiB | sd | Night.of.the.Living.Dead.1968.DVDRip.XviD-GRP",
+            "8.0 GiB | 1080p h264 | Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP",
+            "4.0 GiB | 1080p hevc | Night.of.the.Living.Dead.1968.1080p.BluRay.HEVC.x265-GRP",
+            "50.0 GiB | 2160p hevc hdr | Night.of.the.Living.Dead.1968.2160p.UHD.BluRay.HDR.x265-GRP",
             "# ranked for this Mac: 1080p screen, no HDR, H.264 only, up to 2 GB, arm64, English · overrides: screen \
              laptop, max_size 2GB, playback h264",
         ]

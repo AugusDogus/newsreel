@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Release, SearchResult, SourceReport } from "../api";
 import { count, list, sentence } from "../lib/format";
 import { isVideo } from "../lib/release";
-import { navigate, torrentsPath, watchPath } from "../router";
+import { navigate, releasesPath, watchPath } from "../router";
 import { Header } from "../ui/Header";
 import { Recent } from "./Recent";
 import { ResultRow, useCopied } from "./ResultRow";
@@ -88,7 +88,7 @@ interface Props {
 export function SearchPage({ query, everything }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const state = useSearch(query, everything);
-  const search = useSearchText(query, (words) => navigate(torrentsPath(words, everything), { replace: true }));
+  const search = useSearchText(query, (words) => navigate(releasesPath(words, everything), { replace: true }));
   const { text } = search;
 
   useEffect(() => {
@@ -107,7 +107,7 @@ export function SearchPage({ query, everything }: Props) {
         <SearchField
           input={input}
           search={search}
-          label="Search torrents"
+          label="Search Usenet"
           placeholder="Search for a film, a show, anything"
           busy={busy}
           onKeyDown={search.keyDown}
@@ -126,7 +126,7 @@ export function SearchPage({ query, everything }: Props) {
                       name="scope"
                       className="sr-only"
                       checked={everything === all}
-                      onChange={() => navigate(torrentsPath(text.trim(), all), { replace: true })}
+                      onChange={() => navigate(releasesPath(text.trim(), all), { replace: true })}
                     />
                     {all ? "Everything" : "Video"}
                   </label>

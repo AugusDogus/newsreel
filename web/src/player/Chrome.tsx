@@ -19,7 +19,7 @@ export interface Heading {
 }
 
 /**
- * A release by its name, and by `file` when the torrent has several videos. A file of a season reads as the show over
+ * A release by its name, and by `file` when the release has several videos. A file of a season reads as the show over
  * the episode. A single film reads as its title over its tags.
  */
 export function releaseHeading(name: string, file: string | null): Heading {
@@ -38,12 +38,10 @@ export function Readout({ job }: { job: Job }) {
       return (
         <div className="flex items-center gap-1 tabular-nums">
           <ArrowDownIcon className="size-4 shrink-0 fill-action" />
-          {rate(progress.down_rate)} · {count(progress.peers, "peer")}
+          {rate(progress.down_rate)} · {count(progress.connections, "connection")}
           {progress.size ? ` · ${percent(progress.verified / progress.size)}` : ""}
         </div>
       );
-    case "metadata":
-      return <div>Finding peers</div>;
     case "queued":
       return <div>Waiting for a download slot</div>;
     case "checking":
@@ -134,24 +132,24 @@ export function Steps({ steps, step }: { steps: Step[]; step: number }) {
 
 /** Reading a video once it downloads, then buffering it: the last two steps of every play. */
 export const READING: Step[] = [
-  { title: "Reading the video", detail: "Downloading its first pieces to see what is inside." },
+  { title: "Reading the video", detail: "Downloading its first parts to see what is inside." },
   { title: "Getting ready to play", detail: "Buffering the first seconds." },
 ];
 
 const STEPS: Step[] = [
-  { title: "Finding the files", detail: "Asking peers what is in this torrent. With few peers this can take up to a minute." },
+  { title: "Reading the release", detail: "Reading the NZB and the archive headers to find the video. This takes a few seconds." },
   ...READING,
 ];
 
 interface StartingProps {
-  /** The step in progress: 0 finding the files, 1 reading the video, 2 buffering. */
+  /** The step in progress: 0 reading the release, 1 reading the video, 2 buffering. */
   step: 0 | 1 | 2;
   name: string | null;
   /** How the download is doing, under the steps. */
   readout: ReactNode;
 }
 
-/** The screen before the first frame of a torrent's video: what is being played, and which step toward playing is running. */
+/** The screen before the first frame of a release's video: what is being played, and which step toward playing is running. */
 export function Starting({ step, name, readout }: StartingProps) {
   const release = name ? readable(name) : null;
   return (
@@ -182,12 +180,12 @@ export function FfmpegReadout({ fetching: { done, size } }: { fetching: Fetching
 
 /** The spinner waits this long, so short seeks and quick refills do not flash it. */
 const PATIENCE_MS = 450;
-/** With no bytes arriving for this long, the wait is on the swarm. */
+/** With no bytes arriving for this long, the wait is on the servers. */
 const STALLED_MS = 8000;
 
 /**
- * Shown when playback has to wait in the middle of a video. Says what it is waiting for: pieces
- * arriving at some rate from some peers, or a swarm that is sending nothing.
+ * Shown when playback has to wait in the middle of a video. Says what it is waiting for: articles
+ * arriving at some rate over some connections, or servers that are sending nothing.
  */
 export function Buffering({ play, quiet = false }: { play: PlayInfo; quiet?: boolean }) {
   const job = usePlayingJob(play);
@@ -221,8 +219,8 @@ export function Buffering({ play, quiet = false }: { play: PlayInfo; quiet?: boo
             {job.state !== "downloading"
               ? "This part of the video has not downloaded, and the download is not running."
               : stalled
-                ? "No peer is sending this part right now. Playback continues as soon as one does."
-                : `Waiting for pieces · ${rate(progress.down_rate)} from ${count(progress.peers, "peer")}`}
+                ? "No server is sending this part right now. Playback continues as soon as one does."
+                : `Waiting for articles · ${rate(progress.down_rate)} from ${count(progress.connections, "connection")}`}
           </p>
         )}
       </div>
@@ -233,7 +231,7 @@ export function Buffering({ play, quiet = false }: { play: PlayInfo; quiet?: boo
 const UP_NEXT_SECONDS = 10;
 
 interface EndedProps {
-  /** The next video of the torrent, as a title, when there is one. */
+  /** The next video of the release, as a title, when there is one. */
   next: string | null;
   onNext: () => void;
   onReplay: () => void;

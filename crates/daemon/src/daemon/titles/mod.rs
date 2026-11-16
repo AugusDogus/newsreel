@@ -16,7 +16,7 @@ use torrential_core::title::{Wanted, season_episodes, title_name};
 use torrential_core::watching::{next, play_target};
 use torrential_core::{
     Category, EpisodeInfo, Error, ErrorCode, HexPrefix, Job, Kind, Next, Player, Preferences, Profile, Quality,
-    Release, ReleaseId, SearchQuery, Skip, TitleDetails, TitleId, TorrentId, VideoRef,
+    Release, ResultId, SearchQuery, Skip, TitleDetails, TitleId, VideoRef,
 };
 
 use super::ctx::Ctx;
@@ -40,7 +40,7 @@ pub struct Titles {
     pub timing: Timing,
     /// When each release last failed to play, and why. In memory, so a restart gives every one a
     /// chance.
-    failed: Mutex<HashMap<ReleaseId, (Instant, Skip)>>,
+    failed: Mutex<HashMap<ResultId, (Instant, Skip)>>,
 }
 
 /// Every deadline of a title play, and of the home lists. Tests shrink them.
@@ -79,7 +79,7 @@ impl Titles {
         }
     }
 
-    fn failed(&self, release: ReleaseId, why: Skip) {
+    fn failed(&self, release: ResultId, why: Skip) {
         self.failed.lock().unwrap_or_else(PoisonError::into_inner).insert(release, (Instant::now(), why));
     }
 
@@ -97,13 +97,11 @@ impl Titles {
         player: Player,
         ffmpeg: bool,
     ) -> Vec<Release> {
-        let here: BTreeSet<TorrentId> = jobs.iter().map(|job| job.id).collect();
+        let here: BTreeSet<ResultId> = jobs.iter().map(held_as).collect();
         let failed = self.failed.lock().unwrap_or_else(PoisonError::into_inner);
-        let failed_lately = |id: &ReleaseId| failed.get(id).filter(|(at, _)| at.elapsed() < FAILED_FOR);
-        let reused = |release: &Release| {
-            matches!(release.id, ReleaseId::Torrent(id) if here.contains(&id))
-                && player.reuses(Quality::parse(&release.name), ffmpeg)
-        };
+        let failed_lately = |id: &ResultId| failed.get(id).filter(|(at, _)| at.elapsed() < FAILED_FOR);
+        let reused =
+            |release: &Release| here.contains(&release.id) && player.reuses(Quality::parse(&release.name), ffmpeg);
         let mut found_as = HashSet::new();
         let held: Vec<Release> = jobs
             .iter()
@@ -115,11 +113,13 @@ impl Titles {
             .collect();
         let (first, other): (Vec<Release>, Vec<Release>) = held.into_iter().partition(|release| reused(release));
         let mut seen = HashSet::new();
+        let mut seen_names = HashSet::new();
         let mut line: Vec<Release> = first
             .into_iter()
             .chain(ranked.into_iter().take(MOST_CONSIDERED).filter(|release| !found_as.contains(&release.id)))
             .chain(other)
-            .filter(|release| seen.insert(release.id))
+            // A download here leads, and the search may list it again under the name it has.
+            .filter(|release| seen.insert(release.id) && seen_names.insert(release.name.clone()))
             .map(|release| Release { failed: failed_lately(&release.id).map(|(_, why)| why.clone()), ..release })
             .collect();
         line.sort_by_key(|release| (release.failed.is_some(), !reused(release)));
@@ -174,31 +174,34 @@ impl Resolved {
     }
 }
 
+/// The search result a download on this machine stands for among a title's sources: the one a
+/// title play made it from, or the download itself when it was made some other way.
+pub fn held_as(job: &Job) -> ResultId {
+    job.title.as_ref().and_then(|link| link.release).unwrap_or_else(|| ResultId::from_bytes(*job.id.as_bytes()))
+}
+
 /// A download on this machine that a title play made for `video`'s title and that holds it, as a
 /// release to try, and the ID of the release of `ranked` it was found as. It has that release's
-/// name, sources, and age, but its own ID and size.
-fn holding(job: &Job, video: &VideoRef, ranked: &[Release]) -> Option<(Release, Option<ReleaseId>)> {
+/// ID, name, sources, and age, but its own size.
+fn holding(job: &Job, video: &VideoRef, ranked: &[Release]) -> Option<(Release, Option<ResultId>)> {
     let link = job.title.as_ref().filter(|link| link.title == video.title && link.span.covers(video.episode))?;
-    let id = ReleaseId::Torrent(job.id);
-    if let Some(found) = ranked.iter().find(|release| release.id == id || link.release == Some(release.id)) {
-        let release = Release { id, size: job.progress.size, span: Some(link.span), failed: None, ..found.clone() };
+    let id = held_as(job);
+    let size = Some(job.progress.size);
+    if let Some(found) = ranked.iter().find(|release| release.id == id) {
+        let release = Release { size, span: Some(link.span), failed: None, ..found.clone() };
         return Some((release, Some(found.id)));
     }
     let release = Release {
         id,
-        name: job.name.clone().unwrap_or_else(|| job.id.to_hex()),
-        size: job.progress.size,
-        seeders: None,
-        leechers: None,
+        name: job.name.clone(),
+        size,
+        grabs: None,
         published: None,
         category: Some(Category::Video),
         flags: BTreeSet::new(),
         sources: Vec::new(),
-        magnet: None,
-        torrent_url: None,
-        info_url: None,
+        nzb_url: None,
         span: Some(link.span),
-        swarm: None,
         failed: None,
     };
     Some((release, None))
@@ -287,21 +290,15 @@ pub(super) async fn sources(ctx: &Ctx, video: VideoRef) -> Result<TitleSources, 
     Ok(TitleSources { video: title.video, title: title.details.card, episode: title.episode, result })
 }
 
-/// The release among `video`'s sources whose ID starts with `prefix`, or that is the download
-/// here of a release whose ID does, as listed before the download started.
+/// The release among `video`'s sources whose ID starts with `prefix`. A download here is listed as
+/// the search result it came from, so that ID names it too. A source is always a search result,
+/// so its leading `u` may be left out.
 pub(super) async fn pinned(ctx: &Ctx, video: &VideoRef, prefix: &str) -> Result<Release, Error> {
-    let parsed: HexPrefix = prefix.parse()?;
+    let typed = prefix.trim();
+    let parsed: HexPrefix = if typed.starts_with('u') { typed.parse()? } else { format!("u{typed}").parse()? };
     let sources = sources(ctx, video.clone()).await?;
     let name = title_name(&sources.title, sources.video.episode);
-    let jobs = ctx.owner.ask(|reply| Command::Status { refs: Vec::new(), reply }).await?;
-    let found_as = |release: &Release| {
-        jobs.iter().any(|job| {
-            ReleaseId::Torrent(job.id) == release.id
-                && job.title.as_ref().and_then(|link| link.release).is_some_and(|found| parsed.matches(&found))
-        })
-    };
-    let matching: Vec<&Release> =
-        sources.result.releases.iter().filter(|r| parsed.matches(&r.id) || found_as(r)).collect();
+    let matching: Vec<&Release> = sources.result.releases.iter().filter(|r| parsed.matches(&r.id)).collect();
     match matching.as_slice() {
         [one] => Ok((*one).clone()),
         [] => Err(Error::new(ErrorCode::NotFound, format!("no source of {name} has an ID that starts with {prefix}"))
@@ -319,7 +316,7 @@ pub(super) async fn pinned(ctx: &Ctx, video: &VideoRef, prefix: &str) -> Result<
 mod tests {
     use super::*;
     use torrential_core::title::Span;
-    use torrential_core::{InfoHash, JobStatus, Progress, Selection, TitleLink, Watched};
+    use torrential_core::{DownloadId, JobStatus, Progress, Selection, TitleLink, Watched};
 
     fn video(text: &str) -> VideoRef {
         text.parse().unwrap()
@@ -340,29 +337,26 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let titles = titles(&dir);
         let release = |n: u8| Release {
-            id: ReleaseId::Torrent(TorrentId::from_bytes([n; 20])),
+            id: ResultId::from_bytes([n; 20]),
             name: format!("release {n}"),
             size: None,
-            seeders: None,
-            leechers: None,
+            grabs: None,
             published: None,
             category: None,
             flags: BTreeSet::new(),
             sources: Vec::new(),
-            magnet: None,
-            torrent_url: None,
-            info_url: None,
+            nzb_url: None,
             span: None,
-            swarm: None,
             failed: None,
         };
-        let film = TitleLink { title: "tt0063350".parse().unwrap(), span: Span::Film, release: None };
+        // A download a title play made, linked to the search result it came from.
+        let film =
+            |n: u8| TitleLink { title: "tt0063350".parse().unwrap(), span: Span::Film, release: Some(release(n).id) };
         let job = |n: u8, title: Option<TitleLink>| Job {
-            id: TorrentId::from_bytes([n; 20]),
-            info_hash: InfoHash::V1([n; 20]),
-            name: Some(format!("release {n}")),
+            id: DownloadId::from_bytes([n; 20]),
+            name: format!("release {n}"),
             dir: "/downloads".into(),
-            path: None,
+            path: "/downloads/release".into(),
             status: JobStatus::Queued,
             progress: Progress::default(),
             selection: Selection::All,
@@ -372,7 +366,7 @@ mod tests {
         };
         titles.failed(release(2).id, Skip::NoVideo);
         titles.failed(release(40).id, Skip::NoData { waited_s: 30 });
-        let jobs = [job(3, None), job(40, Some(film))];
+        let jobs = [job(3, Some(film(3))), job(40, Some(film(40)))];
         let line = |jobs: &[Job], video: &str, ranked: &[u8]| -> Vec<(u8, Option<Skip>)> {
             let ranked = ranked.iter().map(|n| release(*n)).collect();
             let line = titles.line(jobs, &video.parse().unwrap(), ranked, Player::External, false).into_iter();
@@ -396,75 +390,64 @@ mod tests {
     fn a_download_here_takes_the_row_of_the_release_it_was_found_as() {
         let dir = tempfile::tempdir().unwrap();
         let titles = titles(&dir);
-        let listed = |id: ReleaseId, name: &str, source: &str| Release {
+        let listed = |id: ResultId, name: &str, source: &str| Release {
             id,
             name: name.into(),
             size: Some(1_416_157_892),
-            seeders: Some(12),
-            leechers: None,
+            grabs: Some(12),
             published: Some(1_294_411_507),
             category: Some(Category::Video),
-            flags: [torrential_core::Flag::PublicDomain].into(),
+            flags: BTreeSet::new(),
             sources: vec![source.into()],
-            magnet: None,
-            torrent_url: None,
-            info_url: None,
+            nzb_url: None,
             span: Some(Span::Film),
-            swarm: None,
             failed: None,
         };
-        let by_link = ReleaseId::Locator(torrential_core::LocatorId::from_bytes([5; 20]));
-        let by_hash = ReleaseId::Torrent(TorrentId::from_bytes([6; 20]));
+        let (first, second) = (ResultId::from_bytes([5; 20]), ResultId::from_bytes([6; 20]));
         let ranked = vec![
-            listed(by_link, "Night.of.the.Living.Dead.1968.720p.x264", "knaben"),
-            listed(by_hash, "Night Of The Living Dead (with spanish subtitles)", "archive.org"),
-            listed(
-                ReleaseId::Torrent(TorrentId::from_bytes([7; 20])),
-                "Night of the Living Dead (1968)",
-                "archive.org",
-            ),
+            listed(first, "Night.of.the.Living.Dead.1968.720p.x264", "hydra"),
+            listed(second, "Night Of The Living Dead (with spanish subtitles)", "geek"),
+            listed(ResultId::from_bytes([7; 20]), "Night of the Living Dead (1968)", "geek"),
         ];
-        let job = |n: u8, name: &str, release: ReleaseId| Job {
-            id: TorrentId::from_bytes([n; 20]),
-            info_hash: InfoHash::V1([n; 20]),
-            name: Some(name.into()),
+        let job = |n: u8, name: &str, release: ResultId| Job {
+            id: DownloadId::from_bytes([n; 20]),
+            name: name.into(),
             dir: "/downloads".into(),
-            path: None,
+            path: "/downloads/release".into(),
             status: JobStatus::Queued,
-            progress: Progress { size: Some(734_003_200), ..Progress::default() },
+            progress: Progress { size: 734_003_200, ..Progress::default() },
             selection: Selection::All,
             added_at: 0,
             title: Some(TitleLink { title: "tt0063350".parse().unwrap(), span: Span::Film, release: Some(release) }),
             place: torrential_core::Place::Folder,
         };
-        let jobs =
-            [job(50, "Night.1968.720p", by_link), job(6, "NightOfTheLivingDeadwithSpanishSubtitles_595", by_hash)];
+        let jobs = [job(50, "Night.1968.720p", first), job(60, "NightOfTheLivingDeadwithSpanishSubtitles_595", second)];
         let line = titles.line(&jobs, &video("tt0063350"), ranked, Player::External, false);
         let rows: Vec<_> = line
             .iter()
-            .map(|r| (r.id.to_ref()[..2].to_string(), r.name.as_str(), r.sources.clone(), r.size, r.published))
+            .map(|r| (r.id.to_ref()[..3].to_string(), r.name.as_str(), r.sources.clone(), r.size, r.published))
             .collect();
         assert_eq!(
             rows,
             [
                 (
-                    "32".into(),
+                    "u05".into(),
                     "Night.of.the.Living.Dead.1968.720p.x264",
-                    vec!["knaben".into()],
+                    vec!["hydra".into()],
                     Some(734_003_200),
                     Some(1_294_411_507)
                 ),
                 (
-                    "06".into(),
+                    "u06".into(),
                     "Night Of The Living Dead (with spanish subtitles)",
-                    vec!["archive.org".into()],
+                    vec!["geek".into()],
                     Some(734_003_200),
                     Some(1_294_411_507)
                 ),
                 (
-                    "07".into(),
+                    "u07".into(),
                     "Night of the Living Dead (1968)",
-                    vec!["archive.org".into()],
+                    vec!["geek".into()],
                     Some(1_416_157_892),
                     Some(1_294_411_507)
                 ),

@@ -12,7 +12,7 @@ use super::connect::{self, Conn};
 use super::emit;
 use super::rows::{next_for_stopped, rerun_get, selection, short_ids, state_cell};
 use super::{absolute, titles, wait};
-use crate::cli::{GetArgs, Until};
+use crate::cli::GetArgs;
 use crate::output::format;
 use crate::output::theme::Token;
 use crate::output::{Body, Cell, Doc, DocKind, Mode, Typed};
@@ -42,17 +42,17 @@ pub fn run(mut conn: Conn, target: Target, args: GetArgs, mode: Mode, cwd: &Path
 }
 
 /// Downloads a film or an episode from the first of its sources that starts. The flags that pick
-/// files and folders take a torrent.
+/// files and folders take a release.
 pub fn title(engine: impl FnOnce() -> Result<Conn, Error>, args: GetArgs, mode: Mode, env: &Env) -> Result<u8, Error> {
     let video = titles::video(&args.reference, args.episode.as_deref())?;
-    let torrent_only = [
+    let release_only = [
         (!args.files.is_empty(), "--files"),
         (args.dir.is_some(), "--dir"),
         (args.max_size.is_some(), "--max-size"),
         (args.dry_run, "--dry-run"),
     ];
-    if let Some((_, flag)) = torrent_only.into_iter().find(|(given, _)| *given) {
-        return Err(torrential_core::target::not_a_torrent(&video, flag));
+    if let Some((_, flag)) = release_only.into_iter().find(|(given, _)| *given) {
+        return Err(torrential_core::target::not_a_release(&video, flag));
     }
     let (exit, job) = request_title(&mut engine()?, TitleRequest { video, source: args.source }, mode)?;
     follow(exit, &job, mode, env)
@@ -85,7 +85,7 @@ fn follow(exit: u8, job: &Job, mode: Mode, env: &Env) -> Result<u8, Error> {
     eprintln!("Press Ctrl-C to stop watching. The download continues in the background.");
     let paths = Paths::from_process(env)?;
     let following = (connect::ensure(&paths, env)?, wait::Engine { paths, env: env.clone() });
-    wait::attach(following, vec![job.id.to_hex()], Until::Done, None)
+    wait::attach(following, vec![job.id.to_hex()], None)
 }
 
 pub fn get(reply: &GetReply, dir: Option<&Path>) -> Doc {
@@ -98,31 +98,26 @@ pub fn get(reply: &GetReply, dir: Option<&Path>) -> Doc {
         GetOutcome::Updated => ("updated", Token::Accent),
         GetOutcome::Planned => ("planned", Token::Accent),
     };
-    let mut title = vec![Cell::styled(word, token), Cell::styled(id.clone(), Token::Accent)];
-    if let Some(name) = &job.name {
-        title.push(Cell::new(name));
-    }
+    let title = vec![Cell::styled(word, token), Cell::styled(id.clone(), Token::Accent), Cell::new(&job.name)];
     let mut fields = Vec::new();
     if reply.outcome != GetOutcome::Planned {
         fields.push(("state", state_cell(&job.status)));
     }
-    let files = match (&reply.plan, job.progress.size) {
-        (Some(plan), _) => format!(
+    let files = match &reply.plan {
+        Some(plan) => format!(
             "{} ({} of {}, {})",
             selection(&job.selection),
             plan.selected_files,
             plan.total_files,
             format_size(plan.selected_size)
         ),
-        (None, Some(size)) => format!("{} ({})", selection(&job.selection), format_size(size)),
-        (None, None) => format!("{}, file list pending", selection(&job.selection)),
+        None => format!("{} ({})", selection(&job.selection), format_size(job.progress.size)),
     };
     fields.push(("files", Cell::new(files)));
     if let Some(previous) = &reply.previous_selection {
         fields.push(("was", Cell::new(selection(previous))));
     }
-    let path = job.path.as_deref().unwrap_or(&job.dir);
-    fields.push(("path", Cell::new(path.display().to_string())));
+    fields.push(("path", Cell::new(job.path.display().to_string())));
     let mut summary = Vec::new();
     if reply.outcome == GetOutcome::Planned
         && let Some(plan) = &reply.plan

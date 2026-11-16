@@ -13,9 +13,9 @@ use torrential_core::protocol::WIRE_VERSION;
 mod common;
 use common::{Home, eventually, hooks, portless};
 
-/// The archive.org release of Night of the Living Dead, which a play tries first.
+/// The release of Night of the Living Dead a play tries first, as its download ID.
 const ARCHIVE: &str = "4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c";
-/// Its DVD release on archive.org, which a play tries next.
+/// Its DVD release, which a play tries next.
 const DVD: &str = "b7f20d5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c";
 
 impl Home {
@@ -105,18 +105,19 @@ fn sources_lists_a_films_releases_in_the_order_play_tries_them() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|r| format!("{} {} {}", &r["id"].as_str().unwrap()[..6], r["span"].as_str().unwrap(), r["name"]))
+        .map(|r| format!("{} {} {}", &r["id"].as_str().unwrap()[..7], r["span"].as_str().unwrap(), r["name"]))
         .collect();
     assert_eq!(
         releases,
         [
-            r#"4c1e9a film "Night of the Living Dead (1968)""#,
-            r#"b7f20d film "Night of the Living Dead (1968) [DVD]""#,
-            r#"e3a915 film "Night.of.the.Living.Dead.1968.1080p.BluRay.x264""#,
-            r#"09cd47 film "Night of the Living Dead 4K Restoration""#,
-            r#"7a0c3f film "Night of the Living Dead (1968) colorized""#,
+            r#"u4c1e9a film "Night of the Living Dead (1968)""#,
+            r#"ub7f20d film "Night of the Living Dead (1968) [DVD]""#,
+            r#"ue3a915 film "Night.of.the.Living.Dead.1968.1080p.BluRay.x264""#,
+            r#"u09cd47 film "Night of the Living Dead 4K Restoration""#,
+            r#"u7a0c3f film "Night of the Living Dead (1968) colorized""#,
+            r#"u2d9b6a film "Night of the Living Dead 1968 720p WEB""#,
         ],
-        "2d9b6a has no seeder and no lawful catalog lists it, so it is left out"
+        "a release no one grabbed still plays, last"
     );
     assert_eq!(
         (doc["type"].as_str(), doc["video"].as_str(), doc["title"]["id"].as_str(), doc["next"].as_str()),
@@ -132,14 +133,14 @@ fn get_moves_past_a_dead_release_and_names_the_one_that_started() {
     let title = &doc["title"];
     assert_eq!(
         (title["video"].as_str(), title["name"].as_str(), title["release"]["id"].as_str()),
-        (Some("tt0063350"), Some("Night of the Living Dead (1968)"), Some(DVD)),
+        (Some("tt0063350"), Some("Night of the Living Dead (1968)"), Some(format!("u{DVD}").as_str())),
         "{:#}",
         title["tried"]
     );
     let tried = title["tried"].as_array().unwrap();
     let tried: Vec<(&str, &str)> =
         tried.iter().map(|t| (t["release"].as_str().unwrap(), t["reason"]["reason"].as_str().unwrap())).collect();
-    assert_eq!(tried, [(ARCHIVE, "no_data")]);
+    assert_eq!(tried, [(format!("u{ARCHIVE}").as_str(), "no_data")]);
     assert_eq!(
         (doc["type"].as_str(), doc["reply"]["outcome"].as_str(), doc["reply"]["job"]["id"].as_str()),
         (Some("get"), Some("started"), Some(DVD))
@@ -165,7 +166,7 @@ fn a_failed_title_play_lists_in_json_each_release_it_tried_and_why() {
                     "code": "no_source",
                     "message": "this source of Night of the Living Dead (1968) does not play now",
                     "hint": "let torrential choose a source",
-                    "details": {"tried": [{"release": ARCHIVE, "reason": {"reason": "no_data", "waited_s": 1, "text": "no data arrived in 1s"}}]}
+                    "details": {"tried": [{"release": format!("u{ARCHIVE}"), "reason": {"reason": "no_data", "waited_s": 1, "text": "no data arrived in 1s"}}]}
                 },
                 "next": "torrential search Night of the Living Dead 1968"
             })
@@ -184,25 +185,26 @@ fn sources_lists_a_release_that_failed_lately_last_and_says_why() {
         .as_array()
         .unwrap()
         .iter()
-        .map(|r| format!("{} {}", &r["id"].as_str().unwrap()[..6], r["failed"]))
+        .map(|r| format!("{} {}", &r["id"].as_str().unwrap()[..7], r["failed"]))
         .collect();
     assert_eq!(
         releases,
         [
-            "b7f20d null",
-            "e3a915 null",
-            "09cd47 null",
-            "7a0c3f null",
-            r#"4c1e9a {"reason":"no_data","waited_s":1,"text":"no data arrived in 1s"}"#
+            "ub7f20d null",
+            "ue3a915 null",
+            "u09cd47 null",
+            "u7a0c3f null",
+            "u2d9b6a null",
+            r#"u4c1e9a {"reason":"no_data","waited_s":1,"text":"no data arrived in 1s"}"#
         ]
     );
     let text = home.run(&["sources", "tt0063350"]);
     let why = text.stdout.lines().find(|line| line.contains("failed lately"));
-    assert_eq!(why, Some("# 4c1e9a failed lately, so play tries it last: no data arrived in 1s"), "{}", text.stdout);
+    assert_eq!(why, Some("# u4c1e9a failed lately, so play tries it last: no data arrived in 1s"), "{}", text.stdout);
 }
 
 #[test]
-fn play_hands_a_title_to_the_player_as_play_does_a_torrent() {
+fn play_hands_a_title_to_the_player_as_play_does_a_release() {
     let home = Home::playing();
     let run = home.run(&["play", "tt0063350"]);
     assert_eq!(
@@ -216,12 +218,12 @@ fn play_hands_a_title_to_the_player_as_play_does_a_torrent() {
         "{}",
         run.stderr
     );
-    // The fake's indexes answer one after another, archive.org before knaben. The play reads each
-    // answer in turn and starts on archive.org's, whose lawful swarm leads, with its three sources.
+    // The fake's indexers answer one after another, all before the play may start without them,
+    // so it starts on the best of their six sources.
     assert_eq!(
         run.stderr,
-        "Finding sources of Night of the Living Dead (1968)\nFound 3 sources\nTrying 1 of 3: 4c1e9a Night of the Living \
-         Dead (1968), 1.3 GiB\nPlaying 4c1e9a Night of the Living Dead (1968), 1.3 GiB\n"
+        "Finding sources of Night of the Living Dead (1968)\nFound 6 sources\nTrying 1 of 6: u4c1e9a Night of the Living \
+         Dead (1968), 1.3 GiB\nPlaying u4c1e9a Night of the Living Dead (1968), 1.3 GiB\n"
     );
     let argv = home.path("argv");
     eventually("the player starts", Duration::from_secs(10), || argv.exists());
@@ -254,7 +256,7 @@ fn play_json_is_todays_play_document_with_the_title_and_opens_nothing() {
     );
     assert_eq!(
         (doc["title"]["video"].as_str(), doc["title"]["release"]["id"].as_str(), &doc["title"]["tried"]),
-        (Some("tt0063350"), Some(ARCHIVE), &json!([]))
+        (Some("tt0063350"), Some(format!("u{ARCHIVE}").as_str()), &json!([]))
     );
     assert!(!home.path("argv").exists(), "no player opened");
 }
@@ -413,12 +415,12 @@ fn a_bad_or_unknown_title_or_episode_says_how_to_find_one() {
         (
             &["files", "tt0063350"],
             2,
-            "error[usage]: files takes a torrent, not a title such as tt0063350\nhint: run torrential sources tt0063350 to list its torrents, and pass the ID of one\nnext: torrential sources tt0063350\n",
+            "error[usage]: files takes a release, not a title such as tt0063350\nhint: run torrential sources tt0063350 to list its releases, and pass the ID of one\nnext: torrential sources tt0063350\n",
         ),
         (
             &["get", "tt0063350", "--dir", "/tmp"],
             2,
-            "error[usage]: --dir takes a torrent, not a title such as tt0063350\nhint: run torrential sources tt0063350 to list its torrents, and pass the ID of one\nnext: torrential sources tt0063350\n",
+            "error[usage]: --dir takes a release, not a title such as tt0063350\nhint: run torrential sources tt0063350 to list its releases, and pass the ID of one\nnext: torrential sources tt0063350\n",
         ),
     ];
     for (args, code, stderr) in errors {

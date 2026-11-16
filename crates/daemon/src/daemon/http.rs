@@ -16,7 +16,7 @@ use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{oneshot, watch};
 use torrential_core::filetype::FileType;
-use torrential_core::{ErrorCode, TorrentId};
+use torrential_core::{DownloadId, ErrorCode};
 
 use super::cast::{Dlna, HELLO};
 use super::ctx::Ctx;
@@ -98,14 +98,14 @@ fn address(reach: Reach) -> Ipv4Addr {
     }
 }
 
-/// `http://127.0.0.1:{port}/{torrent ID}/{file index}/{file name}`. The server routes on the ID
+/// `http://127.0.0.1:{port}/{release ID}/{file index}/{file name}`. The server routes on the ID
 /// and index; the name gives the player a title and an extension.
-pub fn url(port: u16, id: TorrentId, index: u32, path: &str) -> String {
+pub fn url(port: u16, id: DownloadId, index: u32, path: &str) -> String {
     format!("http://127.0.0.1:{port}{}", route_of(id, index, path))
 }
 
 /// The path part of `url`, which the web app requests from its own origin.
-pub fn route_of(id: TorrentId, index: u32, path: &str) -> String {
+pub fn route_of(id: DownloadId, index: u32, path: &str) -> String {
     format!("/{}/{index}/{}", id.to_hex(), url_name(path))
 }
 
@@ -395,7 +395,7 @@ impl Connection<'_> {
                     let ask_now = |request: &Request| {
                         ask(peer, request, ctx.http_port, &ctx.devices, torrential_core::time::now())
                     };
-                    // This user's torrential may name every file of a large torrent.
+                    // This user's torrential may name every file of a large release.
                     let most =
                         if request.path == wire::PATH && ask_now(&request).is_ok() { MAX_FRAME } else { MAX_BODY };
                     if request.length > most {
@@ -626,7 +626,7 @@ impl Connection<'_> {
     /// Sends file `index` of download `id` to a player on this Mac, a paired device, or a cast, with
     /// the type and headers a TV playing a cast reads when `dlna` says them. Its lease holds off an
     /// update's switch, and none is handed out once the switch waits for none.
-    async fn file(&mut self, request: Request, id: TorrentId, index: u32, dlna: Option<&Dlna>) -> io::Result<bool> {
+    async fn file(&mut self, request: Request, id: DownloadId, index: u32, dlna: Option<&Dlna>) -> io::Result<bool> {
         let keep = request.keep_alive;
         let (file, lease) = match self.ctx.owner.ask(|reply| Command::Stream { id, index, reply }).await {
             Ok(streaming) => streaming,
@@ -695,7 +695,7 @@ impl Connection<'_> {
     async fn body(
         &mut self,
         file: &StreamFile,
-        id: TorrentId,
+        id: DownloadId,
         index: u32,
         start: u64,
         end: u64,
@@ -734,7 +734,7 @@ impl Connection<'_> {
     }
 
     /// Waits until the engine has written bytes at `offset`, and says how many, up to `length`.
-    async fn arrived(&mut self, id: TorrentId, index: u32, offset: u64, length: u64) -> io::Result<Arrived> {
+    async fn arrived(&mut self, id: DownloadId, index: u32, offset: u64, length: u64) -> io::Result<Arrived> {
         let ctx = self.ctx;
         // A player that seeks closes this connection and opens another.
         tokio::select! {
@@ -753,7 +753,7 @@ enum Arrived {
 }
 
 /// Waits until the engine has written bytes of a file at `offset`, up to `length` of them.
-async fn arrived(ctx: &Ctx, id: TorrentId, index: u32, offset: u64, length: u64) -> io::Result<Arrived> {
+async fn arrived(ctx: &Ctx, id: DownloadId, index: u32, offset: u64, length: u64) -> io::Result<Arrived> {
     let started = Instant::now();
     loop {
         if let Ok(bytes @ 1..) = ctx.engine.ask(move |e| e.want_range(id, index, offset, length)).await {
@@ -774,7 +774,7 @@ async fn arrived(ctx: &Ctx, id: TorrentId, index: u32, offset: u64, length: u64)
 /// Bytes `start..end` of a download's file, waiting for the pieces that hold them.
 pub async fn read(
     ctx: &Ctx,
-    id: TorrentId,
+    id: DownloadId,
     index: u32,
     file: &StreamFile,
     start: u64,
@@ -964,8 +964,8 @@ fn split_host(host: &str) -> (&str, Option<u16>) {
     (name, port.and_then(|port| port.parse().ok()))
 }
 
-/// The torrent ID and file index of a path `url` built.
-fn route(path: &str) -> Option<(TorrentId, u32)> {
+/// The release ID and file index of a path `url` built.
+fn route(path: &str) -> Option<(DownloadId, u32)> {
     let mut parts = path.strip_prefix('/')?.split('/');
     Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))
 }

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written in the shape of an indexer's own Newznab feed, with public links. -->
+<rss version="2.0" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+  <channel>
+    <title>Indexer</title>
+    <item>
+      <title>Sintel.2010.2160p.UHD.BluRay.x265-GRP</title>
+      <guid isPermaLink="false">g1</guid>
+      <link>https://geek.example/getnzb/g1.nzb</link>
+      <pubDate>Sat, 25 Apr 2026 15:00:00 +0000</pubDate>
+      <enclosure url="https://geek.example/getnzb/g1.nzb" length="21474836480" type="application/x-nzb" />
+      <newznab:attr name="category" value="2045" />
+      <newznab:attr name="size" value="21474836480" />
+      <newznab:attr name="grabs" value="120" />
+    </item>
+    <item>
+      <title>Sintel The Making Of 2011 720p</title>
+      <guid isPermaLink="false">g2</guid>
+      <link>https://geek.example/getnzb/g2.nzb</link>
+      <newznab:attr name="category" value="2030" />
+      <newznab:attr name="size" value="524288000" />
+      <newznab:attr name="grabs" value="13" />
+    </item>
+    <item>
+      <title>Sintel.2010.1080p.WEB.H264-OTHER</title>
+      <guid isPermaLink="false">g3</guid>
+      <link>https://geek.example/getnzb/g3.nzb</link>
+      <newznab:attr name="category" value="2040" />
+      <newznab:attr name="size" value="2147483648" />
+      <newznab:attr name="grabs" value="51" />
+    </item>
+  </channel>
+</rss>

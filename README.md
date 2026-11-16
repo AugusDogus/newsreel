@@ -1,6 +1,8 @@
 <h1 align="center">torrential</h1>
 
-<p align="center">Find films and shows, and watch them on your computer, phone, or TV while they download.</p>
+<p align="center">Find films and shows on Usenet, and watch them on your Mac, phone, or TV while they download.</p>
+
+<p align="center">A fork of <a href="https://github.com/nexxeln/torrential">nexxeln/torrential</a> that downloads from NNTP servers instead of BitTorrent. See <a href="docs/usenet-conversion.md">docs/usenet-conversion.md</a>.</p>
 
 <p align="center">
   <img src="docs/home.webp" alt="The web app's home page on a Mac, with two titles to continue watching and four saved titles" width="560">
@@ -9,44 +11,49 @@
 
 ## Install
 
-On macOS and Linux:
+This fork has no published releases, so it does not update itself. Build it with Rust, a C compiler, and [bun](https://bun.sh) (for the web app):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/nexxeln/torrential/main/install.sh | sh
+cargo install --path crates/torrential
 ```
 
-On Windows, in PowerShell:
+Or, with Nix and flakes turned on, `nix develop -c cargo install --path crates/torrential`.
 
-```powershell
-irm https://raw.githubusercontent.com/nexxeln/torrential/main/install.ps1 | iex
+Then add your indexer and Usenet servers to `~/.config/torrential/config.yaml`:
+
+```yaml
+sources:
+  newznab:                      # NZBHydra, Prowlarr, or an indexer's own API
+    - name: hydra
+      url: http://127.0.0.1:5076/api
+      api_key_env: HYDRA_API_KEY
+usenet:
+  servers:
+    - host: news.example.com    # TLS on port 563 unless you say otherwise
+      username: you
+      password_env: NEWS_PASSWORD
+      connections: 20
+    - host: backup.example.com
+      username: you
+      password_env: BACKUP_PASSWORD
+      priority: 1               # asked only for articles the servers above lack
 ```
 
-The script puts one file at `~/.local/bin/torrential`, or `%LOCALAPPDATA%\Programs\torrential` on Windows. torrential runs on macOS 14 or later on Apple silicon, on 64-bit Linux, and on 64-bit Windows 10 or later.
+Keys and passwords come from the environment variables you name, never from the file.
 
-The engine starts at login and keeps running, so your phone and TV can always reach it. It resumes downloads after a restart and installs updates when nothing is playing. To stop it starting at login, run `torrential engine uninstall`.
+The engine starts at login and keeps running, so your phone and TV can always reach it. It carries on its downloads after a restart. To stop it starting at login, run `torrential engine uninstall`.
 
-<details>
-<summary>Build from source</summary>
-
-You need Rust, and Nix with flakes turned on.
-
-```sh
-git clone --recursive https://github.com/nexxeln/torrential
-cd torrential
-nix develop -c cargo install --path crates/torrential
-```
-
-</details>
-
-## Watch on your computer
+## Watch on the Mac
 
 ```sh
 torrential web
 ```
 
-Search by name. Each film or show is one card, not a list of torrents. Press Play. torrential picks the torrent that suits your language and the screen you watch on, and moves to the next one if it does not start. While you watch, the film gets the bandwidth before other downloads.
+Search by name. Each film or show is one card, not a list of releases. Press Play. torrential picks the release that suits your language and the screen you watch on, and moves to the next one if it does not start. Jump anywhere and torrential fetches the articles under that part first. While you watch, the film gets the bandwidth before other downloads.
 
-What you play goes to a folder that only torrential uses, capped at 20 GiB. When it fills, torrential deletes the plays you watched longest ago, but never the film you watched last or a title you saved. When you remove a download you started yourself, its files go to the Trash, or the Recycle Bin on Windows.
+Releases stored in RAR volumes play without extracting; compressed or password-protected ones are skipped with a reason.
+
+What you play goes to a folder that only torrential uses, capped at 20 GiB. When it fills, torrential deletes the plays you watched longest ago, but never the film you watched last or a title you saved. When you remove a download you started yourself, its files go to the Trash.
 
 torrential converts MKV files and surround sound for the browser with [ffmpeg](https://ffmpeg.org), and fetches ffmpeg the first time a file needs it.
 
@@ -56,7 +63,7 @@ torrential converts MKV files and surround sound for the browser with [ffmpeg](h
   <img src="docs/add-device.webp" alt="The Devices page on the Mac, with a QR code, the address mac-mini.local:47919, a six-digit code, and one paired iPhone" width="800">
 </p>
 
-On your computer, open **Devices** and choose **Add a device**, or run `torrential devices add`. On a phone, scan the QR code. On a TV, open the address in its browser and enter the code. The device needs no account and stores nothing. The web app works with a touch screen and with a TV remote. A device you did not add sees the pairing page and nothing else.
+On the Mac, open **Devices** and choose **Add a device**, or run `torrential devices add`. On a phone, scan the QR code. On a TV, open the address in its browser and enter the code. The device needs no account and stores nothing. The web app works with a touch screen and with a TV remote. A device you did not add sees the pairing page and nothing else.
 
 ## Play on TV
 
@@ -64,7 +71,7 @@ On your computer, open **Devices** and choose **Add a device**, or run `torrenti
   <img src="docs/play-on-tv.webp" alt="Night of the Living Dead on a phone, with the Play on TV list showing an LG TV and a Samsung TV" width="280">
 </p>
 
-LG, Samsung, Sony, and most other smart TVs play over DLNA. On a title page, on your computer or a phone you added, choose **Play on TV** and pick the TV. The phone then works as the remote. torrential sends the TV only copies in a format it plays.
+LG, Samsung, Sony, and most other smart TVs play over DLNA. On a title page, on the Mac or a phone you added, choose **Play on TV** and pick the TV. The phone then works as the remote. torrential sends the TV only copies in a format it plays.
 
 ```sh
 torrential tv                    # list the TVs on the home network
@@ -84,8 +91,9 @@ torrential play tt0063350                    # watch it in IINA, mpv, or VLC
 torrential play tt1748166 s01e02             # or one episode
 torrential get tt0063350                     # download it to keep
 
-torrential search arch linux iso             # or search every torrent
-torrential get 9b5212 --files '*.iso'        # and download only the files you want
+torrential search sintel 2010                # or search the indexers
+torrential get ufd69b2 --files '*.mkv'       # and download only the files you want
+torrential get ~/Downloads/film.nzb          # or an NZB file or URL
 torrential status                            # list your downloads
 ```
 
@@ -97,15 +105,15 @@ torrential status                            # list your downloads
 torrential skill install
 ```
 
-The skill teaches Claude Code, Codex, Gemini CLI, Cursor, and other agents to use torrential. Then ask in plain words, such as "play Night of the Living Dead on the TV" or "download the latest Arch Linux ISO".
+The skill teaches Claude Code, Codex, Gemini CLI, Cursor, and other agents to use torrential. Then ask in plain words, such as "play Night of the Living Dead on the TV" or "download Sintel in 1080p".
 
 ## Settings
 
-`torrential setup` shows the screen and language torrential found on your computer and lets you change them. Film and show details come from Cinemeta and IMDb. Set everything else in `~/.config/torrential/config.yaml`, or `%LOCALAPPDATA%\torrential\config\config.yaml` on Windows:
+`torrential setup` shows the screen and language torrential found on the Mac and lets you change them. Results are ranked for your screen, CPU, and language. Releases from groups that [TRaSH Guides](https://trash-guides.info) ranks come first, and ones it lists to avoid are marked `avoid` and come last. Film and show details come from Cinemeta and IMDb. Set everything else in `~/.config/torrential/config.yaml`, with the indexers and servers above:
 
 ```yaml
 downloads:
-  dir: ~/Downloads/torrents   # default: a torrential folder in Downloads
+  dir: ~/Downloads/films      # default: a torrential folder in Downloads
 plays:
   max: 50GiB                  # what plays may take up, default 20GiB
 player: mpv                   # for torrential play: iina, mpv, vlc, or a path
@@ -115,13 +123,14 @@ catalog:
   online: false               # do not look up films and shows online
 ffmpeg:
   fetch: false                # do not fetch ffmpeg when it is not installed
-updates: notify               # say when a new version is out instead of installing it, or off
 ```
 
-## It never seeds
+## Only what you have the right to
 
-torrential never uploads a piece, and a download stops as soon as it finishes. It puts lawful sources such as archive.org first among equal matches. Download only what you have the right to.
+torrential only downloads, and checks each article's CRC32 as it lands. Download only what you have the right to.
 
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+The release group lists are from [TRaSH Guides](https://github.com/TRaSH-Guides/Guides), MIT, bundled at one commit in [crates/search/src/trash](crates/search/src/trash) with their license. `python3 -I scripts/trash/update.py` refreshes them.

@@ -40,7 +40,7 @@ export const SHORTCUTS: { title: string; keys: Key[] }[] = [
       { keys: ",  .", does: "One frame back or forward, while paused" },
       { keys: "<  >", does: "Slower or faster" },
       { keys: "Page Up  Page Down", does: "Previous or next chapter" },
-      { keys: "P  N", does: "Previous or next video in the torrent" },
+      { keys: "P  N", does: "Previous or next video in the release" },
     ],
   },
   {

@@ -9,7 +9,7 @@ interface NowPlaying {
   album: string;
   actions: PlayerActions;
   video: VideoStore;
-  /** Plays the next or previous video of the torrent, where there is one. */
+  /** Plays the next or previous video of the release, where there is one. */
   onNext: (() => void) | null;
   onPrevious: (() => void) | null;
 }

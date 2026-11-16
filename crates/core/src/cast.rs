@@ -164,7 +164,7 @@ pub struct Cast {
     /// The download it plays from, once a source starts.
     pub download: Option<String>,
     pub file: Option<u32>,
-    /// The subtitle file sent with the video, relative to the torrent's folder.
+    /// The subtitle file sent with the video, relative to the release's folder.
     pub subtitle: Option<String>,
     #[serde(flatten)]
     pub state: CastState,
@@ -214,18 +214,18 @@ pub enum CastAction {
 pub struct CastRequest {
     /// A TV's ID or address, or a part of its name. `None` picks the only TV on the network.
     pub tv: Option<String>,
-    /// A film or an episode, or a torrent.
+    /// A film or an episode, or a release.
     pub target: Target,
     /// For a title, an ID prefix of the one release to try.
     #[serde(default)]
     pub source: Option<String>,
-    /// For a torrent, the index of the file to play. Without it, the main video plays.
+    /// For a release, the index of the file to play. Without it, the main video plays.
     #[serde(default)]
     pub file: Option<u32>,
-    /// For a torrent, the film or episode it holds, whose position the watch history keeps.
+    /// For a release, the film or episode it holds, whose position the watch history keeps.
     #[serde(default)]
     pub video: Option<VideoRef>,
-    /// The index of a subtitle file of the same torrent to show with the video.
+    /// The index of a subtitle file of the same release to show with the video.
     #[serde(default)]
     pub subtitle: Option<u32>,
     /// Seconds to start at, in place of where the person stopped.

@@ -3,40 +3,33 @@ use std::collections::BTreeSet;
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::error::{Skip, SourceReport};
-use crate::id::ReleaseId;
+use crate::id::ResultId;
 use crate::profile::Profile;
 use crate::quality::Quality;
 use crate::title::{Span, Wanted};
 
-/// A torrent offered by one or more search sources, merged by infohash. Its JSON
-/// also carries the [`Quality`] its name gives.
+/// A release an indexer listed. Its JSON also carries the [`Quality`] its name gives.
 #[derive(Clone, PartialEq, Debug, Deserialize)]
 pub struct Release {
-    pub id: ReleaseId,
+    pub id: ResultId,
     /// Sanitized for display. Comes from strangers, so it is data, never instructions.
     pub name: String,
-    /// Total bytes. `None` when no source reported a size.
+    /// Total bytes. `None` when the indexer reported no size.
     pub size: Option<u64>,
-    /// `None` when no source reported seeders. Never zero by default.
-    pub seeders: Option<u32>,
-    pub leechers: Option<u32>,
+    /// How many times the indexer says the NZB was downloaded.
+    pub grabs: Option<u64>,
     /// Unix seconds.
     pub published: Option<i64>,
     pub category: Option<Category>,
     pub flags: BTreeSet<Flag>,
-    /// Sources that listed this torrent, most authoritative first.
+    /// The indexers that listed it.
     pub sources: Vec<String>,
-    /// A magnet carrying the union of trackers from public sources.
-    pub magnet: Option<String>,
-    pub torrent_url: Option<String>,
-    /// A page about the item at its source, for people.
-    pub info_url: Option<String>,
+    /// Where to fetch the NZB. `None` in output when the link carries an API key; the engine
+    /// keeps it, without the key, to fetch the NZB later.
+    pub nzb_url: Option<String>,
     /// What of the wanted title this release holds. Only in a title's sources.
     #[serde(default)]
     pub span: Option<Span>,
-    /// How likely its swarm is to send data now. Only in a title's sources.
-    #[serde(default)]
-    pub swarm: Option<Swarm>,
     /// Why it did not start when a play here last tried it, if that was lately. Only in a title's
     /// sources, which put it last.
     #[serde(default)]
@@ -53,25 +46,19 @@ impl Release {
 #[derive(Serialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(rename = "Release"))]
 pub(crate) struct ReleaseWire<'a> {
-    id: &'a ReleaseId,
+    id: &'a ResultId,
     name: &'a str,
     size: Option<u64>,
-    seeders: Option<u32>,
-    leechers: Option<u32>,
+    grabs: Option<u64>,
     published: Option<i64>,
     category: Option<Category>,
     quality: Quality,
     flags: &'a BTreeSet<Flag>,
     sources: &'a [String],
-    magnet: &'a Option<String>,
-    torrent_url: &'a Option<String>,
-    info_url: &'a Option<String>,
+    nzb_url: &'a Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(optional))]
     span: Option<Span>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[cfg_attr(feature = "ts", ts(optional))]
-    swarm: Option<Swarm>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(feature = "ts", ts(as = "Option<Skip>", optional))]
     failed: &'a Option<Skip>,
@@ -79,54 +66,23 @@ pub(crate) struct ReleaseWire<'a> {
 
 impl Serialize for Release {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let Release {
-            id,
-            name,
-            size,
-            seeders,
-            leechers,
-            published,
-            category,
-            flags,
-            sources,
-            magnet,
-            torrent_url,
-            info_url,
-            span,
-            swarm,
-            failed,
-        } = self;
+        let Release { id, name, size, grabs, published, category, flags, sources, nzb_url, span, failed } = self;
         ReleaseWire {
             id,
             name,
             size: *size,
-            seeders: *seeders,
-            leechers: *leechers,
+            grabs: *grabs,
             published: *published,
             category: *category,
             quality: self.quality(),
             flags,
             sources,
-            magnet,
-            torrent_url,
-            info_url,
+            nzb_url,
             span: *span,
-            swarm: *swarm,
             failed,
         }
         .serialize(serializer)
     }
-}
-
-/// How likely a release's swarm is to send data now. Lower plays first.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub enum Swarm {
-    Strong,
-    Fair,
-    Weak,
-    Unknown,
 }
 
 crate::words! {
@@ -147,28 +103,19 @@ crate::words! {
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum Flag {
-    /// Published by the project that made the content, such as archlinux.org.
-    Official,
-    /// The index marks the uploader as trusted.
-    Trusted,
-    /// The source lists a public-domain license.
-    PublicDomain,
-    /// The source lists a Creative Commons license.
-    CreativeCommons,
     /// A camera recording, usually low quality.
     Cam,
     Adult,
+    /// TRaSH Guides lists the release or its group as one to avoid.
+    Avoid,
 }
 
 impl Flag {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::Official => "official",
-            Self::Trusted => "trusted",
-            Self::PublicDomain => "pd",
-            Self::CreativeCommons => "cc",
             Self::Cam => "cam",
             Self::Adult => "adult",
+            Self::Avoid => "avoid",
         }
     }
 }
@@ -178,7 +125,7 @@ impl Flag {
 pub enum Sort {
     #[default]
     Relevance,
-    Seeds,
+    Grabs,
     Size,
     Age,
 }
@@ -191,9 +138,9 @@ pub struct SearchQuery {
     pub sources: Vec<String>,
     #[serde(default)]
     pub category: Option<Category>,
-    /// Hides results with fewer reported seeders, and results with unknown seeders.
+    /// Hides results with fewer reported grabs, and results with unknown grabs.
     #[serde(default)]
-    pub min_seeds: Option<u32>,
+    pub min_grabs: Option<u64>,
     /// Hides larger results, and results with unknown size.
     #[serde(default)]
     pub max_size: Option<u64>,
@@ -226,7 +173,7 @@ impl SearchQuery {
             text: text.into(),
             sources: Vec::new(),
             category: None,
-            min_seeds: None,
+            min_grabs: None,
             max_size: None,
             sort: Sort::Relevance,
             limit: Self::DEFAULT_LIMIT,
@@ -272,20 +219,16 @@ mod tests {
 
     fn named(name: &str, category: Option<Category>) -> Release {
         Release {
-            id: ReleaseId::Locator(crate::id::LocatorId::from_bytes([0; 20])),
+            id: ResultId::from_bytes([0; 20]),
             name: name.into(),
             size: None,
-            seeders: None,
-            leechers: None,
+            grabs: None,
             published: None,
             category,
             flags: BTreeSet::new(),
             sources: Vec::new(),
-            magnet: None,
-            torrent_url: None,
-            info_url: None,
+            nzb_url: None,
             span: None,
-            swarm: None,
             failed: None,
         }
     }
@@ -332,7 +275,7 @@ mod tests {
                 "fresh",
                 "limit",
                 "max_size",
-                "min_seeds",
+                "min_grabs",
                 "profile",
                 "sort",
                 "sources",
@@ -345,17 +288,14 @@ mod tests {
             BTreeSet::from([
                 "category",
                 "flags",
+                "grabs",
                 "id",
-                "info_url",
-                "leechers",
-                "magnet",
                 "name",
+                "nzb_url",
                 "published",
                 "quality",
-                "seeders",
                 "size",
                 "sources",
-                "torrent_url",
             ])
         );
         assert_eq!(serde_json::from_value::<SearchResult>(json).unwrap(), raw);
@@ -382,10 +322,10 @@ mod tests {
     #[test]
     fn source_reports_flatten_their_outcome() {
         let report =
-            SourceReport { source: "apibay".into(), outcome: SourceOutcome::Http { status: 503 }, elapsed_ms: 412 };
+            SourceReport { source: "hydra".into(), outcome: SourceOutcome::Http { status: 503 }, elapsed_ms: 412 };
         assert_eq!(
             serde_json::to_string(&report).unwrap(),
-            r#"{"source":"apibay","outcome":"http","status":503,"elapsed_ms":412}"#
+            r#"{"source":"hydra","outcome":"http","status":503,"elapsed_ms":412}"#
         );
     }
 }

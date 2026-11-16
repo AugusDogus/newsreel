@@ -2,11 +2,11 @@
 source: crates/torrential/src/client/tests.rs
 expression: out
 ---
-=== started from a magnet
-started 9b5212
-state: metadata
-files: all, file list pending
-path:  /Users/ada/Downloads/torrential
+=== started from an NZB
+started 9b5212 archlinux-2026.10.01-x86_64.iso
+state: checking
+files: all (0 B)
+path:  /Users/ada/Downloads/torrential/archlinux-2026.10.01-x86_64.iso
 next:  torrential wait 9b5212
 
 --- json
@@ -17,20 +17,15 @@ next:  torrential wait 9b5212
     "outcome": "started",
     "job": {
       "id": "9b521219bc48550140a666f74a29048ed78e933b",
-      "info_hash": {
-        "v1": "9b521219bc48550140a666f74a29048ed78e933b"
-      },
-      "name": null,
+      "name": "archlinux-2026.10.01-x86_64.iso",
       "dir": "/Users/ada/Downloads/torrential",
-      "path": null,
-      "state": "metadata",
+      "path": "/Users/ada/Downloads/torrential/archlinux-2026.10.01-x86_64.iso",
+      "state": "checking",
       "progress": {
-        "size": null,
+        "size": 0,
         "verified": 0,
         "down_rate": 0,
-        "up_rate": 0,
-        "peers": 0,
-        "seeds": 0,
+        "connections": 0,
         "eta": null
       },
       "selection": {
@@ -58,20 +53,15 @@ next:  torrential wait 6bc1af
     "outcome": "queued",
     "job": {
       "id": "6bc1af0000000000000000000000000000000000",
-      "info_hash": {
-        "v1": "6bc1af0000000000000000000000000000000000"
-      },
       "name": "night_of_the_living_dead_dvd",
       "dir": "/Users/ada/Movies",
       "path": "/Users/ada/Movies/night_of_the_living_dead_dvd",
       "state": "queued",
       "progress": {
-        "size": null,
+        "size": 0,
         "verified": 0,
         "down_rate": 0,
-        "up_rate": 0,
-        "peers": 0,
-        "seeds": 0,
+        "connections": 0,
         "eta": null
       },
       "selection": {
@@ -111,9 +101,6 @@ next:  torrential wait 9b5212
     "outcome": "existing",
     "job": {
       "id": "9b521219bc48550140a666f74a29048ed78e933b",
-      "info_hash": {
-        "v1": "9b521219bc48550140a666f74a29048ed78e933b"
-      },
       "name": "archlinux-2026.10.01-x86_64.iso",
       "dir": "/Users/ada/Downloads/torrential",
       "path": "/Users/ada/Downloads/torrential/archlinux-2026.10.01-x86_64.iso",
@@ -122,9 +109,7 @@ next:  torrential wait 9b5212
         "size": 1640497152,
         "verified": 50855411,
         "down_rate": 32715571,
-        "up_rate": 120000,
-        "peers": 48,
-        "seeds": 31,
+        "connections": 48,
         "eta": 49
       },
       "selection": {
@@ -151,9 +136,6 @@ path:  /Users/ada/Downloads/torrential/archlinux-2026.10.01-x86_64.iso
     "outcome": "existing",
     "job": {
       "id": "9b521219bc48550140a666f74a29048ed78e933b",
-      "info_hash": {
-        "v1": "9b521219bc48550140a666f74a29048ed78e933b"
-      },
       "name": "archlinux-2026.10.01-x86_64.iso",
       "dir": "/Users/ada/Downloads/torrential",
       "path": "/Users/ada/Downloads/torrential/archlinux-2026.10.01-x86_64.iso",
@@ -163,9 +145,7 @@ path:  /Users/ada/Downloads/torrential/archlinux-2026.10.01-x86_64.iso
         "size": 1640497152,
         "verified": 50855411,
         "down_rate": 32715571,
-        "up_rate": 120000,
-        "peers": 48,
-        "seeds": 31,
+        "connections": 48,
         "eta": 49
       },
       "selection": {
@@ -194,20 +174,15 @@ next:  torrential wait 6bc1af
     "outcome": "updated",
     "job": {
       "id": "6bc1af0000000000000000000000000000000000",
-      "info_hash": {
-        "v1": "6bc1af0000000000000000000000000000000000"
-      },
       "name": "night_of_the_living_dead_dvd",
       "dir": "/Users/ada/Movies",
       "path": "/Users/ada/Movies/night_of_the_living_dead_dvd",
       "state": "checking",
       "progress": {
-        "size": null,
+        "size": 0,
         "verified": 0,
         "down_rate": 0,
-        "up_rate": 0,
-        "peers": 0,
-        "seeds": 0,
+        "connections": 0,
         "eta": null
       },
       "selection": {
@@ -252,20 +227,15 @@ next:      torrential get 6bc1af --files Night.mp4 --files '*.srt'
     "outcome": "planned",
     "job": {
       "id": "6bc1af0000000000000000000000000000000000",
-      "info_hash": {
-        "v1": "6bc1af0000000000000000000000000000000000"
-      },
       "name": "night_of_the_living_dead_dvd",
       "dir": "/Users/ada/Movies",
       "path": "/Users/ada/Movies/night_of_the_living_dead_dvd",
       "state": "checking",
       "progress": {
-        "size": null,
+        "size": 0,
         "verified": 0,
         "down_rate": 0,
-        "up_rate": 0,
-        "peers": 0,
-        "seeds": 0,
+        "connections": 0,
         "eta": null
       },
       "selection": {
@@ -308,20 +278,15 @@ next:      torrential get 6bc1af --files Night.mp4 --files '*.srt' --dir <EMPTY 
     "outcome": "planned",
     "job": {
       "id": "6bc1af0000000000000000000000000000000000",
-      "info_hash": {
-        "v1": "6bc1af0000000000000000000000000000000000"
-      },
       "name": "night_of_the_living_dead_dvd",
       "dir": "/Users/ada/Movies",
       "path": "/Users/ada/Movies/night_of_the_living_dead_dvd",
       "state": "checking",
       "progress": {
-        "size": null,
+        "size": 0,
         "verified": 0,
         "down_rate": 0,
-        "up_rate": 0,
-        "peers": 0,
-        "seeds": 0,
+        "connections": 0,
         "eta": null
       },
       "selection": {
@@ -365,20 +330,15 @@ next:      torrential get 6bc1af --files Night.mp4 --files '*.srt' --dir /Users/
     "outcome": "planned",
     "job": {
       "id": "6bc1af0000000000000000000000000000000000",
-      "info_hash": {
-        "v1": "6bc1af0000000000000000000000000000000000"
-      },
       "name": "night_of_the_living_dead_dvd",
       "dir": "/Users/ada/Movies",
       "path": "/Users/ada/Movies/night_of_the_living_dead_dvd",
       "state": "checking",
       "progress": {
-        "size": null,
+        "size": 0,
         "verified": 0,
         "down_rate": 0,
-        "up_rate": 0,
-        "peers": 0,
-        "seeds": 0,
+        "connections": 0,
         "eta": null
       },
       "selection": {

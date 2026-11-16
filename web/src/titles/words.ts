@@ -39,7 +39,7 @@ export function playingOrder(page: Pick<TitlePage, "seasons">, specials: boolean
 
 /** What the engine is checking about the source it tries. */
 export const CHECKS: Record<Check, string> = {
-  file_list: "Asking peers for its list of files.",
+  file_list: "Fetching its NZB.",
   start: "Starting the download.",
   first_bytes: "Waiting for the first pieces of video.",
 };

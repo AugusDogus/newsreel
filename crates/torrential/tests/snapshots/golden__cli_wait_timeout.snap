@@ -11,9 +11,6 @@ expression: value
       "elapsed": 0,
       "job": {
         "id": "6f2c815d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
-        "info_hash": {
-          "v1": "6f2c815d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
-        },
         "name": "wikipedia-en-2026-09-text",
         "dir": "[home]/Downloads/torrential",
         "path": "[home]/Downloads/torrential/wikipedia-en-2026-09-text",
@@ -23,9 +20,7 @@ expression: value
           "verified": 5728508755,
           "piece_map": "0424200220022846042000244240244244402220022022020240000024220002",
           "down_rate": 0,
-          "up_rate": 0,
-          "peers": 3,
-          "seeds": 2,
+          "connections": 3,
           "eta": null
         },
         "selection": {
@@ -43,9 +38,6 @@ expression: value
       "jobs": [
         {
           "id": "6f2c815d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
-          "info_hash": {
-            "v1": "6f2c815d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
-          },
           "name": "wikipedia-en-2026-09-text",
           "dir": "[home]/Downloads/torrential",
           "path": "[home]/Downloads/torrential/wikipedia-en-2026-09-text",
@@ -55,9 +47,7 @@ expression: value
             "verified": 5728508755,
             "piece_map": "0424200220022846042000244240244244402220022022020240000024220002",
             "down_rate": 0,
-            "up_rate": 0,
-            "peers": 3,
-            "seeds": 2,
+            "connections": 3,
             "eta": null
           },
           "selection": {

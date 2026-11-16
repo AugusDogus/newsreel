@@ -1,5 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
-use std::path::{Path, PathBuf};
+use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -7,8 +7,8 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use torrential_core::error::Details;
 use torrential_core::title::{Namesakes, Wanted};
-use torrential_core::{Category, ErrorCode, Flag, HexPrefix, SearchQuery, SourceOutcome};
-use torrential_search::{Progress, ResultCache, SavedLink, Search, SearchConfig, TorznabConfig};
+use torrential_core::{ErrorCode, HexPrefix, Release, ResultId, SearchQuery, SourceOutcome};
+use torrential_search::{IndexerConfig, Progress, ResultCache, SavedLink, Search, SearchConfig};
 
 #[derive(Clone)]
 struct Reply {
@@ -30,6 +30,30 @@ fn status(code: u16) -> Reply {
 fn fixture(name: &str) -> Vec<u8> {
     std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name)).unwrap()
 }
+
+fn hydra_feed() -> Vec<u8> {
+    fixture("newznab/hydra-sintel.xml")
+}
+
+/// Keyless Newznab indexers named `names`, each at `{base}/{name}/api`.
+fn indexers(base: &str, names: &[&str]) -> SearchConfig {
+    let indexers = names
+        .iter()
+        .map(|name| IndexerConfig { name: name.to_string(), url: format!("{base}/{name}/api"), api_key: None })
+        .collect();
+    SearchConfig { indexers, ..SearchConfig::default() }
+}
+
+/// One indexer named `hydra` at `{base}/newznab/api`.
+fn keyed(base: &str, api_key: Option<&str>) -> SearchConfig {
+    let hydra =
+        IndexerConfig { name: "hydra".into(), url: format!("{base}/newznab/api"), api_key: api_key.map(String::from) };
+    SearchConfig { indexers: vec![hydra], ..SearchConfig::default() }
+}
+
+/// The ID of the hydra fixture's 1080p BluRay row: the SHA-1 of its NZB link.
+const BLURAY: &str = "uf26efcec57e8563e97dbbdd58cd65958f41fa450";
+const BLURAY_NZB: &str = "http://127.0.0.1:5076/getnzb/api/a1?apikey=k3y";
 
 struct Server {
     base: String,
@@ -86,9 +110,7 @@ impl Server {
     }
 
     fn config(&self, sources: &[&str]) -> SearchConfig {
-        let endpoints: BTreeMap<String, String> =
-            sources.iter().map(|s| (s.to_string(), format!("{}/{s}/", self.base))).collect();
-        SearchConfig { endpoints, ..SearchConfig::default() }
+        indexers(&self.base, sources)
     }
 }
 
@@ -101,33 +123,38 @@ fn outcomes(result: &torrential_core::SearchResult) -> Vec<(String, SourceOutcom
 }
 
 #[tokio::test]
-async fn merges_two_indexes_into_one_ranked_list() {
+async fn two_indexers_rows_are_listed_and_ranked_together() {
     let server = Server::start(vec![
-        ("/knaben/v2/search", vec![ok(fixture("knaben/v2-search-ubuntu.json"))]),
-        ("/apibay/q.php", vec![ok(fixture("apibay/q.php-ubuntu.json"))]),
+        ("/hydra/", vec![ok(hydra_feed())]),
+        ("/geek/", vec![ok(fixture("newznab/geek-sintel.xml"))]),
     ])
     .await;
-    let search = Search::new(&server.config(&["knaben", "apibay"]), ResultCache::new()).unwrap();
-    let mut q = query("ubuntu", &["knaben", "apibay"]);
+    let search = Search::new(&server.config(&["hydra", "geek"]), ResultCache::new()).unwrap();
+    let mut q = query("sintel", &["hydra", "geek"]);
     q.limit = 200;
 
     let result = search.search(&q).await.unwrap();
 
     assert_eq!(
         outcomes(&result),
-        [("knaben".into(), SourceOutcome::Ok { results: 98 }), ("apibay".into(), SourceOutcome::Ok { results: 100 })]
+        [("hydra".into(), SourceOutcome::Ok { results: 3 }), ("geek".into(), SourceOutcome::Ok { results: 3 })]
     );
-    assert_eq!(result.total, 158);
-    let lts = result.releases.iter().find(|r| r.name == "Ubuntu 22.04 LTS").unwrap();
-    assert_eq!(lts.id.to_ref(), "2c6b6858d61da9543d4231a71db4b1c9264b0685");
-    assert_eq!(lts.sources, ["knaben", "apibay"]);
-    assert_eq!((lts.seeders, lts.leechers), (Some(37), Some(5)));
-    assert_eq!(lts.size, Some(3_654_957_056));
-    assert_eq!(lts.flags.iter().collect::<Vec<_>>(), [&Flag::Trusted]);
-    let escaped = result.releases.iter().find(|r| r.id.to_ref().starts_with("c426b415")).unwrap();
-    assert_eq!(escaped.name, "Linux Command Line (Hands-On) Ubuntu Linux & Linux Scripting");
-    assert_eq!(escaped.size, Some(2_464_274_774));
-    assert_eq!((escaped.seeders, escaped.leechers), (Some(13), Some(3)));
+    let listed: Vec<(&str, &[String], Option<u64>)> =
+        result.releases.iter().map(|r| (r.name.as_str(), r.sources.as_slice(), r.grabs)).collect();
+    assert_eq!(
+        listed,
+        [
+            ("Sintel.2010.1080p.BluRay.x264-GRP", &["hydra".to_string()][..], Some(900)),
+            ("Sintel.2010.720p.WEB.x264-GRP", &["hydra".to_string()][..], Some(300)),
+            ("Sintel.2010.2160p.UHD.BluRay.x265-GRP", &["geek".to_string()][..], Some(120)),
+            ("Sintel.2010.1080p.WEB.H264-OTHER", &["geek".to_string()][..], Some(51)),
+            ("Sintel The Making Of 2011 720p", &["geek".to_string()][..], Some(13)),
+        ]
+    );
+    assert_eq!((result.total, result.hidden_adult), (5, 1));
+    let bluray = &result.releases[0];
+    assert_eq!(bluray.id.to_ref(), BLURAY);
+    assert_eq!((bluray.size, bluray.published), (Some(4_509_715_660), Some(1_777_127_700)));
 }
 
 // Windows retries a refused connection for about two seconds, past the search's deadline, so it reads as a timeout.
@@ -136,18 +163,18 @@ async fn merges_two_indexes_into_one_ranked_list() {
 async fn every_source_failing_is_providers_unavailable() {
     let refused = TcpListener::bind("127.0.0.1:0").await.unwrap().local_addr().unwrap();
     let server = Server::start(vec![
-        ("/knaben/", vec![status(503)]),
-        ("/archive.org/", vec![ok(b"<html>Just a moment...</html>".to_vec())]),
+        ("/down/", vec![status(503)]),
+        ("/blocked/", vec![ok(b"<html>Just a moment...</html>".to_vec())]),
     ])
     .await;
-    let mut config = server.config(&["knaben", "archive.org"]);
-    config.endpoints.insert("apibay".into(), format!("http://{refused}/"));
+    let mut config = server.config(&["blocked", "down"]);
+    config.indexers.extend(indexers(&format!("http://{refused}"), &["refused"]).indexers);
     let search = Search::new(&config, ResultCache::new()).unwrap();
 
-    let err = search.search(&query("ubuntu", &["knaben", "apibay", "archive.org"])).await.unwrap_err();
+    let err = search.search(&query("sintel", &["down", "refused", "blocked"])).await.unwrap_err();
 
     assert_eq!(err.code, ErrorCode::ProvidersUnavailable);
-    assert_eq!(err.message, "all sources failed (archive.org, knaben, apibay)");
+    assert_eq!(err.message, "all sources failed (blocked, down, refused)");
     let Some(Details::Sources(reports)) = err.details else { panic!("no source reports") };
     let kinds: Vec<(&str, &str)> = reports
         .iter()
@@ -161,321 +188,197 @@ async fn every_source_failing_is_providers_unavailable() {
             (r.source.as_str(), kind)
         })
         .collect();
-    assert_eq!(kinds, [("archive.org", "bad_response"), ("knaben", "http 503"), ("apibay", "connect")]);
-    assert_eq!(server.hits("/knaben/"), 2);
+    assert_eq!(kinds, [("blocked", "bad_response"), ("down", "http 503"), ("refused", "connect")]);
+    assert_eq!(server.hits("/down/"), 1);
 }
 
 #[tokio::test]
 async fn failure_reasons_never_carry_terminal_escapes() {
     let hostile =
         b"<?xml version=\"1.0\"?><error code=\"1\" description=\"\x1b]52;c;cm0gLXJm\x07\x1b[2Jgone\"/>".to_vec();
-    let server =
-        Server::start(vec![("/nyaa/", vec![ok(hostile)]), ("/apibay/", vec![ok(fixture("apibay/q.php-ubuntu.json"))])])
-            .await;
-    let search = Search::new(&server.config(&["nyaa", "apibay"]), ResultCache::new()).unwrap();
+    let server = Server::start(vec![("/hostile/", vec![ok(hostile)]), ("/hydra/", vec![ok(hydra_feed())])]).await;
+    let search = Search::new(&server.config(&["hydra", "hostile"]), ResultCache::new()).unwrap();
 
-    let result = search.search(&query("ubuntu", &["nyaa", "apibay"])).await.unwrap();
+    let result = search.search(&query("sintel", &["hostile", "hydra"])).await.unwrap();
 
     assert_eq!(
         outcomes(&result)[1],
-        ("nyaa".into(), SourceOutcome::BadResponse { reason: "indexer error 1: gone".into() })
+        ("hostile".into(), SourceOutcome::BadResponse { reason: "indexer error 1: gone".into() })
     );
 }
 
 #[tokio::test]
-async fn retries_once_after_a_5xx_but_not_after_a_4xx() {
-    let server = Server::start(vec![
-        ("/apibay/", vec![status(502), ok(fixture("apibay/q.php-ubuntu.json"))]),
-        ("/knaben/", vec![status(404)]),
-    ])
-    .await;
-    let search = Search::new(&server.config(&["knaben", "apibay"]), ResultCache::new()).unwrap();
+async fn a_slow_answer_that_has_started_keeps_the_whole_deadline() {
+    let slow = Reply { stall: Duration::from_millis(2200), ..ok(hydra_feed()) };
+    let server = Server::start(vec![("/hydra/", vec![slow])]).await;
+    let search = Search::new(&server.config(&["hydra"]), ResultCache::new()).unwrap();
 
-    let result = search.search(&query("ubuntu", &["knaben", "apibay"])).await.unwrap();
+    let result = search.search(&query("sintel", &["hydra"])).await.unwrap();
 
-    assert_eq!(
-        outcomes(&result),
-        [("knaben".into(), SourceOutcome::Http { status: 404 }), ("apibay".into(), SourceOutcome::Ok { results: 100 })]
-    );
-    assert_eq!((server.hits("/apibay/"), server.hits("/knaben/")), (2, 1));
-}
-
-#[tokio::test]
-async fn a_response_that_never_starts_is_retried_once() {
-    let stalled = Reply { delay: Duration::from_secs(10), ..ok(Vec::new()) };
-    let server = Server::start(vec![("/apibay/", vec![stalled, ok(fixture("apibay/q.php-ubuntu.json"))])]).await;
-    let search = Search::new(&server.config(&["apibay"]), ResultCache::new()).unwrap();
-
-    let result = search.search(&query("ubuntu", &["apibay"])).await.unwrap();
-
-    assert_eq!(outcomes(&result), [("apibay".into(), SourceOutcome::Ok { results: 100 })]);
-    assert_eq!(server.hits("/apibay/"), 2);
+    assert_eq!(outcomes(&result), [("hydra".into(), SourceOutcome::Ok { results: 3 })]);
+    assert_eq!(server.hits("/hydra/"), 1);
 }
 
 #[tokio::test]
 async fn a_short_budget_waits_for_its_only_request() {
-    let slow = Reply { delay: Duration::from_millis(750), ..ok(fixture("apibay/q.php-ubuntu.json")) };
-    let server = Server::start(vec![("/apibay/", vec![slow])]).await;
-    let search = Search::new(&server.config(&["apibay"]), ResultCache::new()).unwrap();
-    let mut q = query("ubuntu", &["apibay"]);
+    let slow = Reply { delay: Duration::from_millis(750), ..ok(hydra_feed()) };
+    let server = Server::start(vec![("/hydra/", vec![slow])]).await;
+    let search = Search::new(&server.config(&["hydra"]), ResultCache::new()).unwrap();
+    let mut q = query("sintel", &["hydra"]);
     q.timeout_ms = 1200;
 
     let result = search.search(&q).await.unwrap();
 
-    assert_eq!(outcomes(&result), [("apibay".into(), SourceOutcome::Ok { results: 100 })]);
-    assert_eq!(server.hits("/apibay/"), 1);
+    assert_eq!(outcomes(&result), [("hydra".into(), SourceOutcome::Ok { results: 3 })]);
+    assert_eq!(server.hits("/hydra/"), 1);
 }
 
 #[tokio::test]
-async fn torznab_is_asked_only_once() {
-    let server =
-        Server::start(vec![("/torznab/api", vec![status(503), ok(fixture("torznab/jackett-ubuntu.xml"))])]).await;
-    let config = SearchConfig {
-        torznab: vec![TorznabConfig {
-            name: "jackett".into(),
-            url: format!("{}/torznab/api", server.base),
-            api_key: None,
-        }],
-        ..SearchConfig::default()
-    };
-    let search = Search::new(&config, ResultCache::new()).unwrap();
+async fn an_indexer_is_asked_only_once() {
+    let server = Server::start(vec![("/newznab/api", vec![status(503), ok(hydra_feed())])]).await;
+    let search = Search::new(&keyed(&server.base, None), ResultCache::new()).unwrap();
 
-    let err = search.search(&query("ubuntu", &["jackett"])).await.unwrap_err();
+    let err = search.search(&query("sintel", &["hydra"])).await.unwrap_err();
 
     let Some(Details::Sources(reports)) = err.details else { panic!("no source reports") };
     assert_eq!(reports[0].outcome, SourceOutcome::Http { status: 503 });
-    assert_eq!(server.hits("/torznab/api"), 1);
+    assert_eq!(server.hits("/newznab/api"), 1);
 }
 
 #[tokio::test]
 async fn an_oversized_answer_is_an_error_not_a_truncated_list() {
-    let mut huge = fixture("apibay/q.php-ubuntu.json");
-    huge.resize(5 << 20, b' ');
+    let mut huge = hydra_feed();
+    huge.resize(9 << 20, b' ');
     let server = Server::start(vec![
-        ("/apibay/", vec![Reply { content_length: false, ..ok(huge) }]),
-        ("/knaben/", vec![ok(fixture("knaben/v2-search-ubuntu.json"))]),
+        ("/huge/", vec![Reply { content_length: false, ..ok(huge) }]),
+        ("/hydra/", vec![ok(hydra_feed())]),
     ])
     .await;
-    let search = Search::new(&server.config(&["knaben", "apibay"]), ResultCache::new()).unwrap();
+    let search = Search::new(&server.config(&["hydra", "huge"]), ResultCache::new()).unwrap();
 
-    let result = search.search(&query("ubuntu", &["knaben", "apibay"])).await.unwrap();
+    let result = search.search(&query("sintel", &["hydra", "huge"])).await.unwrap();
 
     assert_eq!(
         outcomes(&result)[1],
-        ("apibay".into(), SourceOutcome::BadResponse { reason: "response larger than 4194304 bytes".into() })
+        ("huge".into(), SourceOutcome::BadResponse { reason: "response larger than 8388608 bytes".into() })
     );
+}
+
+#[tokio::test]
+async fn a_slow_source_times_out_by_the_deadline() {
+    let slow = Reply { delay: Duration::from_secs(10), ..ok(hydra_feed()) };
+    let server = Server::start(vec![("/slow/", vec![slow]), ("/hydra/", vec![ok(hydra_feed())])]).await;
+    let search = Search::new(&server.config(&["slow", "hydra"]), ResultCache::new()).unwrap();
+    let mut q = query("sintel", &["slow", "hydra"]);
+    q.timeout_ms = 1500;
+
+    let started = Instant::now();
+    let result = search.search(&q).await.unwrap();
+    let wall = started.elapsed();
+
+    assert_eq!(outcomes(&result)[0], ("slow".into(), SourceOutcome::Timeout));
+    assert_eq!(outcomes(&result)[1], ("hydra".into(), SourceOutcome::Ok { results: 3 }));
+    assert!(wall < Duration::from_millis(1700), "returned after {wall:?}");
+    assert!(result.elapsed_ms < 1700, "reported {} ms", result.elapsed_ms);
 }
 
 #[tokio::test]
 async fn a_repeat_search_is_served_from_the_cache_unless_fresh() {
-    let server = Server::start(vec![
-        ("/apibay/", vec![ok(fixture("apibay/q.php-ubuntu.json"))]),
-        ("/knaben/", vec![status(503)]),
-    ])
-    .await;
-    let search = Search::new(&server.config(&["knaben", "apibay"]), ResultCache::new()).unwrap();
-    let q = query("Ubuntu", &["knaben", "apibay"]);
+    let server = Server::start(vec![("/hydra/", vec![ok(hydra_feed())]), ("/down/", vec![status(503)])]).await;
+    let search = Search::new(&server.config(&["down", "hydra"]), ResultCache::new()).unwrap();
+    let q = query("Sintel", &["down", "hydra"]);
 
     let first = search.search(&q).await.unwrap();
-    let mut narrower = query("ubuntu", &["knaben", "apibay"]);
-    narrower.min_seeds = Some(30);
+    let mut narrower = query("sintel", &["down", "hydra"]);
+    narrower.min_grabs = Some(500);
     let second = search.search(&narrower).await.unwrap();
     let fresh = search.search(&SearchQuery { fresh: true, ..q.clone() }).await.unwrap();
 
-    assert_eq!(outcomes(&first)[1], ("apibay".into(), SourceOutcome::Ok { results: 100 }));
-    assert_eq!(outcomes(&second)[1], ("apibay".into(), SourceOutcome::Cached { results: 100 }));
-    let seeded: Vec<(&str, Option<u32>)> = second.releases.iter().map(|r| (r.name.as_str(), r.seeders)).collect();
-    assert_eq!(seeded, [("ubuntu-24.04.1-desktop-amd64.iso", Some(51)), ("Ubuntu 22.04 LTS", Some(37))]);
-    assert_eq!(outcomes(&fresh)[1], ("apibay".into(), SourceOutcome::Ok { results: 100 }));
-    assert_eq!((server.hits("/apibay/"), server.hits("/knaben/")), (2, 6));
+    assert_eq!(outcomes(&first)[1], ("hydra".into(), SourceOutcome::Ok { results: 3 }));
+    assert_eq!(outcomes(&second)[1], ("hydra".into(), SourceOutcome::Cached { results: 3 }));
+    let grabbed: Vec<(&str, Option<u64>)> = second.releases.iter().map(|r| (r.name.as_str(), r.grabs)).collect();
+    assert_eq!(grabbed, [("Sintel.2010.1080p.BluRay.x264-GRP", Some(900))]);
+    assert_eq!(outcomes(&fresh)[1], ("hydra".into(), SourceOutcome::Ok { results: 3 }));
+    assert_eq!((server.hits("/hydra/"), server.hits("/down/")), (2, 3));
 }
 
 #[tokio::test]
 async fn a_shared_cache_does_not_answer_for_another_endpoint() {
-    let first = Server::start(vec![("/apibay/", vec![ok(fixture("apibay/q.php-ubuntu.json"))])]).await;
-    let mirror = Server::start(vec![("/apibay/", vec![ok(fixture("apibay/q.php-ubuntu.json"))])]).await;
+    let first = Server::start(vec![("/hydra/", vec![ok(hydra_feed())])]).await;
+    let mirror = Server::start(vec![("/hydra/", vec![ok(hydra_feed())])]).await;
     let cache = ResultCache::new();
-    let q = query("ubuntu", &["apibay"]);
+    let q = query("sintel", &["hydra"]);
 
-    Search::new(&first.config(&["apibay"]), cache.clone()).unwrap().search(&q).await.unwrap();
-    let moved = Search::new(&mirror.config(&["apibay"]), cache).unwrap().search(&q).await.unwrap();
+    Search::new(&first.config(&["hydra"]), cache.clone()).unwrap().search(&q).await.unwrap();
+    let moved = Search::new(&mirror.config(&["hydra"]), cache).unwrap().search(&q).await.unwrap();
 
-    assert_eq!(outcomes(&moved), [("apibay".into(), SourceOutcome::Ok { results: 100 })]);
-    assert_eq!(mirror.hits("/apibay/"), 1);
+    assert_eq!(outcomes(&moved), [("hydra".into(), SourceOutcome::Ok { results: 3 })]);
+    assert_eq!(mirror.hits("/hydra/"), 1);
 }
 
 #[tokio::test]
-async fn torznab_keys_stay_out_of_results_but_resolve_for_the_engine() {
-    let server = Server::start(vec![("/torznab/api", vec![ok(fixture("torznab/jackett-ubuntu.xml"))])]).await;
-    let config = SearchConfig {
-        torznab: vec![TorznabConfig {
-            name: "jackett".into(),
-            url: format!("{}/torznab/api", server.base),
-            api_key: Some("k3y".into()),
-        }],
-        ..SearchConfig::default()
-    };
+async fn api_keys_stay_out_of_results_but_resolve_for_the_engine() {
+    let server = Server::start(vec![("/newznab/api", vec![ok(hydra_feed())])]).await;
     let cache = ResultCache::new();
-    let search = Search::new(&config, cache.clone()).unwrap();
+    let search = Search::new(&keyed(&server.base, Some("k3y")), cache.clone()).unwrap();
 
-    let result = search.search(&query("ubuntu", &["jackett"])).await.unwrap();
+    let result = search.search(&query("sintel", &["hydra"])).await.unwrap();
 
     assert_eq!(result.releases.len(), 2);
     assert!(!format!("{result:?}").contains("k3y"));
     assert!(!serde_json::to_string(&result).unwrap().contains("k3y"));
-    let locator = result.releases.iter().find(|r| r.id.to_ref().starts_with('u')).unwrap();
-    let resolved = cache.find(&locator.id.to_ref().parse().unwrap());
-    assert_eq!(
-        resolved[0].torrent_url.as_deref(),
-        Some("http://127.0.0.1:9117/dl/privatehd/?jackett_apikey=k3y&path=def&file=ubuntu")
-    );
+    assert!(result.releases.iter().all(|r| r.nzb_url.is_none()));
+    let resolved = cache.find(&BLURAY.parse().unwrap());
+    assert_eq!(resolved[0].nzb_url.as_deref(), Some(BLURAY_NZB));
 }
 
 #[tokio::test]
-async fn a_new_torznab_key_is_not_answered_from_the_old_one() {
-    let server = Server::start(vec![("/torznab/api", vec![ok(fixture("torznab/jackett-ubuntu.xml"))])]).await;
-    let config = |key: &str| SearchConfig {
-        torznab: vec![TorznabConfig {
-            name: "jackett".into(),
-            url: format!("{}/torznab/api", server.base),
-            api_key: Some(key.into()),
-        }],
-        ..SearchConfig::default()
-    };
+async fn a_new_api_key_is_not_answered_from_the_old_one() {
+    let server = Server::start(vec![("/newznab/api", vec![ok(hydra_feed())])]).await;
     let cache = ResultCache::new();
-    let q = query("ubuntu", &["jackett"]);
+    let q = query("sintel", &["hydra"]);
 
-    Search::new(&config("old"), cache.clone()).unwrap().search(&q).await.unwrap();
-    let rekeyed = Search::new(&config("new"), cache).unwrap().search(&q).await.unwrap();
+    Search::new(&keyed(&server.base, Some("old")), cache.clone()).unwrap().search(&q).await.unwrap();
+    let rekeyed = Search::new(&keyed(&server.base, Some("new")), cache).unwrap().search(&q).await.unwrap();
 
-    assert_eq!(outcomes(&rekeyed), [("jackett".into(), SourceOutcome::Ok { results: 3 })]);
-    assert_eq!(server.hits("/torznab/api"), 2);
+    assert_eq!(outcomes(&rekeyed), [("hydra".into(), SourceOutcome::Ok { results: 3 })]);
+    assert_eq!(server.hits("/newznab/api"), 2);
 }
 
 #[tokio::test]
 async fn returned_releases_resolve_by_id_prefix() {
-    let server = Server::start(vec![("/apibay/", vec![ok(fixture("apibay/q.php-ubuntu.json"))])]).await;
+    let server = Server::start(vec![("/hydra/", vec![ok(hydra_feed())])]).await;
     let cache = ResultCache::new();
-    let search = Search::new(&server.config(&["apibay"]), cache.clone()).unwrap();
+    let search = Search::new(&server.config(&["hydra"]), cache.clone()).unwrap();
 
-    search.search(&query("ubuntu 22.04", &["apibay"])).await.unwrap();
+    search.search(&query("sintel", &["hydra"])).await.unwrap();
 
-    let prefix: HexPrefix = "2c6b68".parse().unwrap();
+    let prefix: HexPrefix = BLURAY[..7].parse().unwrap();
     let found: Vec<String> = cache.find(&prefix).into_iter().map(|r| r.name).collect();
-    assert_eq!(found, ["Ubuntu 22.04 LTS"]);
-    assert_eq!(cache.find(&"ffff00".parse().unwrap()), []);
-}
-
-#[tokio::test]
-async fn official_torrents_get_their_hash_or_a_locator() {
-    let listing = fixture("debian/debian-cd-current-arm64-bt-cd.html");
-    let torrent = fixture("debian/debian-cd-current-arm64-bt-cd-debian-13.7.0-arm64-netinst.iso.torrent");
-    let dir = "/debian/debian-cd/current/arm64/bt-cd/";
-    let file = "/debian/debian-cd/current/arm64/bt-cd/debian-13.7.0-arm64-netinst.iso.torrent";
-    let hashed = Server::start(vec![(file, vec![ok(torrent)]), (dir, vec![ok(listing.clone())])]).await;
-    let broken = Server::start(vec![(file, vec![status(500)]), (dir, vec![ok(listing)])]).await;
-    let q = query("debian 13 arm64 netinst", &["debian"]);
-
-    let found = Search::new(&hashed.config(&["debian"]), ResultCache::new()).unwrap().search(&q).await.unwrap();
-    let fallback = Search::new(&broken.config(&["debian"]), ResultCache::new()).unwrap().search(&q).await.unwrap();
-
-    let release = &found.releases[0];
-    assert_eq!(release.id.to_ref(), "bf7ed99351f7b08f0916b7b3e49cfa574d206879");
-    assert_eq!(release.name, "debian-13.7.0-arm64-netinst.iso");
-    assert_eq!(release.size, Some(735_358_976));
-    assert_eq!(release.flags.iter().collect::<Vec<_>>(), [&Flag::Official]);
-    assert_eq!(
-        release.magnet.as_deref(),
-        Some(
-            "magnet:?xt=urn:btih:bf7ed99351f7b08f0916b7b3e49cfa574d206879&dn=debian-13.7.0-arm64-netinst.iso\
-             &tr=http%3A%2F%2Fbttracker.debian.org%3A6969%2Fannounce"
-        )
-    );
-    let locator = &fallback.releases[0];
-    assert!(locator.id.to_ref().starts_with('u'));
-    assert_eq!(locator.torrent_url.as_deref(), Some(format!("{}{file}", broken.base).as_str()));
-    assert_eq!(locator.magnet, None);
+    assert_eq!(found, ["Sintel.2010.1080p.BluRay.x264-GRP"]);
+    assert_eq!(cache.find(&BLURAY[1..7].parse().unwrap()), [], "a download ID prefix names no result");
+    assert_eq!(cache.find(&"uffff00".parse().unwrap()), []);
 }
 
 #[tokio::test]
 async fn a_block_page_is_not_an_empty_listing() {
     let block = ok(b"<html><title>Access denied</title><body>blocked by policy</body></html>".to_vec());
-    let server = Server::start(vec![("/debian/", vec![block])]).await;
-    let search = Search::new(&server.config(&["debian"]), ResultCache::new()).unwrap();
+    let server = Server::start(vec![("/hydra/", vec![block])]).await;
+    let search = Search::new(&server.config(&["hydra"]), ResultCache::new()).unwrap();
 
-    let err = search.search(&query("debian 13", &["debian"])).await.unwrap_err();
+    let err = search.search(&query("debian 13", &["hydra"])).await.unwrap_err();
 
     assert_eq!(err.code, ErrorCode::ProvidersUnavailable);
     let Some(Details::Sources(reports)) = err.details else { panic!("no source reports") };
-    assert_eq!(reports[0].outcome, SourceOutcome::BadResponse { reason: "not a directory listing".into() });
-}
-
-const ARM64_CD: &str = "/debian/debian-cd/current/arm64/bt-cd/";
-const NETINST: &str = "/debian/debian-cd/current/arm64/bt-cd/debian-13.7.0-arm64-netinst.iso.torrent";
-
-fn netinst() -> Vec<u8> {
-    fixture("debian/debian-cd-current-arm64-bt-cd-debian-13.7.0-arm64-netinst.iso.torrent")
-}
-
-#[tokio::test]
-async fn a_locator_fallback_is_shown_but_asked_again() {
-    let server = Server::start(vec![
-        (NETINST, vec![status(500), status(500), ok(netinst())]),
-        (ARM64_CD, vec![ok(fixture("debian/debian-cd-current-arm64-bt-cd.html"))]),
-        ("/debian/debian-cd/current/arm64/bt-dvd/", vec![ok(fixture("debian/debian-cd-current-arm64-bt-dvd.html"))]),
-        ("/debian/debian-cd/current/amd64/bt-cd/", vec![ok(fixture("debian/debian-cd-current-amd64-bt-cd.html"))]),
-        ("/debian/debian-cd/current/amd64/bt-dvd/", vec![ok(fixture("debian/debian-cd-current-amd64-bt-dvd.html"))]),
-    ])
-    .await;
-    let search = Search::new(&server.config(&["debian"]), ResultCache::new()).unwrap();
-    let q = query("debian 13 arm64 netinst", &["debian"]);
-
-    let degraded = search.search(&q).await.unwrap();
-    let repaired = search.search(&q).await.unwrap();
-
-    assert!(degraded.releases[0].id.to_ref().starts_with('u'));
-    assert_eq!(outcomes(&repaired), [("debian".into(), SourceOutcome::Ok { results: 1 })]);
-    assert_eq!(repaired.releases[0].id.to_ref(), "bf7ed99351f7b08f0916b7b3e49cfa574d206879");
-}
-
-#[tokio::test]
-async fn an_answer_missing_a_directory_is_asked_again() {
-    let server = Server::start(vec![
-        (NETINST, vec![ok(netinst())]),
-        (ARM64_CD, vec![ok(fixture("debian/debian-cd-current-arm64-bt-cd.html"))]),
-        ("/debian/", vec![status(503)]),
-    ])
-    .await;
-    let search = Search::new(&server.config(&["debian"]), ResultCache::new()).unwrap();
-    let q = query("debian 13 arm64 netinst", &["debian"]);
-
-    let first = search.search(&q).await.unwrap();
-    let again = search.search(&q).await.unwrap();
-
-    assert_eq!(first.releases[0].id.to_ref(), "bf7ed99351f7b08f0916b7b3e49cfa574d206879");
-    assert_eq!(outcomes(&again), [("debian".into(), SourceOutcome::Ok { results: 1 })]);
-    assert_eq!(server.hits(ARM64_CD), 2);
+    assert_eq!(reports[0].outcome, SourceOutcome::BadResponse { reason: "expected an RSS feed, got <html>".into() });
 }
 
 #[tokio::test]
 async fn the_plain_image_outranks_bigger_variants() {
-    let torrents = [
-        "amd64/bt-cd/debian-13.7.0-amd64-netinst.iso.torrent",
-        "amd64/bt-cd/debian-edu-13.7.0-amd64-netinst.iso.torrent",
-        "amd64/bt-cd/debian-mac-13.7.0-amd64-netinst.iso.torrent",
-        "arm64/bt-cd/debian-13.7.0-arm64-netinst.iso.torrent",
-    ];
-    let mut routes = Vec::new();
-    for path in torrents.into_iter().chain(["amd64/bt-cd/", "amd64/bt-dvd/", "arm64/bt-cd/", "arm64/bt-dvd/"]) {
-        let name = path.replace('/', "-");
-        let page = if path.ends_with('/') { format!("{}.html", name.trim_end_matches('-')) } else { name };
-        let route: &'static str = format!("/debian/debian-cd/current/{path}").leak();
-        routes.push((route, vec![ok(fixture(&format!("debian/debian-cd-current-{page}")))]));
-    }
-    let server = Server::start(routes).await;
-    let search = Search::new(&server.config(&["debian"]), ResultCache::new()).unwrap();
+    let server = Server::start(vec![("/geek/", vec![ok(fixture("newznab/debian-netinst.xml"))])]).await;
+    let search = Search::new(&server.config(&["geek"]), ResultCache::new()).unwrap();
 
-    let result = search.search(&query("debian 13.7 netinst", &["debian"])).await.unwrap();
+    let result = search.search(&query("debian 13.7 netinst", &["geek"])).await.unwrap();
 
     let listed: Vec<(&str, Option<u64>)> = result.releases.iter().map(|r| (r.name.as_str(), r.size)).collect();
     assert_eq!(
@@ -490,94 +393,16 @@ async fn the_plain_image_outranks_bigger_variants() {
 }
 
 #[tokio::test]
-async fn a_plain_title_outranks_bigger_remasters() {
-    let answer = fixture("archive.org/advancedsearch.php-night-of-the-living-dead-1968.json");
-    let server = Server::start(vec![("/archive.org/advancedsearch.php", vec![ok(answer)])]).await;
-    let search = Search::new(&server.config(&["archive.org"]), ResultCache::new()).unwrap();
-    let q = SearchQuery { category: Some(Category::Video), ..query("night of the living dead 1968", &["archive.org"]) };
-
-    let result = search.search(&q).await.unwrap();
-
-    let top: Vec<(&str, Option<u64>)> = result.releases.iter().take(4).map(|r| (r.name.as_str(), r.size)).collect();
-    assert_eq!(
-        top,
-        [
-            ("Night of the Living Dead (1968)", Some(1_173_905_628)),
-            ("Night of the Living Dead (1968)", Some(1_173_905_516)),
-            ("Night of the Living Dead (1968)", Some(553_635_842)),
-            ("Night of the Living Dead (1968)", Some(1_965_163_851)),
-        ]
-    );
-}
-
-#[tokio::test]
-async fn a_stale_catalog_is_shown_but_asked_again() {
-    let dir = scratch_dir("stale");
-    let up =
-        Server::start(vec![("/academictorrents/database.xml", vec![ok(fixture("academictorrents/database.xml"))])])
-            .await;
-    let down = Server::start(vec![("/academictorrents/", vec![status(503)])]).await;
-    let q = query("stack exchange", &["academictorrents"]);
-    let with_dir =
-        |server: &Server| SearchConfig { cache_dir: Some(dir.clone()), ..server.config(&["academictorrents"]) };
-    Search::new(&with_dir(&up), ResultCache::new()).unwrap().search(&q).await.unwrap();
-    let two_days_ago = std::time::SystemTime::now() - Duration::from_secs(48 * 3600);
-    std::fs::File::options()
-        .write(true)
-        .open(dir.join("academictorrents.xml"))
-        .unwrap()
-        .set_modified(two_days_ago)
-        .unwrap();
-
-    let search = Search::new(&with_dir(&down), ResultCache::new()).unwrap();
-    let stale = search.search(&q).await.unwrap();
-    let again = search.search(&q).await.unwrap();
-
-    assert_eq!(stale.releases[0].name, "Stack Exchange Data Dump (2026-09-30)");
-    assert_eq!(outcomes(&again), [("academictorrents".into(), SourceOutcome::Ok { results: 2 })]);
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[tokio::test]
-async fn the_academic_catalog_survives_a_restart() {
-    let dir = scratch_dir("academic");
-    let up =
-        Server::start(vec![("/academictorrents/database.xml", vec![ok(fixture("academictorrents/database.xml"))])])
-            .await;
-    let down = Server::start(vec![("/academictorrents/", vec![status(503)])]).await;
-    let q = query("stack exchange", &["academictorrents"]);
-    let with_dir =
-        |server: &Server| SearchConfig { cache_dir: Some(dir.clone()), ..server.config(&["academictorrents"]) };
-
-    let first = Search::new(&with_dir(&up), ResultCache::new()).unwrap().search(&q).await.unwrap();
-    let after_restart = Search::new(&with_dir(&down), ResultCache::new()).unwrap().search(&q).await.unwrap();
-
-    let listed = |r: &torrential_core::SearchResult| -> Vec<(String, String)> {
-        r.releases.iter().map(|r| (r.id.to_ref(), r.name.clone())).collect()
-    };
-    assert_eq!(
-        listed(&first),
-        [
-            ("c32cdd0306ee7717cd63f98f8df6486af55f79c8".into(), "Stack Exchange Data Dump (2026-09-30)".into()),
-            ("794176de24c33cc0e8b629b45a746cd870f3e95f".into(), "Stack Exchange Data Dump (2026-06-30)".into()),
-        ]
-    );
-    assert_eq!(listed(&after_restart), listed(&first));
-    assert_eq!(down.hits("/academictorrents/"), 0);
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[tokio::test]
 async fn progress_shows_each_answer_and_the_final_ranking_is_unchanged() {
     let late = |body: Vec<u8>, ms: u64| Reply { delay: Duration::from_millis(ms), ..ok(body) };
     let server = Server::start(vec![
-        ("/knaben/", vec![ok(fixture("knaben/v2-search-ubuntu.json"))]),
-        ("/apibay/", vec![late(fixture("apibay/q.php-ubuntu.json"), 300)]),
-        ("/nyaa/", vec![Reply { delay: Duration::from_millis(600), ..status(404) }]),
+        ("/hydra/", vec![ok(hydra_feed())]),
+        ("/geek/", vec![late(fixture("newznab/geek-sintel.xml"), 300)]),
+        ("/missing/", vec![Reply { delay: Duration::from_millis(600), ..status(404) }]),
     ])
     .await;
-    let sources = ["knaben", "apibay", "nyaa"];
-    let mut q = query("ubuntu", &sources);
+    let sources = ["hydra", "geek", "missing"];
+    let mut q = query("sintel", &sources);
     q.limit = 200;
     let streamed = Search::new(&server.config(&sources), ResultCache::new()).unwrap();
     let mut updates: Vec<Progress> = Vec::new();
@@ -592,36 +417,171 @@ async fn progress_shows_each_answer_and_the_final_ranking_is_unchanged() {
     assert_eq!(
         seen,
         [
-            r#"[("knaben", Ok { results: 98 })] total 97 pending ["apibay", "nyaa"]"#,
-            r#"[("knaben", Ok { results: 98 }), ("apibay", Ok { results: 100 })] total 158 pending ["nyaa"]"#,
+            r#"[("hydra", Ok { results: 3 })] total 2 pending ["geek", "missing"]"#,
+            r#"[("hydra", Ok { results: 3 }), ("geek", Ok { results: 3 })] total 5 pending ["missing"]"#,
         ]
     );
-    assert_eq!(outcomes(&last)[2], ("nyaa".into(), SourceOutcome::Http { status: 404 }));
+    assert_eq!(outcomes(&last)[2], ("missing".into(), SourceOutcome::Http { status: 404 }));
     assert_eq!(last.releases, whole.releases);
     assert_eq!(last.releases, updates[1].result.releases);
 }
 
 #[tokio::test]
-async fn a_title_searches_each_of_its_queries_and_reports_each_source_that_lists_video_once() {
-    let row = |hash: char, name: &str, seeders: u32, size: u64| {
-        format!(
-            r#"{{"id":"1","name":"{name}","info_hash":"{}","leechers":"1","seeders":"{seeders}","size":"{size}","num_files":"1","username":"u","added":"1600000000","status":"member","category":"207","imdb":""}}"#,
-            hash.to_string().repeat(40)
-        )
-    };
-    let bluray = row('a', "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP", 40, 6_000_000_000);
-    let dated = format!("[{bluray},{}]", row('b', "Night of the Living Dead (1990) 1080p BluRay", 90, 9_000_000_000));
-    let yearless = format!("[{bluray},{}]", row('c', "Night.of.the.Living.Dead.720p.WEB.x264", 12, 2_000_000_000));
-    let late = |body: String| Reply { delay: Duration::from_millis(300), ..ok(body.into_bytes()) };
+async fn a_disabled_source_is_neither_searched_nor_nameable() {
+    let server = Server::start(vec![("/hydra/", vec![ok(hydra_feed())])]).await;
+    let config =
+        SearchConfig { disabled: vec!["geek".into(), "planet".into()], ..server.config(&["hydra", "geek", "planet"]) };
+    let search = Search::new(&config, ResultCache::new()).unwrap();
+
+    let named = search.search(&query("sintel", &["hydra", "geek"])).await.unwrap_err();
+    let unknown = Search::new(&SearchConfig { disabled: vec!["slug".into()], ..config.clone() }, ResultCache::new())
+        .err()
+        .unwrap();
+
+    let names: Vec<String> = search.sources().into_iter().map(|s| s.name).collect();
+    assert_eq!(names, ["hydra"]);
+    assert_eq!((named.code, named.message.as_str()), (ErrorCode::Usage, "source \"geek\" is disabled"));
+    assert_eq!(server.hits("/hydra/"), 0);
+    assert_eq!(unknown.message, "sources.disabled lists an unknown source \"slug\"");
+}
+
+#[tokio::test]
+async fn an_nzb_fetch_failure_never_quotes_the_link() {
+    let nzb =
+        br#"<?xml version="1.0" encoding="UTF-8"?><nzb xmlns="http://www.newzbin.com/DTD/2003/nzb"></nzb>"#.to_vec();
     let server = Server::start(vec![
-        ("/apibay/q.php?q=night%20of%20the%20living%20dead%201968&", vec![ok(dated.into_bytes())]),
-        ("/apibay/q.php?q=night%20of%20the%20living%20dead&", vec![late(yearless)]),
-        ("/knaben/", vec![status(404)]),
-        ("/ubuntu/", vec![status(404)]),
-        ("/academictorrents/", vec![status(404)]),
+        ("/getnzb/ok", vec![ok(nzb.clone())]),
+        ("/getnzb/huge", vec![Reply { content_length: false, ..ok(vec![b'<'; 65 << 20]) }]),
     ])
     .await;
-    let sources = ["knaben", "apibay", "ubuntu", "academictorrents"];
+    let search = Search::new(&SearchConfig::default(), ResultCache::new()).unwrap();
+    let link = |path: &str| format!("{}{path}?apikey=k3y", server.base);
+
+    let fetched = search.fetch_nzb(&link("/getnzb/ok")).await.unwrap();
+    let missing = search.fetch_nzb(&link("/getnzb/gone")).await.unwrap_err();
+    let huge = search.fetch_nzb(&link("/getnzb/huge")).await.unwrap_err();
+    let refused = search.fetch_nzb("http://127.0.0.1:9/getnzb?apikey=k3y").await.unwrap_err();
+    let not_http = search.fetch_nzb("ftp://indexer.example/getnzb/1.nzb").await.unwrap_err();
+
+    assert_eq!(fetched, nzb);
+    assert_eq!((missing.code, missing.message.as_str()), (ErrorCode::FetchFailed, "could not fetch the NZB: HTTP 404"));
+    assert_eq!(huge.message, "could not fetch the NZB: larger than 64 MiB");
+    assert!(refused.message.starts_with("could not fetch the NZB: "), "{}", refused.message);
+    assert_eq!(not_http.code, ErrorCode::InvalidRef);
+    for error in [&missing, &huge, &refused] {
+        assert!(!serde_json::to_string(error).unwrap().contains("k3y"), "{error:?}");
+    }
+}
+
+#[tokio::test]
+async fn restored_results_resolve_without_replacing_fresh_links() {
+    let server = Server::start(vec![("/newznab/api", vec![ok(hydra_feed())])]).await;
+    let cache = ResultCache::new();
+    let search = Search::new(&keyed(&server.base, Some("k3y")), cache.clone()).unwrap();
+    let result = search.search(&query("sintel", &["hydra"])).await.unwrap();
+    let bluray = result.releases.iter().find(|r| r.id.to_ref() == BLURAY).unwrap().clone();
+    let older =
+        Release { id: ResultId::from_bytes([0x9b; 20]), name: "Sintel.2010.DVDRip.XviD".into(), ..bluray.clone() };
+
+    cache.restore(vec![(bluray.clone(), None), (older, None)]);
+
+    let private = cache.find(&BLURAY.parse().unwrap());
+    assert_eq!(private[0].nzb_url.as_deref(), Some(BLURAY_NZB));
+    let restored: Vec<String> = cache.find(&"u9b9b9b".parse().unwrap()).into_iter().map(|r| r.name).collect();
+    assert_eq!(restored, ["Sintel.2010.DVDRip.XviD"]);
+}
+
+#[tokio::test]
+async fn a_private_link_is_saved_without_its_key_and_takes_the_current_one_back() {
+    let server = Server::start(vec![("/newznab/api", vec![ok(hydra_feed())])]).await;
+    let cache = ResultCache::new();
+    let search = Search::new(&keyed(&server.base, Some("k3y")), cache.clone()).unwrap();
+    let result = search.search(&query("sintel", &["hydra"])).await.unwrap();
+    let bluray = result.releases.iter().find(|r| r.id.to_ref() == BLURAY).unwrap().clone();
+    let saved = cache.saved_link(&bluray.id);
+
+    let next_engine = |config: SearchConfig| {
+        let cache = ResultCache::new();
+        cache.restore(vec![(bluray.clone(), saved.clone())]);
+        let found = cache.find(&BLURAY.parse().unwrap()).remove(0);
+        Search::new(&config, cache).unwrap().nzb_url(&found)
+    };
+    let rotated = next_engine(keyed(&server.base, Some("n3w")));
+    let keyless = next_engine(keyed(&server.base, None)).unwrap_err();
+    let gone = next_engine(SearchConfig::default()).unwrap_err();
+
+    assert_eq!(
+        saved,
+        Some(SavedLink {
+            source: "hydra".into(),
+            url: "http://127.0.0.1:5076/getnzb/api/a1".into(),
+            key_params: vec!["apikey".into()],
+        })
+    );
+    assert_eq!(rotated.unwrap().as_deref(), Some("http://127.0.0.1:5076/getnzb/api/a1?apikey=n3w"));
+    assert_eq!(
+        [keyless.message, gone.message],
+        [
+            "this result's NZB link needs an API key for the hydra indexer, which has none",
+            "this result's NZB link needs an API key for the hydra indexer, which is not configured",
+        ]
+    );
+}
+
+#[tokio::test]
+async fn a_public_link_is_saved_whole_and_needs_no_key() {
+    let server = Server::start(vec![("/geek/", vec![ok(fixture("newznab/geek-sintel.xml"))])]).await;
+    let cache = ResultCache::new();
+    let search = Search::new(&server.config(&["geek"]), cache.clone()).unwrap();
+    let result = search.search(&query("sintel", &["geek"])).await.unwrap();
+    let uhd = result.releases.iter().find(|r| r.name == "Sintel.2010.2160p.UHD.BluRay.x265-GRP").unwrap().clone();
+    let saved = cache.saved_link(&uhd.id);
+
+    let next = ResultCache::new();
+    next.restore(vec![(uhd.clone(), saved.clone())]);
+    let found = next.find(&uhd.id.to_ref().parse().unwrap()).remove(0);
+    let url = Search::new(&server.config(&["geek"]), next.clone()).unwrap().nzb_url(&found);
+    let without_geek = Search::new(&SearchConfig::default(), next).unwrap().nzb_url(&found);
+
+    assert_eq!(uhd.id.to_ref(), "u280e147f1aa5f6ac87bc969511e6f21769a83ac1");
+    assert_eq!(saved.map(|s| s.key_params), Some(Vec::new()));
+    assert_eq!(url.unwrap().as_deref(), Some("https://geek.example/getnzb/g1.nzb"));
+    assert_eq!(
+        without_geek.unwrap().as_deref(),
+        Some("https://geek.example/getnzb/g1.nzb"),
+        "a link without a key needs no indexer to put one back"
+    );
+}
+
+/// A Newznab feed of `(tag, name, grabs, size)` rows, each linking to an NZB named by its tag.
+fn feed(rows: &[(&str, &str, u64, u64)]) -> Vec<u8> {
+    let items: String = rows
+        .iter()
+        .map(|(tag, name, grabs, size)| {
+            format!(
+                r#"<item><title>{name}</title><link>https://indexer.example/getnzb/{tag}.nzb</link><newznab:attr name="category" value="2040" /><newznab:attr name="size" value="{size}" /><newznab:attr name="grabs" value="{grabs}" /></item>"#
+            )
+        })
+        .collect();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/"><channel>{items}</channel></rss>"#
+    )
+    .into_bytes()
+}
+
+#[tokio::test]
+async fn a_title_searches_each_of_its_queries_and_reports_each_indexer_once() {
+    let bluray = ("a", "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP", 40, 6_000_000_000);
+    let dated = feed(&[bluray, ("b", "Night of the Living Dead (1990) 1080p BluRay", 90, 9_000_000_000)]);
+    let yearless = feed(&[bluray, ("c", "Night.of.the.Living.Dead.720p.WEB.x264", 12, 2_000_000_000)]);
+    let late = |body: Vec<u8>| Reply { delay: Duration::from_millis(300), ..ok(body) };
+    let server = Server::start(vec![
+        ("/geek/api?t=search&q=night+of+the+living+dead+1968", vec![ok(dated)]),
+        ("/geek/api?t=search&q=night+of+the+living+dead", vec![late(yearless)]),
+        ("/hydra/", vec![status(404)]),
+    ])
+    .await;
+    let sources = ["hydra", "geek"];
     let wanted = Wanted {
         name: "Night of the Living Dead".into(),
         year: Some(1968),
@@ -648,319 +608,22 @@ async fn a_title_searches_each_of_its_queries_and_reports_each_source_that_lists
     );
     assert_eq!(
         outcomes(&result),
-        [("knaben".into(), SourceOutcome::Http { status: 404 }), ("apibay".into(), SourceOutcome::Ok { results: 4 })]
+        [("hydra".into(), SourceOutcome::Http { status: 404 }), ("geek".into(), SourceOutcome::Ok { results: 4 })]
     );
-    assert_eq!(updates.last().map(|p| p.pending.clone()), Some(vec!["apibay".to_string()]));
-    assert_eq!(server.hits("/apibay/q.php?q=night%20of%20the%20living%20dead%201968&"), 1);
-    assert_eq!(server.hits("/apibay/q.php?q=night%20of%20the%20living%20dead&"), 1);
-    assert_eq!(server.hits("/knaben/"), 2);
-    assert_eq!((server.hits("/ubuntu/"), server.hits("/academictorrents/")), (0, 0), "they hold no films");
-}
-
-const UBUNTU_TORRENT: &str = "/ubuntu/24.04/ubuntu-24.04.5-live-server-amd64.iso.torrent";
-const UBUNTU_PAGES: [(&str, &str); 6] = [
-    ("/ubuntu/26.10/", "ubuntu/26.10.html"),
-    ("/ubuntu/26.04/", "ubuntu/26.04.html"),
-    ("/ubuntu/25.10/", "ubuntu/25.10.html"),
-    ("/ubuntu/24.04/", "ubuntu/24.04.html"),
-    ("/ubuntu/22.04/", "ubuntu/22.04.html"),
-    ("/ubuntu/", "ubuntu/index.html"),
-];
-
-async fn ubuntu_server() -> Server {
-    let mut routes = vec![(UBUNTU_TORRENT, vec![ok(netinst())])];
-    for (path, page) in &UBUNTU_PAGES[..5] {
-        let html = String::from_utf8(fixture(page)).unwrap();
-        for file in
-            html.split("href=\"").skip(1).filter_map(|s| s.split('"').next()).filter(|f| f.ends_with(".torrent"))
-        {
-            let route: &'static str = format!("{path}{file}").leak();
-            if !routes.iter().any(|(r, _)| *r == route) {
-                routes.push((route, vec![ok(named_torrent(file))]));
-            }
-        }
-    }
-    routes.extend(UBUNTU_PAGES.map(|(path, page)| (path, vec![ok(fixture(page))])));
-    Server::start(routes).await
-}
-
-fn named_torrent(name: &str) -> Vec<u8> {
-    let info =
-        format!("d6:lengthi1048576e4:name{}:{name}12:piece lengthi262144e6:pieces80:{}e", name.len(), "z".repeat(80));
-    format!("d4:info{info}e").into_bytes()
-}
-
-fn ubuntu_page_hits(server: &Server) -> [usize; 6] {
-    UBUNTU_PAGES.map(|(path, _)| server.hits(path))
-}
-
-fn listed_with_size(r: &torrential_core::SearchResult) -> Vec<(String, String, Option<u64>)> {
-    r.releases.iter().map(|r| (r.id.to_ref(), r.name.clone(), r.size)).collect()
-}
-
-fn live_server_2404() -> Vec<(String, String, Option<u64>)> {
-    vec![(
-        "bf7ed99351f7b08f0916b7b3e49cfa574d206879".to_string(),
-        "ubuntu-24.04.5-live-server-amd64.iso".to_string(),
-        Some(735_358_976),
-    )]
-}
-
-#[tokio::test]
-async fn a_hashed_torrent_is_not_fetched_again_by_a_later_process() {
-    let dir = scratch_dir("hashes");
-    let server = ubuntu_server().await;
-    let config = SearchConfig { cache_dir: Some(dir.clone()), ..server.config(&["ubuntu"]) };
-    let q = query("ubuntu 24.04.5 live server", &["ubuntu"]);
-
-    let first = Search::new(&config, ResultCache::new()).unwrap().search(&q).await.unwrap();
-    let later = Search::new(&config, ResultCache::new()).unwrap().search(&q).await.unwrap();
-
-    assert_eq!(listed_with_size(&first), live_server_2404());
-    assert_eq!(listed_with_size(&later), live_server_2404());
-    assert_eq!(server.hits(UBUNTU_TORRENT), 1);
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[tokio::test]
-async fn a_later_process_answers_from_the_listing_pages_on_disk_unless_fresh() {
-    let dir = scratch_dir("pages");
-    let server = ubuntu_server().await;
-    let config = SearchConfig { cache_dir: Some(dir.clone()), ..server.config(&["ubuntu"]) };
-    let q = query("ubuntu 24.04.5 live server", &["ubuntu"]);
-    Search::new(&config, ResultCache::new()).unwrap().search(&q).await.unwrap();
-
-    let later = Search::new(&config, ResultCache::new()).unwrap();
-    let from_disk = later.search(&q).await.unwrap();
-    let hits_from_disk = ubuntu_page_hits(&server);
-    let fresh = later.search(&SearchQuery { fresh: true, ..q.clone() }).await.unwrap();
-
-    assert_eq!(listed_with_size(&from_disk), live_server_2404());
-    assert_eq!(outcomes(&from_disk), [("ubuntu".into(), SourceOutcome::Ok { results: 1 })]);
-    assert_eq!(hits_from_disk, [1; 6], "only the first process asked for the pages");
-    assert_eq!(listed_with_size(&fresh), live_server_2404());
-    assert_eq!(ubuntu_page_hits(&server), [2; 6], "a fresh search asked for every page");
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[tokio::test]
-async fn a_search_hashes_the_other_listed_releases_for_the_next_one() {
-    let dir = scratch_dir("hash-later");
-    let server = ubuntu_server().await;
-    let config = SearchConfig { cache_dir: Some(dir.clone()), ..server.config(&["ubuntu"]) };
-    Search::new(&config, ResultCache::new())
-        .unwrap()
-        .search(&query("ubuntu 24.04.5 live server", &["ubuntu"]))
-        .await
-        .unwrap();
-    let saved = || -> usize {
-        let body = std::fs::read(dir.join("torrent-hashes.json")).unwrap_or_default();
-        serde_json::from_slice::<Vec<serde_json::Value>>(&body).map_or(0, |all| all.len())
-    };
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while saved() < 10 {
-        assert!(Instant::now() < deadline, "the other releases were not hashed");
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-
-    let later =
-        Search::new(&config, ResultCache::new()).unwrap().search(&query("ubuntu 22.04", &["ubuntu"])).await.unwrap();
-
-    let mut found: Vec<(bool, String)> =
-        later.releases.iter().map(|r| (r.id.to_ref().starts_with('u'), r.name.clone())).collect();
-    found.sort();
-    assert_eq!(
-        found,
-        [
-            (false, "ubuntu-22.04.5-desktop-amd64.iso".to_string()),
-            (false, "ubuntu-22.04.5-live-server-amd64.iso".to_string())
-        ],
-        "both are hashed, neither is a locator"
-    );
-    let fetched = ["ubuntu-22.04.5-desktop-amd64.iso.torrent", "ubuntu-22.04.5-live-server-amd64.iso.torrent"]
-        .map(|file| server.hits(&format!("/ubuntu/22.04/{file}")));
-    assert_eq!(fetched, [1, 1], "each was fetched once, behind the first search");
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[tokio::test]
-async fn a_stale_listing_page_answers_at_once_and_is_fetched_again_behind_the_search() {
-    let dir = scratch_dir("stale-pages");
-    let server = ubuntu_server().await;
-    let config = SearchConfig { cache_dir: Some(dir.clone()), ..server.config(&["ubuntu"]) };
-    let q = query("ubuntu 24.04.5 live server", &["ubuntu"]);
-    Search::new(&config, ResultCache::new()).unwrap().search(&q).await.unwrap();
-    let two_days_ago = std::time::SystemTime::now() - Duration::from_secs(48 * 3600);
-    let pages: Vec<PathBuf> = std::fs::read_dir(dir.join("pages")).unwrap().map(|e| e.unwrap().path()).collect();
-    for page in &pages {
-        std::fs::File::options().write(true).open(page).unwrap().set_modified(two_days_ago).unwrap();
-    }
-    let renewed = || pages.iter().all(|p| std::fs::metadata(p).unwrap().modified().unwrap() > two_days_ago);
-
-    let later = Search::new(&config, ResultCache::new()).unwrap();
-    let stale = later.search(&q).await.unwrap();
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !renewed() {
-        assert!(Instant::now() < deadline, "the stale pages were not fetched again");
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-    let after_refresh = later.search(&q).await.unwrap();
-    let repeat = later.search(&q).await.unwrap();
-
-    assert_eq!(pages.len(), 6);
-    assert_eq!(listed_with_size(&stale), live_server_2404());
-    assert_eq!(ubuntu_page_hits(&server), [2; 6], "each stale page was fetched once more");
-    assert_eq!(
-        outcomes(&after_refresh),
-        [("ubuntu".into(), SourceOutcome::Ok { results: 1 })],
-        "the stale answer was not cached"
-    );
-    assert_eq!(outcomes(&repeat), [("ubuntu".into(), SourceOutcome::Cached { results: 1 })]);
-    std::fs::remove_dir_all(&dir).unwrap();
-}
-
-#[tokio::test]
-async fn a_disabled_source_is_neither_searched_nor_nameable() {
-    let server = Server::start(vec![("/apibay/", vec![ok(fixture("apibay/q.php-ubuntu.json"))])]).await;
-    let config = SearchConfig { disabled: vec!["knaben".into(), "nyaa".into()], ..server.config(&["apibay"]) };
-    let search = Search::new(&config, ResultCache::new()).unwrap();
-
-    let named = search.search(&query("ubuntu", &["apibay", "knaben"])).await.unwrap_err();
-    let unknown = Search::new(&SearchConfig { disabled: vec!["1337x".into()], ..config.clone() }, ResultCache::new())
-        .err()
-        .unwrap();
-
-    let names: Vec<String> = search.sources().into_iter().map(|s| s.name).collect();
-    assert_eq!(names, ["archlinux", "ubuntu", "debian", "archive.org", "academictorrents", "apibay"]);
-    assert_eq!((named.code, named.message.as_str()), (ErrorCode::Usage, "source \"knaben\" is disabled"));
-    assert_eq!(server.hits("/apibay/"), 0);
-    assert_eq!(unknown.message, "sources.disabled lists an unknown source \"1337x\"");
-}
-
-#[tokio::test]
-async fn a_torrent_fetch_failure_never_quotes_the_link() {
-    let torrent = netinst();
-    let server = Server::start(vec![
-        ("/dl/ok", vec![ok(torrent.clone())]),
-        ("/dl/huge", vec![Reply { content_length: false, ..ok(vec![b'd'; 17 << 20]) }]),
-    ])
-    .await;
-    let search = Search::new(&SearchConfig::default(), ResultCache::new()).unwrap();
-    let link = |path: &str| format!("{}{path}?jackett_apikey=k3y", server.base);
-
-    let fetched = search.fetch_torrent(&link("/dl/ok")).await.unwrap();
-    let missing = search.fetch_torrent(&link("/dl/gone")).await.unwrap_err();
-    let huge = search.fetch_torrent(&link("/dl/huge")).await.unwrap_err();
-    let refused = search.fetch_torrent("http://127.0.0.1:9/dl?apikey=k3y").await.unwrap_err();
-
-    assert_eq!(fetched, torrent);
-    assert_eq!(
-        (missing.code, missing.message.as_str()),
-        (ErrorCode::FetchFailed, "could not fetch the .torrent file: HTTP 404")
-    );
-    assert_eq!(huge.message, "could not fetch the .torrent file: larger than 16 MiB");
-    assert!(refused.message.starts_with("could not fetch the .torrent file: "), "{}", refused.message);
-    for error in [&missing, &huge, &refused] {
-        assert!(!serde_json::to_string(error).unwrap().contains("k3y"), "{error:?}");
-    }
-}
-
-#[tokio::test]
-async fn restored_results_resolve_without_replacing_fresh_links() {
-    let server = Server::start(vec![("/torznab/api", vec![ok(fixture("torznab/jackett-ubuntu.xml"))])]).await;
-    let config = SearchConfig {
-        torznab: vec![TorznabConfig {
-            name: "jackett".into(),
-            url: format!("{}/torznab/api", server.base),
-            api_key: Some("k3y".into()),
-        }],
-        ..SearchConfig::default()
-    };
-    let cache = ResultCache::new();
-    let search = Search::new(&config, cache.clone()).unwrap();
-    let result = search.search(&query("ubuntu", &["jackett"])).await.unwrap();
-    let locator = result.releases.iter().find(|r| r.id.to_ref().starts_with('u')).unwrap().clone();
-    let older = torrential_core::Release {
-        id: torrential_core::ReleaseId::Torrent("9b521219bc48550140a666f74a29048ed78e933b".parse().unwrap()),
-        name: "archlinux-2026.10.01-x86_64.iso".into(),
-        ..locator.clone()
-    };
-
-    cache.restore(vec![(locator.clone(), None), (older, None)]);
-
-    let private = cache.find(&locator.id.to_ref().parse().unwrap());
-    assert_eq!(
-        private[0].torrent_url.as_deref(),
-        Some("http://127.0.0.1:9117/dl/privatehd/?jackett_apikey=k3y&path=def&file=ubuntu")
-    );
-    let restored: Vec<String> = cache.find(&"9b5212".parse().unwrap()).into_iter().map(|r| r.name).collect();
-    assert_eq!(restored, ["archlinux-2026.10.01-x86_64.iso"]);
-}
-
-#[tokio::test]
-async fn a_private_link_is_saved_without_its_key_and_takes_the_current_one_back() {
-    let server = Server::start(vec![("/torznab/api", vec![ok(fixture("torznab/jackett-ubuntu.xml"))])]).await;
-    let config = |key: Option<&str>| SearchConfig {
-        torznab: vec![TorznabConfig {
-            name: "jackett".into(),
-            url: format!("{}/torznab/api", server.base),
-            api_key: key.map(String::from),
-        }],
-        ..SearchConfig::default()
-    };
-    let cache = ResultCache::new();
-    let search = Search::new(&config(Some("k3y")), cache.clone()).unwrap();
-    let result = search.search(&query("ubuntu", &["jackett"])).await.unwrap();
-    let locator = result.releases.iter().find(|r| r.id.to_ref().starts_with('u')).unwrap().clone();
-    let saved = cache.saved_link(&locator.id);
-
-    let next_engine = |config: SearchConfig| {
-        let cache = ResultCache::new();
-        cache.restore(vec![(locator.clone(), saved.clone())]);
-        let found = cache.find(&locator.id.to_ref().parse().unwrap()).remove(0);
-        Search::new(&config, cache).unwrap().torrent_url(&found)
-    };
-    let rotated = next_engine(config(Some("n3w")));
-    let keyless = next_engine(config(None)).unwrap_err();
-    let gone = next_engine(SearchConfig::default()).unwrap_err();
-
-    assert_eq!(
-        saved,
-        Some(SavedLink {
-            source: "jackett".into(),
-            url: "http://127.0.0.1:9117/dl/privatehd/?path=def&file=ubuntu".into(),
-            key_params: vec!["jackett_apikey".into()],
-        })
-    );
-    assert_eq!(
-        rotated.unwrap().as_deref(),
-        Some("http://127.0.0.1:9117/dl/privatehd/?path=def&file=ubuntu&jackett_apikey=n3w")
-    );
-    assert_eq!(
-        [keyless.message, gone.message],
-        [
-            "this result's .torrent link needs an API key for the jackett indexer, which has none",
-            "this result's .torrent link needs an API key for the jackett indexer, which is not configured",
-        ]
-    );
+    assert_eq!(updates.last().map(|p| p.pending.clone()), Some(vec!["geek".to_string()]));
+    assert_eq!(server.hits("/geek/api?t=search&q=night+of+the+living+dead+1968"), 1);
+    assert_eq!(server.hits("/geek/api?t=search&q=night+of+the+living+dead"), 1);
+    assert_eq!(server.hits("/hydra/"), 2);
 }
 
 #[tokio::test]
 async fn rejects_unknown_sources_and_queries_without_words() {
-    let search = Search::new(&SearchConfig::default(), ResultCache::new()).unwrap();
+    let search = Search::new(&indexers("http://127.0.0.1:9", &["hydra", "geek"]), ResultCache::new()).unwrap();
 
-    let unknown = search.search(&query("ubuntu", &["1337x"])).await.unwrap_err();
+    let unknown = search.search(&query("sintel", &["slug"])).await.unwrap_err();
     let empty = search.search(&SearchQuery::new(" -- ")).await.unwrap_err();
 
-    assert_eq!((unknown.code, unknown.message.as_str()), (ErrorCode::Usage, "unknown source \"1337x\""));
-    assert_eq!(
-        unknown.hint.as_deref(),
-        Some("available sources: archlinux, ubuntu, debian, archive.org, academictorrents, knaben, apibay, nyaa")
-    );
+    assert_eq!((unknown.code, unknown.message.as_str()), (ErrorCode::Usage, "unknown source \"slug\""));
+    assert_eq!(unknown.hint.as_deref(), Some("available sources: hydra, geek"));
     assert_eq!((empty.code, empty.message.as_str()), (ErrorCode::Usage, "a search needs at least one word"));
-}
-
-fn scratch_dir(name: &str) -> PathBuf {
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("torrential-search-{name}-{}-{nanos}", std::process::id()))
 }

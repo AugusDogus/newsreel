@@ -2,12 +2,12 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use torrential_core::{HexPrefix, Release, ReleaseId};
+use torrential_core::{HexPrefix, Release, ResultId};
 
 use crate::observation::Observation;
 use crate::sources::SavedLink;
 
-/// Knaben's CDN caches searches for the same five minutes.
+/// How long an indexer's answer is reused for the same words.
 const TTL: Duration = Duration::from_secs(5 * 60);
 const MAX_ANSWERS: usize = 512;
 const MAX_RECENT: usize = 2048;
@@ -27,7 +27,7 @@ pub struct ResultCache {
 #[derive(Default)]
 struct State {
     answers: HashMap<AnswerKey, (Instant, Arc<Vec<Observation>>)>,
-    recent: HashMap<ReleaseId, Recent>,
+    recent: HashMap<ResultId, Recent>,
     seq: u64,
 }
 
@@ -59,8 +59,6 @@ pub(crate) struct AnswerKey {
     pub scope: String,
     pub text: String,
     pub adult: bool,
-    /// A title's search, whose answers also list the items' files.
-    pub title: bool,
 }
 
 impl ResultCache {
@@ -71,9 +69,8 @@ impl ResultCache {
     /// Releases from recent searches whose ID starts with `prefix`, newest first.
     /// More than one match means the prefix is ambiguous.
     ///
-    /// Unlike a `SearchResult`, these keep links from private sources, which can
-    /// carry a Torznab API key or a tracker passkey: they are for downloading,
-    /// not for printing.
+    /// Unlike a `SearchResult`, these keep their NZB links, which carry the user's API
+    /// key: they are for downloading, not for printing.
     pub fn find(&self, prefix: &HexPrefix) -> Vec<Release> {
         let state = self.lock();
         let mut found: Vec<&Recent> = state.recent.values().filter(|r| prefix.matches(&r.release.id)).collect();
@@ -81,9 +78,8 @@ impl ResultCache {
         found.into_iter().map(|r| r.release.clone()).collect()
     }
 
-    /// The private `.torrent` link of a recent release, without its API key, for an engine to
-    /// save. `None` when its link is public, or it has none.
-    pub fn saved_link(&self, id: &ReleaseId) -> Option<SavedLink> {
+    /// The NZB link of a recent release, without its API key, for an engine to save.
+    pub fn saved_link(&self, id: &ResultId) -> Option<SavedLink> {
         self.lock().recent.get(id)?.saved.clone()
     }
 
@@ -136,22 +132,19 @@ impl ResultCache {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::observation::Identity;
 
     fn rows(name: &str) -> Arc<Vec<Observation>> {
-        let hash = crate::observation::infohash(&"ab".repeat(20)).unwrap();
-        Arc::new(vec![Observation::new(Identity::Hash { hash, torrent_url: None }, name).unwrap()])
+        Arc::new(vec![Observation::new("https://indexer.example/getnzb/1.nzb".into(), name).unwrap()])
     }
 
     #[test]
     fn answers_expire_after_five_minutes() {
         let cache = ResultCache::new();
         let key = AnswerKey {
-            source: "knaben".into(),
-            scope: "https://api.knaben.org/".into(),
+            source: "hydra".into(),
+            scope: "http://127.0.0.1:5076/api".into(),
             text: "ubuntu".into(),
             adult: false,
-            title: false,
         };
         let t0 = Instant::now();
         cache.store(key.clone(), rows("Ubuntu 24.04"), t0);

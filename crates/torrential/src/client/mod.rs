@@ -29,7 +29,6 @@ use torrential_core::{Error, ErrorCode, Job, Target};
 use crate::cli::Command;
 use crate::output::{self, DocKind, Mode, Typed, render};
 use connect::Conn;
-use torrential_core::protocol::METADATA_WAIT;
 use torrential_daemon::env::Env;
 use torrential_daemon::paths::Paths;
 
@@ -102,8 +101,8 @@ fn dispatch(command: Command, mode: Mode, env: &Env) -> Result<u8, Error> {
             };
             let following = (engine()?, wait::Engine { paths: paths()?, env: env.clone() });
             match mode {
-                Mode::Human => wait::attach(following, refs, args.until, timeout),
-                _ => wait::run(following, refs, args.until, timeout, &wait::Printer { mode }),
+                Mode::Human => wait::attach(following, refs, timeout),
+                _ => wait::run(following, refs, timeout, &wait::Printer { mode }),
             }
         }
         Command::Pause(args) => {
@@ -159,9 +158,9 @@ fn dispatch(command: Command, mode: Mode, env: &Env) -> Result<u8, Error> {
     }
 }
 
-/// A torrent's files, fetching its metadata if needed, as `torrential files` lists them.
+/// A release's files, reading its NZB if needed, as `torrential files` lists them.
 pub fn file_list(conn: &mut Conn, target: Target) -> Result<FilesReply, Error> {
-    conn.ask(&Request::Files { target, timeout_ms: METADATA_WAIT.as_millis() as u32 })
+    conn.ask(&Request::Files { target })
 }
 
 pub fn absolute(path: &Path, cwd: &Path, env: &Env) -> PathBuf {
@@ -173,11 +172,9 @@ fn job_refs(references: &[String], cwd: &Path) -> Result<Vec<String>, Error> {
         .iter()
         .map(|reference| match Target::parse(reference, cwd)? {
             Target::Prefix(prefix) => Ok(prefix),
-            Target::InfoHash(_) => Ok(reference.trim().to_string()),
-            Target::Magnet(magnet) => Ok(magnet),
-            Target::TorrentUrl(_) => Err(not_a_download("a .torrent URL")),
-            Target::TorrentFile(_) => Err(not_a_download("a .torrent file")),
-            Target::Title(video) => Err(torrential_core::target::not_a_torrent(&video, "this command")),
+            Target::NzbUrl(_) => Err(not_a_download("an NZB URL")),
+            Target::NzbFile(_) => Err(not_a_download("an .nzb file")),
+            Target::Title(video) => Err(torrential_core::target::not_a_release(&video, "this command")),
         })
         .collect()
 }

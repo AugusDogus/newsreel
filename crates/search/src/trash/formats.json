@@ -1,0 +1,5783 @@
+{
+ "source": "https://github.com/TRaSH-Guides/Guides",
+ "commit": "59adea09a5fbb1b7a71979589fd87f2e92f0f399",
+ "formats": [
+  {
+   "app": "radarr",
+   "format": "lq",
+   "title": "LQ",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "126811",
+     "pattern": "^(126811)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "24xHD",
+     "pattern": "\\b(24xHD)\\b"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "41RGB",
+     "pattern": "^(41RGB)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "4K4U",
+     "pattern": "^(4K4U)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "AOC",
+     "pattern": "^(AOC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "AROMA",
+     "pattern": "^(AROMA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "aXXo",
+     "pattern": "^(aXXo)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "AZAZE",
+     "pattern": "^(AZAZE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BARC0DE",
+     "pattern": "^(BARC0DE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BAUCKLEY",
+     "pattern": "^(BAUCKLEY)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BdC",
+     "pattern": "^(BdC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "beAst",
+     "pattern": "^(beAst)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BTM",
+     "pattern": "^(BTM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "C1NEM4",
+     "pattern": "^(C1NEM4)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "C4K",
+     "pattern": "^(C4K)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CDDHD",
+     "pattern": "^(CDDHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CHAOS",
+     "pattern": "^(CHAOS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CHD",
+     "pattern": "^(CHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CiNE",
+     "pattern": "^(CiNE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CLEANUP",
+     "pattern": "^(CLEANUP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "COLLECTiVE",
+     "pattern": "^(COLLECTiVE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CREATiVE24",
+     "pattern": "^(CREATiVE24)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CrEwSaDe",
+     "pattern": "^(CrEwSaDe)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CTFOH",
+     "pattern": "^(CTFOH)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "d3g",
+     "pattern": "^(d3g)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DDR",
+     "pattern": "^(DDR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DNL",
+     "pattern": "^(DNL)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DRX",
+     "pattern": "^(DRX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "E",
+     "pattern": "^(E)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EPiC",
+     "pattern": "^(EPiC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EuReKA",
+     "pattern": "^(EuReKA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FaNGDiNG0",
+     "pattern": "^(FaNGDiNG0)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Feranki1980",
+     "pattern": "^(Feranki1980)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FGT",
+     "pattern": "^(FGT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FMD",
+     "pattern": "^(FMD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FRDS",
+     "pattern": "^(FRDS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FS",
+     "pattern": "^(FS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FZHD",
+     "pattern": "^(FZHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GalaxyRG",
+     "pattern": "^(GalaxyRG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GHD",
+     "pattern": "^(GHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GPTHD",
+     "pattern": "^(GPTHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HDHUB4U",
+     "pattern": "^(HDHUB4U)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HDS",
+     "pattern": "^(10bit-)?HDS$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HDT",
+     "pattern": "^(HDT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HDTime",
+     "pattern": "^(HDTime)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HDWinG",
+     "pattern": "^(HDWinG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iNTENSO",
+     "pattern": "^(iNTENSO)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iPlanet",
+     "pattern": "^(iPlanet)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iVy",
+     "pattern": "^(iVy)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "jennaortega",
+     "pattern": "^(jennaortega(UHD)?)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "JFF",
+     "pattern": "^(JFF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KC",
+     "pattern": "^(KC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KiNGDOM",
+     "pattern": "^(KiNGDOM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KIRA",
+     "pattern": "^(KIRA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "L0SERNIGHT",
+     "pattern": "^(L0SERNIGHT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "LAMA",
+     "pattern": "^(LAMA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Leffe",
+     "pattern": "^(Leffe)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Liber8",
+     "pattern": "^(Liber8)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "LiGaS",
+     "pattern": "^(LiGaS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "LUCY",
+     "pattern": "^(LUCY)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MarkII",
+     "pattern": "^(MarkII)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MeGusta",
+     "pattern": "^(MeGusta)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Mesc",
+     "pattern": "^(Mesc)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "mHD",
+     "pattern": "^(mHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "mSD",
+     "pattern": "^(mSD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MTeam",
+     "pattern": "^(MTeam|MT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MySiLU",
+     "pattern": "^(MySiLU)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NhaNc3",
+     "pattern": "^(NhaNc3)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "nHD",
+     "pattern": "^(nHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "nikt0",
+     "pattern": "^(nikt0)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NoGroup",
+     "pattern": "NoGr(ou)?p"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "nSD",
+     "pattern": "^(nSD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "OFT",
+     "pattern": "^(OFT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Pahe",
+     "pattern": "Pahe(\\.(ph|in))?\\b"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PATOMiEL",
+     "pattern": "^(PATOMiEL)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PRODJi",
+     "pattern": "^(PRODJi)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PSA",
+     "pattern": "^(PSA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PTNK",
+     "pattern": "^(PTNK)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RARBG",
+     "pattern": "^(RARBG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RBB",
+     "pattern": "^(RBB)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RDN",
+     "pattern": "^(RDN)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RiffTrax",
+     "pattern": "^(Rifftrax)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RU4HD",
+     "pattern": "^(RU4HD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SANTi",
+     "pattern": "^(SANTi)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Scene",
+     "pattern": "^(Scene)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SHD",
+     "pattern": "^(SHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ShieldBearer",
+     "pattern": "^(ShieldBearer)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "STUTTERSHIT",
+     "pattern": "^(STUTTERSHIT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SUNSCREEN",
+     "pattern": "^(SUNSCREEN)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SyncUP",
+     "pattern": "^(SyncUP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TBS",
+     "pattern": "^(TBS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TEKNO3D",
+     "pattern": "^(TEKNO3D)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Tigole",
+     "pattern": "^(Tigole)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TIKO",
+     "pattern": "^(TIKO)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "VISIONPLUSHDR",
+     "pattern": "^(VISIONPLUSHDR(-X|1000)?)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "WAF",
+     "pattern": "^(WAF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "WiKi",
+     "pattern": "^(WiKi)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "x0r",
+     "pattern": "^(x0r)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "YIFY",
+     "pattern": "^(YIFY)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "YTS",
+     "pattern": "^(YTS(.(MX|LT|AG))?)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Zeus",
+     "pattern": "^(Zeus)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "lq-release-title",
+   "title": "LQ (Release Title)",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "1XBET",
+     "pattern": "\\b(1XBET)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BEN THE MEN",
+     "pattern": "\\b(BEN[ ._-]THE[ ._-]MEN)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "D3US",
+     "pattern": "(-D3US|D3US-)"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "EVO (no WEBDL)",
+     "pattern": "(?<!\\bweb[ ._-]?(dl|rip)?\\b.*)-(EVO)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Feranki1980",
+     "pattern": "\\b(Feranki1980)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "GalaxyRG",
+     "pattern": "\\b(GalaxyRG)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HHWEB (No MA)",
+     "pattern": "^(?!.*\\bMA\\b.*\\bWEB-?DL\\b).*\\b(HHWEB)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "jennaortega",
+     "pattern": "(?<!-)\\b(jennaortega(UHD)?)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "PiRaTeS (no WEBDL)",
+     "pattern": "(?<!\\bweb[ ._-]?(dl|rip)?\\b.*)-(PiRaTeS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "R&H",
+     "pattern": "\\b(R&H)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "READ NOTE",
+     "pattern": "\\b(READ(\\s|\\.)+NOTE)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SiCFoI + CM4v",
+     "pattern": "^(?=.*\\b(CMv4)\\b).*\\b(SiCFoI)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SWTYBLZ",
+     "pattern": "\\b(SWTYBLZ)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TeeWee",
+     "pattern": "\\b(TeeWee)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TEKNO3D",
+     "pattern": "\\b(TEKNO3D)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "UnKn0wn (NoRemux)",
+     "pattern": "(?<!\\b(remux).*?)\\b(unkn0wn)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Will1869",
+     "pattern": "\\b(Will1869)\\b"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "retags",
+   "title": "Retags",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "[rartv]",
+     "pattern": "\\[rartv\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "[rarbg]",
+     "pattern": "\\[rarbg\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "[eztv]",
+     "pattern": "\\[eztvx?[ ._-]?(io|re|to)?\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "[TGx]",
+     "pattern": "\\[TGx\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": ".VAV",
+     "pattern": "[.]VAV\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": ".heb",
+     "pattern": "[.]heb\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ORARBG",
+     "pattern": "\\b(ORARBG)\\b"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "obfuscated",
+   "title": "Obfuscated",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "4P",
+     "pattern": "-4P\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "4Planet",
+     "pattern": "-4Planet\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AsRequested",
+     "pattern": "-AsRequested\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BUYMORE",
+     "pattern": "-BUYMORE\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Chamele0n",
+     "pattern": "-Chamele0n\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "GEROV",
+     "pattern": "-GEROV\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "iNC0GNiTO",
+     "pattern": "-iNC0GNiTO\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "NZBGeek",
+     "pattern": "-NZBGeek\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Obfuscated",
+     "pattern": "-Obfuscated\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "postbot",
+     "pattern": "-postbot\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Rakuv",
+     "pattern": "-Rakuv\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Scrambled",
+     "pattern": "(?<=\\b[12]\\d{3}\\b).*(Scrambled)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "WhiteRev",
+     "pattern": "-WhiteRev\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "xpost",
+     "pattern": "-xpost\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "WRTEAM",
+     "pattern": "-WRTEAM\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CAPTCHA",
+     "pattern": "-CAPTCHA\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "_nzb",
+     "pattern": "_nzb\\b"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "upscaled",
+   "title": "Upscaled",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AI Upscales",
+     "pattern": "(?<=\\b[12]\\d{3}\\b)(?=.*\\b(HEVC)\\b)(?=.*\\b(AI)\\b)"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AIUS",
+     "pattern": "\\b(AIUS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "GuyZo",
+     "pattern": "\\b(GuyZo|BR-GuyZo)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Regrade",
+     "pattern": "\\b((Upscale)?Re-?graded?)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "RW",
+     "pattern": "\\b(RW)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TheUpscaler",
+     "pattern": "\\b(The[ ._-]?Upscaler)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Upscaled",
+     "pattern": "(?<=\\b[12]\\d{3}\\b).*\\b(AI[ ._-]?(Enhanced?|Remaster(ed)?)|UPS(UHD)?|Upscaled?([ ._-]?UHD)?|UpRez)\\b"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "bad-dual-groups",
+   "title": "Bad Dual Groups",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "alfaHD",
+     "pattern": "^(alfaHD.*)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BAT",
+     "pattern": "^(BAT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BlackBit",
+     "pattern": "^(BlackBit)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BNd",
+     "pattern": "^(BNd)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "C.A.A",
+     "pattern": "^(C\\.A\\.A)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "C76",
+     "pattern": "^(C76)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Cory",
+     "pattern": "^(Cory)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CYPHER",
+     "pattern": "^(CYPHER)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EniaHD",
+     "pattern": "^(EniaHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EXTREME",
+     "pattern": "^(EXTREME)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FF",
+     "pattern": "^(FF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FOXX",
+     "pattern": "^(FOXX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "G4RiS",
+     "pattern": "^(G4RiS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GUEIRA",
+     "pattern": "^(GUEIRA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "LCD",
+     "pattern": "^(LCD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MGE",
+     "pattern": "^(MGE\\b.*)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MLH",
+     "pattern": "^(MLH)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "N3G4N",
+     "pattern": "^(N3G4N)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "OldT",
+     "pattern": "^(OldT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ONLYMOViE",
+     "pattern": "^(ONLYMOViE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PD",
+     "pattern": "^(PD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PTHome",
+     "pattern": "^(PTHome)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RiPER",
+     "pattern": "^(RiPER)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RK",
+     "pattern": "^(RK)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SiGLA",
+     "pattern": "^(SiGLA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Tars",
+     "pattern": "^(Tars)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TM",
+     "pattern": "^(TM\\b)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "tokar86a",
+     "pattern": "^(tokar86a)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TURG",
+     "pattern": "^(TURG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TvR",
+     "pattern": "^(TvR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "vnlls",
+     "pattern": "^(vnlls)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "WTV",
+     "pattern": "^(WTV)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "XiQUEXiQUE",
+     "pattern": "^(XiQUEXiQUE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Yatogam1",
+     "pattern": "^(Yatogam1)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "YusukeFLA",
+     "pattern": "^(YusukeFLA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ZigZag",
+     "pattern": "^(ZigZag)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ZNM",
+     "pattern": "^(ZNM)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "br-disk",
+   "title": "BR-DISK",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": true,
+     "negate": false,
+     "name": "BR-DISK",
+     "pattern": "^(?!.*\\b((?<!HD[._ -]|HD)DVD|BDRip|MKV|XviD|WMV|d3g|(BD)?REMUX|^(?=.*1080p)(?=.*HEVC)|[xh][-_. ]?26[45]|German.*[DM]L|((?<=\\d{4}).*German.*([DM]L)?)(?=.*\\b(AVC|HEVC|VC[-_. ]?1|MVC|MPEG[-_. ]?2)\\b))\\b)(((?=.*\\b(Blu[-_. ]?ray|BD|HD[-_. ]?DVD)\\b)(?=.*\\b(AVC|HEVC|VC[-_. ]?1|MVC|MPEG[-_. ]?2|BDMV|ISO)\\b))|^((?=.*\\b(((?=.*\\b((.*_)?COMPLETE.*|Dis[ck])\\b)(?=.*(Blu[-_. ]?ray|HD[-_. ]?DVD)))|3D[-_. ]?BD|BR[-_. ]?DISK|Full[-_. ]?Blu[-_. ]?ray|^((?=.*((BD|UHD)[-_. ]?(25|50|66|100|ISO)))))))).*"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "3d",
+   "title": "3D",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "3D",
+     "pattern": "(?<=\\b[12]\\d{3}\\b).*(\\b|_)(3d|[fh]?sbs|half[ ._-]ou)(\\b|_)"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BluRay3D",
+     "pattern": "\\b(BluRay3D)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BD3D",
+     "pattern": "\\b(BD3D)\\b"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "anime-lq-groups",
+   "title": "Anime LQ Groups",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "$tore-Chill",
+     "pattern": "\\b(\\$tore-Chill)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "0neshot",
+     "pattern": "\\b(0neshot)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "224",
+     "pattern": "\\[224\\]|-224\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "A-Destiny",
+     "pattern": "\\b(A-Destiny)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AceAres",
+     "pattern": "\\b(AceAres)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AhmadDev",
+     "pattern": "\\b(AhmadDev)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Anime Chap",
+     "pattern": "\\b(Anime[ .-]?Chap)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Anime Land",
+     "pattern": "\\b(Anime[ .-]?Land)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Anime Time",
+     "pattern": "\\b(Anime[ .-]?Time)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AnimeDynastyEN",
+     "pattern": "\\b(AnimeDynastyEN)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AnimeKuro",
+     "pattern": "\\b(AnimeKuro)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AnimeRG",
+     "pattern": "\\b(AnimeRG)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Animesubs",
+     "pattern": "\\b(Animesubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AnimeTR",
+     "pattern": "\\b(AnimeTR)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Anitsu",
+     "pattern": "\\b(Anitsu)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AniVoid",
+     "pattern": "\\b(AniVoid)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ArataEnc",
+     "pattern": "\\b(ArataEnc)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AREY",
+     "pattern": "\\b(AREY)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Ari",
+     "pattern": "\\[Ari\\]|-Ari\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ASW",
+     "pattern": "\\b(ASW)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BJX",
+     "pattern": "\\b(BJX)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BlackLuster",
+     "pattern": "\\b(BlackLuster)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "bonkai77",
+     "pattern": "\\b(bonkai77)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CameEsp",
+     "pattern": "\\b(CameEsp)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Cat66",
+     "pattern": "\\b(Cat66)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CBB",
+     "pattern": "\\b(CBB)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Cerberus",
+     "pattern": "\\[Cerberus\\]|-Cerberus\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Cleo",
+     "pattern": "\\[Cleo\\]|-Cleo"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CuaP",
+     "pattern": "\\b(CuaP)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DaddySubs",
+     "pattern": "\\[Daddy(Subs)?\\]|-Daddy(Subs)?\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DARKFLiX",
+     "pattern": "\\b(DARKFLiX)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DB",
+     "pattern": "\\[DB\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DBArabic",
+     "pattern": "\\b(DBArabic)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Deadmau- RAWS",
+     "pattern": "\\b(Deadmau[ .-]?[ .-]?RAWS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DKB",
+     "pattern": "\\b(DKB)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DP",
+     "pattern": "\\b(DP)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DsunS",
+     "pattern": "\\b(DsunS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Emmid",
+     "pattern": "\\[Emmid\\]|-Emmid\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ExREN",
+     "pattern": "\\b(ExREN)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "FAV",
+     "pattern": "\\[FAV\\]|-FAV\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Fish",
+     "pattern": "\\b((Baked|Dead|Space)Fish)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "FunArts",
+     "pattern": "\\b(FunArts)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "GERMini",
+     "pattern": "\\b(GERMini)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Hakata Ramen",
+     "pattern": "\\b(Hakata[ .-]?Ramen)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Hall_of_C",
+     "pattern": "\\b(Hall_of_C)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Hatsuyuki",
+     "pattern": "\\[Hatsuyuki\\]|-Hatsuyuki\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HAV1T",
+     "pattern": "\\b(HAV1T)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HENiL",
+     "pattern": "\\b(HENiL)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Hitoku",
+     "pattern": "\\[Hitoku\\]|-Hitoku\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HollowRoxas",
+     "pattern": "\\b(HollowRoxas)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HR",
+     "pattern": "\\[HR\\]|-HR\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ICEBLUE",
+     "pattern": "\\b(ICEBLUE)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "iPUNISHER",
+     "pattern": "\\b(iPUNISHER)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "JacobSwaggedUp",
+     "pattern": "\\b(JacobSwaggedUp)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Johnny-englishsubs",
+     "pattern": "\\b(Johnny-englishsubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Kallango",
+     "pattern": "\\[Kallango\\]|-Kallango\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Kanjouteki",
+     "pattern": "\\b(Kanjouteki)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "KEKMASTERS",
+     "pattern": "\\b(KEKMASTERS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Kirion",
+     "pattern": "\\b(Kirion)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "KQRM",
+     "pattern": "\\b(KQRM)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "KRP",
+     "pattern": "\\b(KRP)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "LoliHouse",
+     "pattern": "\\b(LoliHouse)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "M@nI",
+     "pattern": "\\b(M@nI)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "mal lu zen",
+     "pattern": "\\b(mal[ .-]lu[ .-]zen)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Man.K",
+     "pattern": "\\b(Man\\.K)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Maximus",
+     "pattern": "\\[Maximus\\]|-Maximus\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MD",
+     "pattern": "\\[MD\\]|-MD\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "mdcx",
+     "pattern": "\\b(mdcx)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Metaljerk",
+     "pattern": "\\b(Metaljerk)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MGD",
+     "pattern": "\\b(MGD)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MiniFreeza",
+     "pattern": "\\b(MiniFreeza)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MiniMTBB",
+     "pattern": "\\b(MiniMTBB)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MinisCuba",
+     "pattern": "\\b(MinisCuba)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MiniTheatre",
+     "pattern": "\\b(MiniTheatre)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Mites",
+     "pattern": "\\b(Mites)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Modders Bay",
+     "pattern": "\\b(Modders[ .-]?Bay)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Mr. Deadpool",
+     "pattern": "\\b(Mr\\.Deadpool)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "NemDiggers",
+     "pattern": "\\b(NemDiggers)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "neoHEVC",
+     "pattern": "\\b(neoHEVC)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Nokou",
+     "pattern": "\\b(Nokou)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "NoobSubs",
+     "pattern": "\\b(N[eo][wo]b[ ._-]?Subs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "NS",
+     "pattern": "\\b(NS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Nyanpasu",
+     "pattern": "\\b(Nyanpasu)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "OldCastle",
+     "pattern": "\\b(OldCastle)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Pantsu",
+     "pattern": "\\[Pantsu\\]|-Pantsu\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Pao",
+     "pattern": "\\[Pao\\]|-Pao\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "phazer11",
+     "pattern": "\\b(phazer11)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Pixel",
+     "pattern": "\\[Pixel\\]|-Pixel\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Plex Friendly",
+     "pattern": "\\b(Plex[ .-]?Friendly)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "PnPSubs",
+     "pattern": "\\b(PnPSubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Polarwindz",
+     "pattern": "\\b(Polarwindz)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Project-gxs",
+     "pattern": "\\b(Project-gxs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "PuyaSubs",
+     "pattern": "\\b(PuyaSubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "QaS",
+     "pattern": "\\b(QAS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "QCE",
+     "pattern": "\\b(QCE)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Rando235",
+     "pattern": "\\b(Rando235)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Ranger",
+     "pattern": "\\[Ranger\\]|-Ranger\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Rapta",
+     "pattern": "\\[Rapta\\]|-Rapta\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Raw Files",
+     "pattern": "\\b(M2TS|BDMV|BDVD)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Raze",
+     "pattern": "\\[Raze\\]|-Raze\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Reaktor",
+     "pattern": "\\b(Reaktor)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "RightShiftBy2",
+     "pattern": "\\b(RightShiftBy2)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Rip Time",
+     "pattern": "\\b(Rip[ .-]?Time)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SAD",
+     "pattern": "\\[SAD\\]|-SAD\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Salieri",
+     "pattern": "\\b(Salieri)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Samir755",
+     "pattern": "\\b(Samir755)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SanKyuu",
+     "pattern": "\\b(SanKyuu)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SEiN",
+     "pattern": "\\[SEiN\\]|-SEiN\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "sekkusu&ok",
+     "pattern": "\\b(sekkusu&ok)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SHFS",
+     "pattern": "\\b(SHFS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "shincaps",
+     "pattern": "\\b(shincaps)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SLAX",
+     "pattern": "\\b(SLAX)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Sokudo",
+     "pattern": "\\[Sokudo\\]|-Sokudo\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SRW",
+     "pattern": "\\b(SRW)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SSA",
+     "pattern": "\\b(SSA)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "StrayGods",
+     "pattern": "\\b(StrayGods)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Suki Desu",
+     "pattern": "\\[Suki[ .-]?Desu\\]|-Suki[ .-]?Desu\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TeamTurquoize",
+     "pattern": "\\b(TeamTurquoize)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Tenrai Sensei",
+     "pattern": "\\b(Tenrai[ .-]?Sensei)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TnF",
+     "pattern": "\\b(TnF)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TOPKEK",
+     "pattern": "\\b(TOPKEK)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Trix",
+     "pattern": "\\[Trix\\]|-Trix\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "U3-Web",
+     "pattern": "\\b(U3-Web)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "UNBIASED",
+     "pattern": "\\[UNBIASED\\]|-UNBIASED\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "uP",
+     "pattern": "\\[uP\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "USD",
+     "pattern": "\\[USD\\]|-USD\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Valenciano",
+     "pattern": "\\b(Valenciano)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "VipapkStudios",
+     "pattern": "\\b(VipapkStudios)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Wardevil",
+     "pattern": "\\[Wardevil\\]|-Wardevil\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "WtF Anime",
+     "pattern": "\\b(WtF[ ._-]?Anime)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "xiao-av1",
+     "pattern": "\\b(xiao-av1)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Yabai_Desu_NeRandomRemux",
+     "pattern": "\\b(Yabai_Desu_NeRandomRemux)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "YakuboEncodes",
+     "pattern": "\\b(YakuboEncodes)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "youshikibi",
+     "pattern": "\\b(youshikibi)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "YuiSubs",
+     "pattern": "\\b(YuiSubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Yun",
+     "pattern": "\\[Yun\\]|-Yun\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "zza",
+     "pattern": "\\[zza\\]|-zza\\b"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "web-tier-01",
+   "title": "WEB Tier 01",
+   "kind": "tier",
+   "tier": 1,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ABBIE",
+     "pattern": "^(ABBIE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "AJP69",
+     "pattern": "^(AJP69)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "APEX",
+     "pattern": "^(APEX|PAXA|PEXA|XEPA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BLUTONiUM",
+     "pattern": "^(BLUTONiUM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BYNDR",
+     "pattern": "^(BYNDR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CMRG",
+     "pattern": "^(CMRG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CRFW",
+     "pattern": "^(CRFW)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CRUD",
+     "pattern": "^(CRUD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FLUX",
+     "pattern": "^(FLUX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GNOME",
+     "pattern": "^(GNOME)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HONE",
+     "pattern": "^(HONE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KiNGS",
+     "pattern": "^(KiNGS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Kitsune",
+     "pattern": "^(Kitsune)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MADSKY",
+     "pattern": "^(MADSKY)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NOSiViD",
+     "pattern": "^(NOSiViD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NTb",
+     "pattern": "^(NTb)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NTG",
+     "pattern": "^(NTG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RAWR",
+     "pattern": "^(RAWR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SiC",
+     "pattern": "^(SiC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TEPES",
+     "pattern": "^(TEPES)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TheFarm",
+     "pattern": "^(TheFarm)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ZoroSenpai",
+     "pattern": "^(ZoroSenpai)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "web-tier-02",
+   "title": "WEB Tier 02",
+   "kind": "tier",
+   "tier": 2,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "dB",
+     "pattern": "^(dB)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Flights",
+     "pattern": "^(Flights)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MiU",
+     "pattern": "^(MiU)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "monkee",
+     "pattern": "^(monkee)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MZABI",
+     "pattern": "^(MZABI)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PHOENiX",
+     "pattern": "^(PHOENiX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "playWEB",
+     "pattern": "^(playWEB)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SbR",
+     "pattern": "^(SbR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SMURF",
+     "pattern": "^(SMURF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TOMMY",
+     "pattern": "^(TOMMY)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "XEBEC",
+     "pattern": "^(XEBEC|4KBEC|CEBEX)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "web-tier-03",
+   "title": "WEB Tier 03",
+   "kind": "tier",
+   "tier": 3,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BLOOM",
+     "pattern": "^(BLOOM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Dooky",
+     "pattern": "^(Dooky)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GNOMiSSiON",
+     "pattern": "^(GNOMiSSiON)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NINJACENTRAL",
+     "pattern": "^(NINJACENTRAL)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NPMS",
+     "pattern": "^(NPMS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ROCCaT",
+     "pattern": "^(ROCCaT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SiGMA",
+     "pattern": "^(SiGMA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SLiGNOME",
+     "pattern": "^(SLiGNOME)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SwAgLaNdEr",
+     "pattern": "^(SwAgLaNdEr)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "hd-bluray-tier-01",
+   "title": "HD Bluray Tier 01",
+   "kind": "tier",
+   "tier": 1,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ATELiER",
+     "pattern": "^(ATELiER)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BBQ",
+     "pattern": "^(BBQ)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BMF",
+     "pattern": "^(BMF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "c0kE",
+     "pattern": "^(c0kE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Chotab",
+     "pattern": "^(Chotab)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CRiSC",
+     "pattern": "^(CRiSC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CtrlHD",
+     "pattern": "^(CtrlHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "D-Z0N3",
+     "pattern": "^(D-Z0N3)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Dariush",
+     "pattern": "^(Dariush)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "decibeL",
+     "pattern": "^(decibeL)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DON",
+     "pattern": "^(DON)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EbP",
+     "pattern": "^(EbP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EDPH",
+     "pattern": "^(EDPH)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Geek",
+     "pattern": "^(Geek)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "LolHD",
+     "pattern": "^(LolHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NCmt",
+     "pattern": "^(NCmt)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PTer",
+     "pattern": "^(PTer)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TayTO",
+     "pattern": "^(TayTO)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TDD",
+     "pattern": "^(TDD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TnP",
+     "pattern": "^(TnP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "VietHD",
+     "pattern": "^(VietHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ZQ",
+     "pattern": "^(ZQ)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ZoroSenpai",
+     "pattern": "^(ZoroSenpai)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "hd-bluray-tier-02",
+   "title": "HD Bluray Tier 02",
+   "kind": "tier",
+   "tier": 2,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EA",
+     "pattern": "^(EA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HiDt",
+     "pattern": "^(HiDt)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HiSD",
+     "pattern": "^(HiSD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iFT",
+     "pattern": "^(iFT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NTb",
+     "pattern": "^(NTb)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "QOQ",
+     "pattern": "^(QOQ)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SA89",
+     "pattern": "^(SA89)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "sbR",
+     "pattern": "^(sbR)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "hd-bluray-tier-03",
+   "title": "HD Bluray Tier 03",
+   "kind": "tier",
+   "tier": 3,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BHDStudio",
+     "pattern": "^(BHDStudio)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "hallowed",
+     "pattern": "^(hallowed)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HiFi",
+     "pattern": "^(HiFi)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HONE",
+     "pattern": "^(HONE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "LoRD",
+     "pattern": "^(LoRD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "playHD",
+     "pattern": "^(playHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SPHD",
+     "pattern": "^(SPHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "W4NK3R",
+     "pattern": "^(W4NK3R)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "uhd-bluray-tier-01",
+   "title": "UHD Bluray Tier 01",
+   "kind": "tier",
+   "tier": 1,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CtrlHD",
+     "pattern": "^(CtrlHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MainFrame",
+     "pattern": "^(MainFrame)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DON",
+     "pattern": "^(DON)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "W4NK3R",
+     "pattern": "^(W4NK3R)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "uhd-bluray-tier-02",
+   "title": "UHD Bluray Tier 02",
+   "kind": "tier",
+   "tier": 2,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HiDt",
+     "pattern": "^(HiDt)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HQMUX",
+     "pattern": "^(HQMUX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RandomBytes",
+     "pattern": "^(RandomBytes)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "uhd-bluray-tier-03",
+   "title": "UHD Bluray Tier 03",
+   "kind": "tier",
+   "tier": 3,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BHDStudio",
+     "pattern": "^(BHDStudio)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "hallowed",
+     "pattern": "^(hallowed)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HONE",
+     "pattern": "^(HONE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PTer",
+     "pattern": "^(PTer)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SPHD",
+     "pattern": "^(SPHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "WEBDV",
+     "pattern": "^(WEBDV)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "remux-tier-01",
+   "title": "Remux Tier 01",
+   "kind": "tier",
+   "tier": 1,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "3L",
+     "pattern": "^(3L)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ATELiER",
+     "pattern": "^(ATELiER)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BiZKiT",
+     "pattern": "^(BiZKiT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BLURANiUM",
+     "pattern": "^(BLURANiUM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BMF",
+     "pattern": "^(BMF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CiNEPHiLES",
+     "pattern": "^(CiNEPHiLES)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FraMeSToR",
+     "pattern": "^(FraMeSToR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PiRAMiDHEAD",
+     "pattern": "^(PiRAMiDHEAD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PmP",
+     "pattern": "^(PmP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "WiLDCAT",
+     "pattern": "^(WiLDCAT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ZQ",
+     "pattern": "^(ZQ)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "remux-tier-02",
+   "title": "Remux Tier 02",
+   "kind": "tier",
+   "tier": 2,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NCmt",
+     "pattern": "^(NCmt)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "playBD",
+     "pattern": "^(playBD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SiCFoI",
+     "pattern": "^(SiCFoI)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SURFINBIRD",
+     "pattern": "^(SURFINBIRD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TEPES",
+     "pattern": "^(TEPES)$"
+    }
+   ]
+  },
+  {
+   "app": "radarr",
+   "format": "remux-tier-03",
+   "title": "Remux Tier 03",
+   "kind": "tier",
+   "tier": 3,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "12GaugeShotgun",
+     "pattern": "^(12GaugeShotgun)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "decibeL",
+     "pattern": "^(decibeL)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EPSiLON",
+     "pattern": "^(EPSiLON)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HiFi",
+     "pattern": "^(HiFi)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iFT",
+     "pattern": "^(iFT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KRaLiMaRKo",
+     "pattern": "^(KRaLiMaRKo)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NTb",
+     "pattern": "^(NTb)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PTP",
+     "pattern": "^(PTP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SumVision",
+     "pattern": "^(SumVision)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TOA",
+     "pattern": "^(TOA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TRiToN",
+     "pattern": "^(TRiToN)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "lq",
+   "title": "LQ",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "126811",
+     "pattern": "^(126811)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BRiNK",
+     "pattern": "^(BRiNK)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BTM",
+     "pattern": "^(BTM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CHX",
+     "pattern": "^(CHX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CTFOH",
+     "pattern": "^(CTFOH)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "d3g",
+     "pattern": "^(d3g)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DepraveD",
+     "pattern": "^(DepraveD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EVO",
+     "pattern": "^(EVO)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Feranki1980",
+     "pattern": "^(Feranki1980)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FGT",
+     "pattern": "^(FGT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FMD",
+     "pattern": "^(FMD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GHOSTS",
+     "pattern": "^(GHOSTS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HiQVE",
+     "pattern": "^(HiQVE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iNTENSO",
+     "pattern": "^(iNTENSO)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iVy",
+     "pattern": "^(iVy)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "JFF",
+     "pattern": "^(JFF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KC",
+     "pattern": "^(KC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MeGusta",
+     "pattern": "^(MeGusta)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "nhanc3",
+     "pattern": "^(nhanc3)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "OFT",
+     "pattern": "^(OFT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Pahe",
+     "pattern": "Pahe(\\.(ph|in))?\\b"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PSA",
+     "pattern": "^(PSA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SasukeducK",
+     "pattern": "^(SasukeducK)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SHD",
+     "pattern": "^(SHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ShieldBearer",
+     "pattern": "^(ShieldBearer)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TBS",
+     "pattern": "^(TBS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TG",
+     "pattern": "^(TG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "VIDEOHOLE",
+     "pattern": "^(VIDEOHOLE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "worldmkv",
+     "pattern": "^(worldmkv)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "XLF",
+     "pattern": "^(XLF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Zero00",
+     "pattern": "^(Zero00)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "lq-release-title",
+   "title": "LQ (Release Title)",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BEN THE MEN",
+     "pattern": "\\b(BEN[ ._-]THE[ ._-]MEN)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BiTOR (2160p)",
+     "pattern": "(?=.*?(\\b2160p\\b))(?=.*?(\\bBiTOR\\b))"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CREATiVE24",
+     "pattern": "\\b(CREATiVE24)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Feranki1980",
+     "pattern": "\\b(Feranki1980)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "R&H",
+     "pattern": "\\b(R&H)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TeeWee",
+     "pattern": "\\b(TeeWee)\\b"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "retags",
+   "title": "Retags",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": ".heb",
+     "pattern": "[.]heb\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "[eztv]",
+     "pattern": "\\[eztvx?[ ._-]?(io|re|to)?\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "[rarbg]",
+     "pattern": "\\[rarbg\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "[rartv]",
+     "pattern": "\\[rartv\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "[TGx]",
+     "pattern": "\\[TGx\\]"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "obfuscated",
+   "title": "Obfuscated",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "4P",
+     "pattern": "-4P\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "4Planet",
+     "pattern": "-4Planet\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AsRequested",
+     "pattern": "-AsRequested\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BUYMORE",
+     "pattern": "-BUYMORE\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Chamele0n",
+     "pattern": "-Chamele0n\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "GEROV",
+     "pattern": "-GEROV\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "iNC0GNiTO",
+     "pattern": "-iNC0GNiTO\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "NZBGeek",
+     "pattern": "-NZBGeek\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Obfuscated",
+     "pattern": "-Obfuscated\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "postbot",
+     "pattern": "-postbot\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Rakuv",
+     "pattern": "-Rakuv\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Scrambled",
+     "pattern": "(?<=\\bS\\d+\\b).*(Scrambled)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "WhiteRev",
+     "pattern": "-WhiteRev\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "xpost",
+     "pattern": "-xpost\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "WRTEAM",
+     "pattern": "-WRTEAM\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CAPTCHA",
+     "pattern": "-CAPTCHA\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "_nzb",
+     "pattern": "_nzb\\b"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "upscaled",
+   "title": "Upscaled",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AI Upscales",
+     "pattern": "(?<=\\b\\d{3,4}p\\b)(?=.*\\b(HEVC)\\b)(?=.*\\b(AI)\\b)"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AIUS",
+     "pattern": "\\b(AIUS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Regrade",
+     "pattern": "\\b((Upscale)?Re-?graded?)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "RW",
+     "pattern": "\\b(RW)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TheUpscaler",
+     "pattern": "\\b(The[ ._-]?Upscaler)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Upscaled",
+     "pattern": "(?<=\\b\\d{3,4}p\\b).*\\b(AI[ ._-]?(Enhanced?|Remaster(ed)?)|UPS(UHD)?|Upscaled?([ ._-]?UHD)?|UpRez)\\b"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "bad-dual-groups",
+   "title": "Bad Dual Groups",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "alfaHD",
+     "pattern": "^(alfaHD.*)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BAT",
+     "pattern": "^(BAT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BiOMA",
+     "pattern": "^(BiOMA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BlackBit",
+     "pattern": "^(BlackBit)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BNd",
+     "pattern": "^(BNd)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "C.A.A",
+     "pattern": "^(C\\.A\\.A)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "C76",
+     "pattern": "^(C76)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Cory",
+     "pattern": "^(Cory)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CYPHER",
+     "pattern": "^(CYPHER)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EniaHD",
+     "pattern": "^(EniaHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EXTREME",
+     "pattern": "^(EXTREME)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FF",
+     "pattern": "^(FF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FOXX",
+     "pattern": "^(FOXX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "G4RiS",
+     "pattern": "^(G4RiS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GUEIRA",
+     "pattern": "^(GUEIRA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "LCD",
+     "pattern": "^(LCD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MLH",
+     "pattern": "^(MLH)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "N3G4N",
+     "pattern": "^(N3G4N)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "OldT",
+     "pattern": "^(OldT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PD",
+     "pattern": "^(PD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PTHome",
+     "pattern": "^(PTHome)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RiPER",
+     "pattern": "^(RiPER)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RK",
+     "pattern": "^(RK)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SiGLA",
+     "pattern": "^(SiGLA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Tars",
+     "pattern": "^(Tars)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "tokar86a",
+     "pattern": "^(tokar86a)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TURG",
+     "pattern": "^(TURG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "vnlls",
+     "pattern": "^(vnlls)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "WTV",
+     "pattern": "^(WTV)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "XiQUEXiQUE",
+     "pattern": "^(XiQUEXiQUE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Yatogam1",
+     "pattern": "^(Yatogam1)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "YusukeFLA",
+     "pattern": "^(YusukeFLA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ZigZag",
+     "pattern": "^(ZigZag)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ZNM",
+     "pattern": "^(ZNM)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "br-disk",
+   "title": "BR-DISK",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": true,
+     "negate": false,
+     "name": "BR-DISK",
+     "pattern": "^(?!.*\\b((?<!HD[._ -]|HD)DVD|BDRip|MKV|XviD|WMV|d3g|(BD)?REMUX|^(?=.*1080p)(?=.*HEVC)|[xh][-_. ]?26[45]|German.*[DM]L|((?<=\\d{4}).*German.*([DM]L)?)(?=.*\\b(AVC|HEVC|VC[-_. ]?1|MVC|MPEG[-_. ]?2)\\b))\\b)(((?=.*\\b(Blu[-_. ]?ray|BD|HD[-_. ]?DVD)\\b)(?=.*\\b(AVC|HEVC|VC[-_. ]?1|MVC|MPEG[-_. ]?2|BDMV|ISO)\\b))|^((?=.*\\b(((?=.*\\b((.*_)?COMPLETE.*|Dis[ck])\\b)(?=.*(Blu[-_. ]?ray|HD[-_. ]?DVD)))|3D[-_. ]?BD|BR[-_. ]?DISK|Full[-_. ]?Blu[-_. ]?ray|^((?=.*((BD|UHD)[-_. ]?(25|50|66|100|ISO)))))))).*"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "anime-lq-groups",
+   "title": "Anime LQ Groups",
+   "kind": "penalty",
+   "tier": null,
+   "specs": [
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "$tore-Chill",
+     "pattern": "\\b(\\$tore-Chill)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "0neshot",
+     "pattern": "\\b(0neshot)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "224",
+     "pattern": "\\[224\\]|-224\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "A-Destiny",
+     "pattern": "\\b(A-Destiny)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AceAres",
+     "pattern": "\\b(AceAres)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AhmadDev",
+     "pattern": "\\b(AhmadDev)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Anime Chap",
+     "pattern": "\\b(Anime[ .-]?Chap)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Anime Land",
+     "pattern": "\\b(Anime[ .-]?Land)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Anime Time",
+     "pattern": "\\b(Anime[ .-]?Time)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AnimeDynastyEN",
+     "pattern": "\\b(AnimeDynastyEN)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AnimeKuro",
+     "pattern": "\\b(AnimeKuro)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AnimeRG",
+     "pattern": "\\b(AnimeRG)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Animesubs",
+     "pattern": "\\b(Animesubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AnimeTR",
+     "pattern": "\\b(AnimeTR)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Anitsu",
+     "pattern": "\\b(Anitsu)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AniVoid",
+     "pattern": "\\b(AniVoid)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ArataEnc",
+     "pattern": "\\b(ArataEnc)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "AREY",
+     "pattern": "\\b(AREY)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Ari",
+     "pattern": "^\\[Ari\\]|-Ari$"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ASW",
+     "pattern": "\\b(ASW)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BJX",
+     "pattern": "\\b(BJX)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "BlackLuster",
+     "pattern": "\\b(BlackLuster)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "bonkai77",
+     "pattern": "\\b(bonkai77)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CameEsp",
+     "pattern": "\\b(CameEsp)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Cat66",
+     "pattern": "\\b(Cat66)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CBB",
+     "pattern": "\\b(CBB)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Cerberus",
+     "pattern": "\\[Cerberus\\]|-Cerberus\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Cleo",
+     "pattern": "\\[Cleo\\]|-Cleo"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "CuaP",
+     "pattern": "\\b(CuaP)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DaddySubs",
+     "pattern": "\\[Daddy(Subs)?\\]|-Daddy(Subs)?$"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DARKFLiX",
+     "pattern": "\\b(DARKFLiX)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DB",
+     "pattern": "\\[DB\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DBArabic",
+     "pattern": "\\b(DBArabic)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Deadmau- RAWS",
+     "pattern": "\\b(Deadmau[ .-]?[ .-]?RAWS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DKB",
+     "pattern": "\\b(DKB)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DP",
+     "pattern": "\\b(DP)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "DsunS",
+     "pattern": "\\b(DsunS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Emmid",
+     "pattern": "\\[Emmid\\]|-Emmid\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ExREN",
+     "pattern": "\\b(ExREN)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "FAV",
+     "pattern": "\\[FAV\\]|-FAV\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Fish",
+     "pattern": "\\b((Baked|Dead|Space)Fish)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "FunArts",
+     "pattern": "\\b(FunArts)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "GERMini",
+     "pattern": "\\b(GERMini)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Hakata Ramen",
+     "pattern": "\\b(Hakata[ .-]?Ramen)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Hall_of_C",
+     "pattern": "\\b(Hall_of_C)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Hatsuyuki",
+     "pattern": "\\[Hatsuyuki\\]|-Hatsuyuki\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HAV1T",
+     "pattern": "\\b(HAV1T)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HENiL",
+     "pattern": "\\b(HENiL)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Hitoku",
+     "pattern": "\\[Hitoku\\]|-Hitoku\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HollowRoxas",
+     "pattern": "\\b(HollowRoxas)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "HR",
+     "pattern": "\\[HR\\]|-HR\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "ICEBLUE",
+     "pattern": "\\b(ICEBLUE)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "iPUNISHER",
+     "pattern": "\\b(iPUNISHER)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "JacobSwaggedUp",
+     "pattern": "\\b(JacobSwaggedUp)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Johnny-englishsubs",
+     "pattern": "\\b(Johnny-englishsubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Kallango",
+     "pattern": "\\[Kallango\\]|-Kallango\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Kanjouteki",
+     "pattern": "\\b(Kanjouteki)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "KEKMASTERS",
+     "pattern": "\\b(KEKMASTERS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Kirion",
+     "pattern": "\\b(Kirion)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "KQRM",
+     "pattern": "\\b(KQRM)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "KRP",
+     "pattern": "\\b(KRP)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "LoliHouse",
+     "pattern": "\\b(LoliHouse)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "M@nI",
+     "pattern": "\\b(M@nI)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "mal lu zen",
+     "pattern": "\\b(mal[ .-]lu[ .-]zen)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Man.K",
+     "pattern": "\\b(Man\\.K)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Maximus",
+     "pattern": "\\[Maximus\\]|-Maximus\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MD",
+     "pattern": "\\[MD\\]|-MD\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "mdcx",
+     "pattern": "\\b(mdcx)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Metaljerk",
+     "pattern": "\\b(Metaljerk)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MGD",
+     "pattern": "\\b(MGD)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MiniFreeza",
+     "pattern": "\\b(MiniFreeza)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MiniMTBB",
+     "pattern": "\\b(MiniMTBB)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MinisCuba",
+     "pattern": "\\b(MinisCuba)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "MiniTheatre",
+     "pattern": "\\b(MiniTheatre)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Mites",
+     "pattern": "\\[Mites\\]|-Mites$"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Modders Bay",
+     "pattern": "\\b(Modders[ .-]?Bay)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Mr. Deadpool",
+     "pattern": "\\b(Mr\\.Deadpool)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "NemDiggers",
+     "pattern": "\\b(NemDiggers)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "neoHEVC",
+     "pattern": "\\b(neoHEVC)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Nokou",
+     "pattern": "\\b(Nokou)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "NoobSubs",
+     "pattern": "\\b(N[eo][wo]b[ ._-]?Subs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "NS",
+     "pattern": "\\b(NS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Nyanpasu",
+     "pattern": "\\b(Nyanpasu)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "OldCastle",
+     "pattern": "\\b(OldCastle)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Pantsu",
+     "pattern": "\\[Pantsu\\]|-Pantsu\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Pao",
+     "pattern": "\\[Pao\\]|-Pao\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "phazer11",
+     "pattern": "\\b(phazer11)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Pixel",
+     "pattern": "\\[Pixel\\]|-Pixel\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Plex Friendly",
+     "pattern": "\\b(Plex[ .-]?Friendly)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "PnPSubs",
+     "pattern": "\\b(PnPSubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Polarwindz",
+     "pattern": "\\b(Polarwindz)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Project-gxs",
+     "pattern": "\\b(Project-gxs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "PuyaSubs",
+     "pattern": "\\b(PuyaSubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "QaS",
+     "pattern": "\\b(QAS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "QCE",
+     "pattern": "\\b(QCE)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Rando235",
+     "pattern": "\\b(Rando235)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Ranger",
+     "pattern": "\\[Ranger\\]|-Ranger\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Rapta",
+     "pattern": "\\[Rapta\\]|-Rapta\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Raw Files",
+     "pattern": "\\b(M2TS|BDMV|BDVD)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Raze",
+     "pattern": "\\[Raze\\]|-Raze\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Reaktor",
+     "pattern": "\\b(Reaktor)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "RightShiftBy2",
+     "pattern": "\\b(RightShiftBy2)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Rip Time",
+     "pattern": "\\b(Rip[ .-]?Time)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SAD",
+     "pattern": "\\[SAD\\]|-SAD$"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Salieri",
+     "pattern": "\\b(Salieri)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Samir755",
+     "pattern": "\\b(Samir755)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SanKyuu",
+     "pattern": "\\b(SanKyuu)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SEiN",
+     "pattern": "\\[SEiN\\]|-SEiN\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "sekkusu&ok",
+     "pattern": "\\b(sekkusu&ok)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SHFS",
+     "pattern": "\\b(SHFS)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "shincaps",
+     "pattern": "\\b(shincaps)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SLAX",
+     "pattern": "\\b(SLAX)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Sokudo",
+     "pattern": "\\[Sokudo\\]|-Sokudo\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SRW",
+     "pattern": "\\b(SRW)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "SSA",
+     "pattern": "\\b(SSA)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "StrayGods",
+     "pattern": "\\b(StrayGods)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Suki Desu",
+     "pattern": "\\[Suki[ .-]?Desu\\]|-Suki[ .-]?Desu\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TeamTurquoize",
+     "pattern": "\\b(TeamTurquoize)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Tenrai Sensei",
+     "pattern": "\\b(Tenrai[ .-]?Sensei)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TnF",
+     "pattern": "\\b(TnF)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "TOPKEK",
+     "pattern": "\\b(TOPKEK)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Trix",
+     "pattern": "\\[Trix\\]|-Trix\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "U3-Web",
+     "pattern": "\\b(U3-Web)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "UNBIASED",
+     "pattern": "\\[UNBIASED\\]|-UNBIASED\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "uP",
+     "pattern": "\\[uP\\]"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "USD",
+     "pattern": "\\[USD\\]|-USD\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Valenciano",
+     "pattern": "\\b(Valenciano)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "VipapkStudios",
+     "pattern": "\\b(VipapkStudios)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Wardevil",
+     "pattern": "\\[Wardevil\\]|-Wardevil\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "WtF Anime",
+     "pattern": "\\b(WtF[ ._-]?Anime)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "xiao-av1",
+     "pattern": "\\b(xiao-av1)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Yabai_Desu_NeRandomRemux",
+     "pattern": "\\b(Yabai_Desu_NeRandomRemux)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "YakuboEncodes",
+     "pattern": "\\b(YakuboEncodes)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "youshikibi",
+     "pattern": "\\b(youshikibi)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "YuiSubs",
+     "pattern": "\\b(YuiSubs)\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "Yun",
+     "pattern": "\\[Yun\\]|-Yun\\b"
+    },
+    {
+     "on": "title",
+     "required": false,
+     "negate": false,
+     "name": "zza",
+     "pattern": "\\[zza\\]|-zza\\b"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "web-tier-01",
+   "title": "WEB Tier 01",
+   "kind": "tier",
+   "tier": 1,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ABBiE",
+     "pattern": "^(ABBiE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "AJP69",
+     "pattern": "^(AJP69)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "APEX",
+     "pattern": "^(APEX|PAXA|PEXA|XEPA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CasStudio",
+     "pattern": "^(CasStudio)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CRFW",
+     "pattern": "^(CRFW)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CtrlHD",
+     "pattern": "^(CtrlHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FLUX",
+     "pattern": "^(FLUX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HONE",
+     "pattern": "^(HONE)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KiNGS",
+     "pattern": "^(KiNGS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Kitsune",
+     "pattern": "^(Kitsune)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MADSKY",
+     "pattern": "^(MADSKY)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "monkee",
+     "pattern": "^(monkee)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NOSiViD",
+     "pattern": "^(NOSiViD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NTb",
+     "pattern": "^(NTb)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NTG",
+     "pattern": "^(NTG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "QOQ",
+     "pattern": "^(QOQ)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RAWR",
+     "pattern": "^(RAWR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RTN",
+     "pattern": "^(RTN)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SiC",
+     "pattern": "^(SiC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "T6D",
+     "pattern": "^(T6D)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TOMMY",
+     "pattern": "^(TOMMY)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ViSUM",
+     "pattern": "^(ViSUM)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "web-tier-02",
+   "title": "WEB Tier 02",
+   "kind": "tier",
+   "tier": 2,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "3cTWeB",
+     "pattern": "^(3cTWeB)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BLUTONiUM",
+     "pattern": "^(BLUTONiUM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BTW",
+     "pattern": "^(BTW)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BYNDR",
+     "pattern": "^(BYNDR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Chotab",
+     "pattern": "^(Chotab)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Cinefeel",
+     "pattern": "^(Cinefeel)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CiT",
+     "pattern": "^(CiT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CMRG",
+     "pattern": "^(CMRG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Coo7",
+     "pattern": "^(Coo7)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "dB",
+     "pattern": "^(dB)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DEEP",
+     "pattern": "^(DEEP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "END",
+     "pattern": "^(END)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ETHiCS",
+     "pattern": "^(ETHiCS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FC",
+     "pattern": "^(FC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Flights",
+     "pattern": "^(Flights)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "GNOME",
+     "pattern": "^(GNOME)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iJP",
+     "pattern": "^(iJP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iKA",
+     "pattern": "^(iKA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "iT00NZ",
+     "pattern": "^(iT00NZ)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "JETIX",
+     "pattern": "^(JETIX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KHN",
+     "pattern": "^(KHN)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KiMCHI",
+     "pattern": "^(KiMCHI)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "LAZY",
+     "pattern": "^(LAZY)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MiU",
+     "pattern": "^(MiU)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "MZABI",
+     "pattern": "^(MZABI)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NPMS",
+     "pattern": "^(NPMS)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NYH",
+     "pattern": "^(NYH)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "orbitron",
+     "pattern": "^(orbitron)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PHOENiX",
+     "pattern": "^(PHOENiX)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "playWEB",
+     "pattern": "^(playWEB)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PSiG",
+     "pattern": "^(PSiG)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ROCCaT",
+     "pattern": "^(ROCCaT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "RTFM",
+     "pattern": "^(RTFM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SA89",
+     "pattern": "^(SA89)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SbR",
+     "pattern": "^(SbR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SDCC",
+     "pattern": "^(SDCC)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SIGMA",
+     "pattern": "^(SIGMA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SMURF",
+     "pattern": "^(SMURF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SPiRiT",
+     "pattern": "^(SPiRiT)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TEPES",
+     "pattern": "^(TEPES)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TVSmash",
+     "pattern": "^(TVSmash)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "WELP",
+     "pattern": "^(WELP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "XEBEC",
+     "pattern": "^(XEBEC|4KBEC|CEBEX)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "web-tier-03",
+   "title": "WEB Tier 03",
+   "kind": "tier",
+   "tier": 3,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BLOOM",
+     "pattern": "^(BLOOM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Dooky",
+     "pattern": "^(Dooky)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DRACULA",
+     "pattern": "^(DRACULA)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NINJACENTRAL",
+     "pattern": "^(NINJACENTRAL)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SLiGNOME",
+     "pattern": "^(SLiGNOME)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SwAgLaNdEr",
+     "pattern": "^(SwAgLaNdEr)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "T4H",
+     "pattern": "^(T4H)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "ViSiON",
+     "pattern": "^(ViSiON)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "hd-bluray-tier-01",
+   "title": "HD Bluray Tier 01",
+   "kind": "tier",
+   "tier": 1,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "Chotab",
+     "pattern": "^(Chotab)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "CtrlHD",
+     "pattern": "^(CtrlHD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "DON",
+     "pattern": "^(DON)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EbP",
+     "pattern": "^(EbP)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "NTb",
+     "pattern": "^(NTb)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PTer",
+     "pattern": "^(PTer)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "hd-bluray-tier-02",
+   "title": "HD Bluray Tier 02",
+   "kind": "tier",
+   "tier": 2,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SA89",
+     "pattern": "^(SA89)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "sbR",
+     "pattern": "^(sbR)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "remux-tier-01",
+   "title": "Remux Tier 01",
+   "kind": "tier",
+   "tier": 1,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BLURANiUM",
+     "pattern": "^(BLURANiUM)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "BMF",
+     "pattern": "^(BMF)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "FraMeSToR",
+     "pattern": "^(FraMeSToR)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PmP",
+     "pattern": "^(PmP)$"
+    }
+   ]
+  },
+  {
+   "app": "sonarr",
+   "format": "remux-tier-02",
+   "title": "Remux Tier 02",
+   "kind": "tier",
+   "tier": 2,
+   "specs": [
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "12GaugeShotgun",
+     "pattern": "^(12GaugeShotgun)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "decibeL",
+     "pattern": "^(decibeL)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "EPSiLON",
+     "pattern": "^(EPSiLON)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "HiFi",
+     "pattern": "^(HiFi)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "KRaLiMaRKo",
+     "pattern": "^(KRaLiMaRKo)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "playBD",
+     "pattern": "^(playBD)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "PTer",
+     "pattern": "^(PTer)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "SiCFoI",
+     "pattern": "^(SiCFoI)$"
+    },
+    {
+     "on": "group",
+     "required": false,
+     "negate": false,
+     "name": "TRiToN",
+     "pattern": "^(TRiToN)$"
+    }
+   ]
+  }
+ ]
+}

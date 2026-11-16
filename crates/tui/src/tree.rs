@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use torrential_core::{FileRisk, TorrentFile};
+use torrential_core::{FileRisk, ReleaseFile};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum NodeKind {
@@ -24,7 +24,7 @@ pub enum Check {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Tree {
-    pub files: Vec<TorrentFile>,
+    pub files: Vec<ReleaseFile>,
     pub nodes: Vec<Node>,
     pub picked: Vec<bool>,
     pub folded: BTreeSet<usize>,
@@ -65,7 +65,7 @@ impl Dir {
         }
     }
 
-    fn flatten(self, depth: u16, files: &[TorrentFile], nodes: &mut Vec<Node>) {
+    fn flatten(self, depth: u16, files: &[ReleaseFile], nodes: &mut Vec<Node>) {
         let at = nodes.len();
         nodes.push(Node { depth, name: self.name, kind: NodeKind::Folder { end: 0 } });
         for child in self.children {
@@ -85,7 +85,7 @@ fn leaf(path: &str) -> String {
 }
 
 impl Tree {
-    pub fn new(name: &str, files: Vec<TorrentFile>) -> Self {
+    pub fn new(name: &str, files: Vec<ReleaseFile>) -> Self {
         let mut nodes = Vec::new();
         if let [only] = files.as_slice()
             && !only.path.contains('/')
@@ -224,8 +224,8 @@ impl Tree {
 mod tests {
     use super::*;
 
-    fn file(path: &str, size: u64, risky: bool) -> TorrentFile {
-        TorrentFile {
+    fn file(path: &str, size: u64, risky: bool) -> ReleaseFile {
+        ReleaseFile {
             index: 0,
             path: path.into(),
             size,
@@ -260,7 +260,7 @@ mod tests {
     }
 
     #[test]
-    fn a_single_file_torrent_has_no_root_folder() {
+    fn a_single_file_release_has_no_root_folder() {
         let tree = Tree::new("arch.iso", vec![file("arch.iso", 9, false)]);
         assert_eq!(outline(&tree), ["arch.iso"]);
     }

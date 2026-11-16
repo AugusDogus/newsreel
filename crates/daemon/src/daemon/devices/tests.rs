@@ -149,7 +149,7 @@ async fn the_engine_listens_on_the_network_while_a_device_is_paired_a_code_is_op
     home.devices.remove(&device.id, PORT).unwrap();
     assert_eq!(*reach.borrow(), Reach::Loopback, "the last device removed");
 
-    let grant = home.devices.grant(TorrentId::from_bytes([7; 20]), 0, "Sintel.mkv").unwrap();
+    let grant = home.devices.grant(DownloadId::from_bytes([7; 20]), 0, "Sintel.mkv").unwrap();
     assert_eq!(*reach.borrow(), Reach::Network, "a cast");
     drop(grant);
     assert_eq!(*reach.borrow(), Reach::Loopback, "the cast ended");
@@ -185,7 +185,7 @@ async fn a_removed_device_is_locked_out_and_its_open_requests_end() {
 #[tokio::test]
 async fn a_grant_serves_its_one_path_until_it_is_dropped() {
     let home = Home::new();
-    let film = TorrentId::from_bytes([7; 20]);
+    let film = DownloadId::from_bytes([7; 20]);
     let grant = home.devices.grant(film, 2, "Big Buck Bunny.mp4").unwrap();
     let path = grant.path().to_string();
     let token = path.strip_prefix("/cast/").unwrap().split('/').next().unwrap().to_string();

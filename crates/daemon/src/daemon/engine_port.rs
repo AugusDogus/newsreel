@@ -5,20 +5,13 @@ use std::time::Duration;
 
 use crate::log::log;
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
-use torrential_core::{Error, PieceMap, Slice, TorrentId};
-
-use super::metainfo::Metainfo;
+use torrential_core::{DownloadId, Error, PieceMap, Slice};
 
 #[derive(Clone, PartialEq, Debug)]
-pub enum AddSource {
-    Magnet(String),
-    Metainfo(Vec<u8>),
-}
-
-#[derive(Clone, PartialEq, Debug)]
-pub struct AddTorrent {
-    pub id: TorrentId,
-    pub source: AddSource,
+pub struct AddDownload {
+    pub id: DownloadId,
+    /// The bytes `ParseLayout` read the release's files from.
+    pub manifest: Vec<u8>,
     pub save_path: PathBuf,
     pub wanted: Option<Vec<bool>>,
     pub resume_data: Option<Vec<u8>>,
@@ -27,7 +20,6 @@ pub struct AddTorrent {
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Activity {
-    Metadata,
     Checking,
     Downloading,
 }
@@ -38,9 +30,7 @@ pub struct Stats {
     pub piece_map: Option<PieceMap>,
     pub missing: Option<Missing>,
     pub down_rate: u64,
-    pub up_rate: u64,
-    pub peers: u32,
-    pub seeds: u32,
+    pub connections: u32,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -51,71 +41,64 @@ pub struct Missing {
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum EngineEvent {
-    Metadata {
-        id: TorrentId,
-        metainfo: Metainfo,
-    },
     Activity {
-        id: TorrentId,
+        id: DownloadId,
         activity: Activity,
     },
     Stats {
-        id: TorrentId,
+        id: DownloadId,
         stats: Stats,
     },
     Finished {
-        id: TorrentId,
+        id: DownloadId,
     },
     Paused {
-        id: TorrentId,
+        id: DownloadId,
     },
     ResumeData {
-        id: TorrentId,
+        id: DownloadId,
         data: Vec<u8>,
         verified: Option<u64>,
         piece_map: Option<PieceMap>,
         files: Option<Vec<u64>>,
     },
     Checked {
-        id: TorrentId,
+        id: DownloadId,
         damaged_pieces: u32,
         verified: u64,
         piece_map: Option<PieceMap>,
         files: Vec<u64>,
     },
     Failed {
-        id: TorrentId,
+        id: DownloadId,
         error: Error,
     },
     Removed {
-        id: TorrentId,
+        id: DownloadId,
     },
 }
 
 /// What the engine does to downloads, on the engine thread.
 pub trait EnginePort: Send {
-    fn add(&mut self, torrent: AddTorrent) -> Result<(), Error>;
-    fn select(&mut self, id: TorrentId, wanted: &[bool]) -> Result<(), Error>;
-    fn pause(&mut self, id: TorrentId) -> Result<(), Error>;
-    fn resume(&mut self, id: TorrentId) -> Result<(), Error>;
-    fn recheck(&mut self, id: TorrentId) -> Result<(), Error>;
-    fn save_resume_data(&mut self, id: TorrentId) -> Result<(), Error>;
-    fn save_resume_data_if_progressed(&mut self, id: TorrentId) -> Result<(), Error>;
-    fn remove(&mut self, id: TorrentId) -> Result<(), Error>;
-    fn file_progress(&mut self, id: TorrentId) -> Result<Vec<u64>, Error>;
+    fn add(&mut self, release: AddDownload) -> Result<(), Error>;
+    fn select(&mut self, id: DownloadId, wanted: &[bool]) -> Result<(), Error>;
+    fn pause(&mut self, id: DownloadId) -> Result<(), Error>;
+    fn resume(&mut self, id: DownloadId) -> Result<(), Error>;
+    fn recheck(&mut self, id: DownloadId) -> Result<(), Error>;
+    fn save_resume_data(&mut self, id: DownloadId) -> Result<(), Error>;
+    fn save_resume_data_if_progressed(&mut self, id: DownloadId) -> Result<(), Error>;
+    fn remove(&mut self, id: DownloadId) -> Result<(), Error>;
+    fn file_progress(&mut self, id: DownloadId) -> Result<Vec<u64>, Error>;
     /// Fetches the pieces under this byte range of a file first. Answers how many bytes from
     /// `offset` on are verified and on disk: `length` once all of them are.
-    fn want_range(&mut self, id: TorrentId, file: u32, offset: u64, length: u64) -> Result<u64, Error>;
+    fn want_range(&mut self, id: DownloadId, file: u32, offset: u64, length: u64) -> Result<u64, Error>;
     /// How much of each of `runs` equal runs of this byte range of a file is verified and on disk,
-    /// in order. Unlike `want_range`, this asks peers for nothing.
-    fn written(&mut self, id: TorrentId, file: u32, offset: u64, length: u64, runs: u32) -> Result<Vec<Slice>, Error>;
+    /// in order. Unlike `want_range`, this fetches nothing.
+    fn written(&mut self, id: DownloadId, file: u32, offset: u64, length: u64, runs: u32) -> Result<Vec<Slice>, Error>;
     /// Downloads pieces in file order, for a download someone watches as it arrives.
-    fn stream(&mut self, id: TorrentId) -> Result<(), Error>;
+    fn stream(&mut self, id: DownloadId) -> Result<(), Error>;
     /// Caps how fast a download goes, in bytes a second. `None` lifts the cap.
-    fn limit(&mut self, id: TorrentId, rate: Option<NonZeroU32>) -> Result<(), Error>;
-    /// Adds web seeds that serve every file of a download the engine has. One it no longer has
-    /// gets none.
-    fn add_web_seeds(&mut self, id: TorrentId, seeds: &[String]);
+    fn limit(&mut self, id: DownloadId, rate: Option<NonZeroU32>) -> Result<(), Error>;
 }
 
 /// What the engine thread runs: the port each request acts on, and the events it waits for.
@@ -148,7 +131,7 @@ impl EngineHandle {
     }
 
     /// Has the engine do `act` to download `id`. A failure stops that download with the error.
-    pub fn send(&self, id: TorrentId, act: impl FnOnce(&mut dyn EnginePort) -> Result<(), Error> + Send + 'static) {
+    pub fn send(&self, id: DownloadId, act: impl FnOnce(&mut dyn EnginePort) -> Result<(), Error> + Send + 'static) {
         self.push(Box::new(move |port| act(port).err().map(|error| EngineEvent::Failed { id, error })));
     }
 
@@ -167,7 +150,7 @@ impl EngineHandle {
 
     /// Changes how fast `id` downloads. A limit the engine cannot set leaves the download running
     /// as it was, not failed.
-    pub fn limit(&self, id: TorrentId, rate: Option<NonZeroU32>) {
+    pub fn limit(&self, id: DownloadId, rate: Option<NonZeroU32>) {
         self.run(move |port| {
             if let Err(error) = port.limit(id, rate) {
                 log(&format!("cannot change how fast {id} downloads: {}", error.message));

@@ -2,7 +2,7 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::id::ReleaseId;
+use crate::id::ResultId;
 
 crate::words! {
     /// Every failure torrential reports. The code is the contract; messages are for people.
@@ -12,13 +12,12 @@ crate::words! {
         Usage = "usage",
         ConfirmationRequired = "confirmation_required",
         InvalidRef = "invalid_ref",
-        InvalidTorrent = "invalid_torrent",
+        InvalidRelease = "invalid_release",
         NotFound = "not_found",
         AmbiguousRef = "ambiguous_ref",
         JobConflict = "job_conflict",
         PathConflict = "path_conflict",
         ProvidersUnavailable = "providers_unavailable",
-        MetadataTimeout = "metadata_timeout",
         NetworkUnavailable = "network_unavailable",
         FetchFailed = "fetch_failed",
         SandboxNetworkBlocked = "sandbox_network_blocked",
@@ -31,8 +30,8 @@ crate::words! {
         NoSelection = "no_selection",
         StorageError = "storage_error",
         VerificationFailed = "verification_failed",
-        /// No connected peer or web seed had the pieces a download still needed, for long enough
-        /// that the engine stopped it.
+        /// No server had the articles a download still needed: they expired, or no server sent
+        /// them for long enough that the engine stopped it.
         NoSource = "no_source",
         Interrupted = "interrupted",
         /// A browser on the home network that is not one of the paired devices.
@@ -243,7 +242,7 @@ impl Serialize for Skip {
 impl fmt::Display for Skip {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Skip::NoFileList { waited_s } => write!(f, "no peer sent its file list in {waited_s}s"),
+            Skip::NoFileList { waited_s } => write!(f, "its NZB did not arrive in {waited_s}s"),
             Skip::NoVideo => f.write_str("none of its files is the video"),
             Skip::Unplayable { container } => write!(f, "its .{container} file needs ffmpeg, which is not installed"),
             Skip::NotOnTv { container } => write!(f, "the TV does not play its .{container} file"),
@@ -257,7 +256,7 @@ impl fmt::Display for Skip {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Tried {
-    pub release: ReleaseId,
+    pub release: ResultId,
     pub reason: Skip,
 }
 
