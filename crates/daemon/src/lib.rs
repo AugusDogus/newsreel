@@ -1,5 +1,5 @@
 //! The engine, and what the engine and the CLI both use: the environment and file layout, the
-//! config, the login service, updates, the wire framing, and the playback rules. The `torrential`
+//! config, the login service, updates, the wire framing, and the playback rules. The `newsreel`
 //! crate is the CLI on top of it, and nothing here reads the CLI.
 
 pub mod config;

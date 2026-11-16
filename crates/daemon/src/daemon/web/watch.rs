@@ -4,9 +4,9 @@
 use std::io;
 use std::process::Stdio;
 
+use newsreel_core::protocol::Event;
+use newsreel_core::{Error, ErrorCode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use torrential_core::protocol::Event;
-use torrential_core::{Error, ErrorCode};
 
 use super::super::ctx::Ctx;
 use super::super::downloads::JobEvents;

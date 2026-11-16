@@ -1,0 +1,34 @@
+---
+source: crates/newsreel/tests/golden.rs
+expression: value
+---
+{
+  "code": 0,
+  "stdout": {
+    "schema": 1,
+    "type": "jobs",
+    "jobs": [
+      {
+        "id": "6f2c815d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+        "name": "wikipedia-en-2026-09-text",
+        "dir": "[home]/Downloads/newsreel",
+        "path": "[home]/Downloads/newsreel/wikipedia-en-2026-09-text",
+        "state": "downloading",
+        "progress": {
+          "size": 24961671577,
+          "verified": 5728508755,
+          "piece_map": "0424200220022846042000244240244244402220022022020240000024220002",
+          "down_rate": 0,
+          "connections": 3,
+          "eta": null
+        },
+        "selection": {
+          "kind": "all"
+        },
+        "added_at": "[redacted]",
+        "place": "folder"
+      }
+    ],
+    "next": "newsreel wait 6f2c81"
+  }
+}

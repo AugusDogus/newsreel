@@ -1,4 +1,4 @@
-//! The disk a download lands on: its free space, the part of it torrential leaves free, and what
+//! The disk a download lands on: its free space, the part of it newsreel leaves free, and what
 //! is already there.
 
 #[cfg(test)]
@@ -37,7 +37,7 @@ pub trait Disk: Send + Sync {
     fn open_folder(&self, path: &Path) -> std::io::Result<Folder>;
 }
 
-/// What torrential leaves free on a disk of `total` bytes.
+/// What newsreel leaves free on a disk of `total` bytes.
 pub fn reserve(total: u64) -> u64 {
     (total / 50).clamp(MIN_RESERVE, MAX_RESERVE)
 }

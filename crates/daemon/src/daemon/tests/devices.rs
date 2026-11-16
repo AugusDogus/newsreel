@@ -4,11 +4,11 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
 
+use newsreel_core::protocol::{Request, Response, WIRE_VERSION, read_frame};
+use newsreel_core::{DeviceList, ErrorCode};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use torrential_core::protocol::{Request, Response, WIRE_VERSION, read_frame};
-use torrential_core::{DeviceList, ErrorCode};
 
 use super::super::devices::Reach;
 use super::super::http;
@@ -153,8 +153,7 @@ async fn a_phone_reaches_nothing_until_it_pairs_and_nothing_once_it_is_removed()
     let not_paired = (
         401,
         "not_paired".to_string(),
-        "this device is not paired with torrential, so open /pair and enter the code that Add a device shows"
-            .to_string(),
+        "this device is not paired with newsreel, so open /pair and enter the code that Add a device shows".to_string(),
     );
     for path in ["/api/jobs", "/api/home", "/api/devices", "/api/me", "/api/search?q=sintel", "/api/stream?id=x&file=0"]
     {
@@ -169,7 +168,7 @@ async fn a_phone_reaches_nothing_until_it_pairs_and_nothing_once_it_is_removed()
     let mut idle = TcpStream::connect((ip, h.running.ctx.http_port)).await.unwrap();
     let page = phone.get("/pair").await;
     assert_eq!(page.status, 200);
-    assert!(page.text().contains("Enter the code that Add a device shows on the computer running torrential."));
+    assert!(page.text().contains("Enter the code that Add a device shows on the computer running newsreel."));
 
     let wrong = format!("{:06}", (offer.code.parse::<u32>().unwrap() + 1) % 1_000_000);
     assert_eq!(phone.pair(&wrong).await.status, 400);
@@ -187,7 +186,7 @@ async fn a_phone_reaches_nothing_until_it_pairs_and_nothing_once_it_is_removed()
     let bytes = phone.send("GET", &file, &["Range: bytes=0-99"], "").await;
     assert_eq!((bytes.status, bytes.body.len()), (206, 100));
     let mac_only =
-        (403, "local_only".to_string(), "only the computer running torrential can add or remove devices".to_string());
+        (403, "local_only".to_string(), "only the computer running newsreel can add or remove devices".to_string());
     assert_eq!(phone.get("/api/devices").await.error(), mac_only);
     assert_eq!(phone.send("POST", "/api/devices/add", &[], "{}").await.error(), mac_only);
     assert_eq!(phone.get("/pair").await.header("location"), Some("/"));
@@ -223,7 +222,7 @@ async fn a_phone_reaches_nothing_until_it_pairs_and_nothing_once_it_is_removed()
     let removed = (
         401,
         "not_paired".to_string(),
-        "this device was removed from torrential, so open /pair and enter a new code from Add a device".to_string(),
+        "this device was removed from newsreel, so open /pair and enter a new code from Add a device".to_string(),
     );
     assert_eq!(phone.get("/api/jobs").await.error(), removed);
     assert_eq!(phone.get(&file).await.header("location"), Some("/pair"));
@@ -245,7 +244,7 @@ async fn a_request_from_the_network_must_name_this_mac_and_come_from_its_own_pag
     let by_name = Browser { host: format!("{name}:{port}"), ..Browser::on(ip, &h) };
     assert_eq!(by_name.get("/pair").await.status, 200, "the .local name");
     let elsewhere =
-        format!("torrential answers only at its own address, so open http://{name}:{port} on this device instead.\n");
+        format!("newsreel answers only at its own address, so open http://{name}:{port} on this device instead.\n");
     for host in
         [format!("rebound.example:{port}"), format!("{ip}:{}", port + 1), ip.to_string(), format!("127.0.0.1:{port}")]
     {
@@ -282,8 +281,7 @@ async fn a_server_listens_with_nothing_paired_and_lets_its_phone_in_by_any_name(
     let not_paired = (
         401,
         "not_paired".to_string(),
-        "this device is not paired with torrential, so open /pair and enter the code that Add a device shows"
-            .to_string(),
+        "this device is not paired with newsreel, so open /pair and enter the code that Add a device shows".to_string(),
     );
     assert_eq!(phone.get("/api/jobs").await.error(), not_paired);
     assert_eq!(phone.get("/").await.header("location"), Some("/pair"));
@@ -348,7 +346,7 @@ async fn a_phone_pairs_through_a_proxy_at_the_public_address_with_a_secure_cooki
 
 /// Waits out the last seconds of a minute, so tries counted by the minute all fall in one.
 async fn early_in_a_minute() {
-    let second = torrential_core::time::now().rem_euclid(60);
+    let second = newsreel_core::time::now().rem_euclid(60);
     if second > 50 {
         tokio::time::sleep(Duration::from_secs((61 - second) as u64)).await;
     }
@@ -368,10 +366,10 @@ async fn an_address_that_offers_tokens_that_open_nothing_gets_no_more_checked_th
     early_in_a_minute().await;
 
     for n in 0..31 {
-        let guess = Browser { cookie: Some(format!("torrential_device={:064x}", n + 1)), ..Browser::on(ip, &h) };
+        let guess = Browser { cookie: Some(format!("newsreel_device={:064x}", n + 1)), ..Browser::on(ip, &h) };
         assert_eq!(guess.get("/api/jobs").await.error().1, "not_paired", "guess {n}");
     }
-    let refused = Browser { cookie: Some(format!("torrential_device={:064x}", 99)), ..Browser::on(ip, &h) };
+    let refused = Browser { cookie: Some(format!("newsreel_device={:064x}", 99)), ..Browser::on(ip, &h) };
     let refused = refused.get("/api/jobs").await;
     assert_eq!((refused.status, refused.header("retry-after")), (429, Some("60")));
     assert_eq!(phone.get("/api/jobs").await.status, 429, "a device at that address waits the minute out too");
@@ -455,7 +453,7 @@ async fn only_the_token_over_loopback_reaches_the_command_lines_requests_whateve
     assert!(mine.text().contains(r#""type":"hello","engine_version":"0.1.0""#), "{}", mine.text());
 }
 
-/// What the engine at `ip` answers torrential on another machine that sends `token`: the reply, or
+/// What the engine at `ip` answers newsreel on another machine that sends `token`: the reply, or
 /// the status of an answer without one.
 async fn from_another_machine(ip: Ipv4Addr, port: u16, token: &str, request: Request) -> Result<Response, u16> {
     let (address, token) = (crate::wire::Address { tls: false, host: ip.to_string(), port }, token.to_string());
@@ -479,7 +477,7 @@ async fn a_paired_machine_reaches_what_a_device_may_ask_and_a_stranger_reaches_n
     listening(&h, ip, true).await;
     let mut laptop = Browser::on(ip, &h);
     laptop.pair(&offer.code).await;
-    let token = laptop.cookie.unwrap().strip_prefix("torrential_device=").unwrap().to_string();
+    let token = laptop.cookie.unwrap().strip_prefix("newsreel_device=").unwrap().to_string();
     let ask = |request| from_another_machine(ip, port, &token, request);
 
     assert!(matches!(ask(Request::Hello).await, Ok(Response::Hello { wire: WIRE_VERSION, .. })));
@@ -488,14 +486,14 @@ async fn a_paired_machine_reaches_what_a_device_may_ask_and_a_stranger_reaches_n
         Request::AddDevice,
         Request::Devices,
         Request::Shutdown { asked: true },
-        Request::Get(torrential_core::protocol::GetRequest {
-            target: torrential_core::Target::Prefix("9b5212".into()),
+        Request::Get(newsreel_core::protocol::GetRequest {
+            target: newsreel_core::Target::Prefix("9b5212".into()),
             dir: Some("/tmp".into()),
             files: vec![],
             max_size: None,
             dry_run: false,
         }),
-        Request::Files { target: torrential_core::Target::NzbFile("/etc/passwd".into()) },
+        Request::Files { target: newsreel_core::Target::NzbFile("/etc/passwd".into()) },
     ];
     for request in refused {
         let answer = ask(request.clone()).await;
@@ -530,7 +528,7 @@ async fn only_this_machine_and_its_paired_machines_reach_the_indexers() {
     listening(&h, ip, true).await;
     let mut laptop = Browser::on(ip, &h);
     laptop.pair(&offer.code).await;
-    let token = laptop.cookie.unwrap().strip_prefix("torrential_device=").unwrap().to_string();
+    let token = laptop.cookie.unwrap().strip_prefix("newsreel_device=").unwrap().to_string();
     let ask = |request| from_another_machine(ip, port, &token, request);
 
     let Ok(Response::Indexers { list }) = ask(Request::Indexers).await else { panic!("a paired machine lists them") };
@@ -756,8 +754,7 @@ async fn a_request_whose_body_arrives_after_its_device_is_removed_is_refused_and
     let _ = tokio::time::timeout(Duration::from_secs(5), slow.read_to_end(&mut answer)).await;
     let answer = String::from_utf8_lossy(&answer);
     assert!(
-        answer.starts_with("HTTP/1.1 401 Unauthorized\r\n")
-            && answer.contains("this device was removed from torrential"),
+        answer.starts_with("HTTP/1.1 401 Unauthorized\r\n") && answer.contains("this device was removed from newsreel"),
         "the phone's request is answered as a removed device's: {answer:?}"
     );
     let left: Vec<_> = h.status().await.into_iter().map(|job| job.id).collect();
@@ -779,7 +776,7 @@ async fn the_engine_keeps_trying_the_home_network_while_another_program_holds_it
     let squatter = squatter(ip, port);
     devices(&h, Request::AddDevice).await;
     let why = format!(
-        "no phone or TV can reach this computer yet, because torrential cannot listen on the home network on port {port} (address in use) and keeps trying"
+        "no phone or TV can reach this computer yet, because newsreel cannot listen on the home network on port {port} (address in use) and keeps trying"
     );
     unreachable(&h, Some(&why)).await;
     let me = mac_again(port).get("/api/me").await;

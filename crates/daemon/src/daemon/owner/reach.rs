@@ -12,12 +12,12 @@ use std::sync::Arc;
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::time::{Duration, Instant};
 
-use torrential_core::{Error, ErrorCode};
+use newsreel_core::{Error, ErrorCode};
 
 use crate::disk::Disk;
 use crate::log::log;
 
-/// How long a folder takes to answer before torrential says it is waiting for it.
+/// How long a folder takes to answer before newsreel says it is waiting for it.
 pub const SAY_AFTER: Duration = Duration::from_secs(3);
 
 /// How long the owner waits for a folder that answered before. One that takes longer is waited
@@ -95,7 +95,7 @@ impl Reach {
 
     /// Runs `work` in `dir` on a thread of its own, and answers what it found when `dir` answers
     /// within `ANSWER_WITHIN`. Otherwise this, and every look in `dir` until `work` comes back,
-    /// answers that torrential is waiting for the folder.
+    /// answers that newsreel is waiting for the folder.
     pub fn ask<T: Send + 'static>(
         &self,
         dir: &Path,
@@ -208,6 +208,5 @@ impl Reach {
 
 /// The answer to a request that waited for `dir`.
 pub fn waiting(dir: &Path) -> Error {
-    Error::new(ErrorCode::StorageError, format!("torrential is waiting for access to {}", dir.display()))
-        .with_hint(HINT)
+    Error::new(ErrorCode::StorageError, format!("newsreel is waiting for access to {}", dir.display())).with_hint(HINT)
 }

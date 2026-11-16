@@ -3,13 +3,13 @@
 use std::io::SeekFrom;
 use std::sync::Arc;
 
+use newsreel_core::{DownloadId, Error, ErrorCode, title};
 use serde::Serialize;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
-use torrential_core::{DownloadId, Error, ErrorCode, title};
 
 use crate::playback::subtitle;
-use torrential_search::subtitles::{FileHash, Found, Video};
+use newsreel_search::subtitles::{FileHash, Found, Video};
 
 use super::super::ctx::Ctx;
 use super::super::http::Request;

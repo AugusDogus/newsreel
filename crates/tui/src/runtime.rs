@@ -7,8 +7,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use crossterm::event::Event as TermEvent;
-use torrential_core::protocol::{Event, JobAction};
-use torrential_core::{Error, ErrorCode};
+use newsreel_core::protocol::{Event, JobAction};
+use newsreel_core::{Error, ErrorCode};
 
 use crate::backend::Backend;
 use crate::state::{State, Tone, Upgrade};
@@ -22,7 +22,7 @@ const WATCH_RETRY: Duration = Duration::from_secs(2);
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Exit {
     Quit,
-    /// A newer torrential replaced this binary, so the caller starts it in place of this process.
+    /// A newer newsreel replaced this binary, so the caller starts it in place of this process.
     Restart,
 }
 
@@ -51,7 +51,7 @@ fn session<B: Backend>(
     home: Option<PathBuf>,
 ) -> io::Result<State> {
     let size = terminal.size()?;
-    let mut state = State::new(Instant::now(), torrential_core::time::now(), (size.width, size.height), home);
+    let mut state = State::new(Instant::now(), newsreel_core::time::now(), (size.width, size.height), home);
     state.say(Tone::Info, "Downloads keep running after you quit.");
     terminal.draw(|frame| draw(frame, &state, mode))?;
     let (tx, rx) = mpsc::channel();
@@ -115,7 +115,7 @@ fn run_loop<B: Backend>(
         let mut next = Some(first);
         while let Some(msg) = next {
             state.now = Instant::now();
-            state.clock = torrential_core::time::now();
+            state.clock = newsreel_core::time::now();
             if let Some(after) = urgency(state, &msg) {
                 let at = if after.is_zero() { state.now } else { (drawn + after).max(state.now) };
                 due = Some(due.map_or(at, |d| d.min(at)));

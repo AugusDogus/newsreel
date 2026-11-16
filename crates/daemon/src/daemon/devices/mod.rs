@@ -1,6 +1,6 @@
 //! Phones and TVs on the home network. This Mac lets a device in with a short code it shows, and
 //! the device holds a token in a cookie from then on. A TV that plays a cast keeps no cookie, so it
-//! fetches its one file through a grant in the URL instead. This user's torrential sends the token
+//! fetches its one file through a grant in the URL instead. This user's newsreel sends the token
 //! the engine writes for it when it starts. The HTTP guard asks this who sent each request.
 
 use std::collections::HashMap;
@@ -10,11 +10,11 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
+use newsreel_core::{Device, DeviceList, DownloadId, Error, ErrorCode, PairingOffer};
 use rusqlite::{Connection, params};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use tokio::time::Instant;
-use torrential_core::{Device, DeviceList, DownloadId, Error, ErrorCode, PairingOffer};
 
 use super::db::{Db, sql_error};
 use super::names::{Names, Tailnet};
@@ -36,14 +36,14 @@ const TRIES_KEPT: usize = 1024;
 /// How often a device's last request is written to the database, in seconds.
 const SEEN_EVERY: i64 = 60;
 /// The cookie that holds a device's token.
-pub const COOKIE: &str = "torrential_device";
+pub const COOKIE: &str = "newsreel_device";
 /// Where a cast grant's file is served.
 pub const CAST: &str = "/cast/";
 
 /// Who sent a request, which decides what it may reach.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Asker {
-    /// This Mac: the web app over loopback, or this user's torrential with its token. Everything.
+    /// This Mac: the web app over loopback, or this user's newsreel with its token. Everything.
     Local,
     /// A paired phone or TV, by device ID: everything but adding and removing devices.
     Device(String),
@@ -141,11 +141,11 @@ impl Refused {
         let message = match self {
             Self::TooManyTries => "too many tries from this device, so wait a minute and enter the code again",
             Self::NoOffer => {
-                "no code is open, so choose Add a device on the computer running torrential and enter the code it shows"
+                "no code is open, so choose Add a device on the computer running newsreel and enter the code it shows"
             }
-            Self::WrongCode => "that is not the code torrential shows, so check it and enter it again",
+            Self::WrongCode => "that is not the code newsreel shows, so check it and enter it again",
             Self::Burned => {
-                "that code stopped working after too many wrong tries, so make a new one with Add a device on the computer running torrential"
+                "that code stopped working after too many wrong tries, so make a new one with Add a device on the computer running newsreel"
             }
             Self::Failed(error) => return error,
         };
@@ -246,7 +246,7 @@ impl State {
         devices.sort_by(|a, b| (a.added_at, &a.id).cmp(&(b.added_at, &b.id)));
         let unreachable = self.refused.filter(|_| self.reach() == Reach::Network).map(|why| {
             format!(
-                "no phone or TV can reach this computer yet, because torrential cannot listen on the home network on port {port} ({why}) and keeps trying"
+                "no phone or TV can reach this computer yet, because newsreel cannot listen on the home network on port {port} ({why}) and keeps trying"
             )
         });
         DeviceList { devices, offer: self.offer(port), unreachable }
@@ -287,7 +287,7 @@ pub struct Devices {
     reach: watch::Sender<Reach>,
     /// Counts removed devices and dropped grants, so a connection can end once its access does.
     revocations: watch::Sender<u64>,
-    /// The token this user's torrential sends, new each time the engine starts.
+    /// The token this user's newsreel sends, new each time the engine starts.
     local: Token,
 }
 
@@ -343,13 +343,13 @@ impl Devices {
         })
     }
 
-    /// The token this user's torrential sends, as 64 hex digits, for the engine to write where only
+    /// The token this user's newsreel sends, as 64 hex digits, for the engine to write where only
     /// this user can read it.
     pub fn local_token(&self) -> String {
         self.local.hex()
     }
 
-    /// Whether `token` is the one this user's torrential sends. It compares hashes, as `holder`
+    /// Whether `token` is the one this user's newsreel sends. It compares hashes, as `holder`
     /// does, so the time it takes says nothing about the token.
     pub fn is_local(&self, token: &str) -> bool {
         Token::parse(token).is_some_and(|token| token.key() == self.local.key())
@@ -474,7 +474,7 @@ impl Devices {
         let mut state = self.state();
         let Some(key) = state.paired.iter().find(|(_, paired)| paired.device.id == id).map(|(key, _)| *key) else {
             return Err(Error::new(ErrorCode::NotFound, format!("no device has the ID {id}"))
-                .with_hint("run torrential devices to list them"));
+                .with_hint("run newsreel devices to list them"));
         };
         self.conn().execute("DELETE FROM devices WHERE id = ?1", [id]).map_err(|e| self.fail(e))?;
         state.paired.remove(&key);

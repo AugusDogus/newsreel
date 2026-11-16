@@ -1,5 +1,5 @@
+use newsreel_core::{DownloadId, Job, JobStatus, ResultId};
 use ratatui::layout::Rect;
-use torrential_core::{DownloadId, Job, JobStatus, ResultId};
 
 use crate::state::{Engine, Files, Focus, Item, ROWS, SearchPhase, State, label};
 

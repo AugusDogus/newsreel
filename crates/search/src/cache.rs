@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use torrential_core::{HexPrefix, Release, ResultId};
+use newsreel_core::{HexPrefix, Release, ResultId};
 
 use crate::observation::Observation;
 use crate::sources::SavedLink;

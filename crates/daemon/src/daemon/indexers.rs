@@ -3,11 +3,11 @@
 
 use std::sync::Arc;
 
+use newsreel_core::indexer::{ApiKey, Check, Indexer, IndexerList};
+use newsreel_core::{Error, ErrorCode};
+use newsreel_search::indexers::{Found, Probe};
+use newsreel_search::{IndexerConfig, SearchConfig};
 use tokio::sync::Mutex;
-use torrential_core::indexer::{ApiKey, Check, Indexer, IndexerList};
-use torrential_core::{Error, ErrorCode};
-use torrential_search::indexers::{Found, Probe};
-use torrential_search::{IndexerConfig, SearchConfig};
 use url::Url;
 
 use super::ctx::Ctx;
@@ -129,7 +129,7 @@ pub async fn add(ctx: &Ctx, url: &str, name: Option<String>, key: Option<ApiKey>
         let name = match named {
             Some(named) if taken(&listed, &named, at) => {
                 return Err(Error::new(ErrorCode::Usage, format!("another source is named {named}"))
-                    .with_hint("pick another --name; torrential indexers lists the names in use"));
+                    .with_hint("pick another --name; newsreel indexers lists the names in use"));
             }
             Some(named) => named,
             None => match at {
@@ -150,7 +150,7 @@ pub async fn add(ctx: &Ctx, url: &str, name: Option<String>, key: Option<ApiKey>
         }
         added.push(name);
     }
-    indexers.apply(ctx, &listed, "torrential indexers add")?;
+    indexers.apply(ctx, &listed, "newsreel indexers add")?;
     drop(writing);
     log(&format!("added the indexers {} from {url}", added.join(", ")));
     Ok(IndexerList { added, ..list(ctx).await? })
@@ -165,10 +165,10 @@ pub async fn remove(ctx: &Ctx, name: &str) -> Result<IndexerList, Error> {
     listed.entries.retain(|entry| entry.name != name);
     if listed.entries.len() == before {
         return Err(Error::new(ErrorCode::NotFound, format!("no indexer is named {name:?}"))
-            .with_hint("torrential indexers lists them"));
+            .with_hint("newsreel indexers lists them"));
     }
     listed.disabled.retain(|disabled| disabled != name);
-    indexers.apply(ctx, &listed, "torrential indexers remove")?;
+    indexers.apply(ctx, &listed, "newsreel indexers remove")?;
     drop(writing);
     log(&format!("removed the indexer {name}"));
     list(ctx).await

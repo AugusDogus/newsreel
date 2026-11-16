@@ -134,7 +134,7 @@ export function DownloadsPage() {
   const [problem, setProblem] = useState<ApiError | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   useEffect(() => {
-    document.title = "Downloads · torrential";
+    document.title = "Downloads · newsreel";
   }, []);
 
   return (
@@ -164,7 +164,7 @@ export function DownloadsPage() {
           </ul>
         ) : (
           <p className="max-w-[60ch] pt-4 text-base text-pretty text-pencil sm:text-sm">
-            {link === "connecting" ? "Connecting to the torrential engine." : "Nothing has been downloaded yet. What you watch shows up here."}
+            {link === "connecting" ? "Connecting to the newsreel engine." : "Nothing has been downloaded yet. What you watch shows up here."}
           </p>
         )}
       </main>

@@ -7,12 +7,12 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime};
 
+use newsreel_core::catalog::Episode;
+use newsreel_core::catalog::{Countries, Country};
+use newsreel_core::{ArtKind, ErrorCode, Kind, TitleCard, TitleId};
+use newsreel_search::catalog::{Catalog, CatalogConfig, ImageFormat};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use torrential_core::catalog::Episode;
-use torrential_core::catalog::{Countries, Country};
-use torrential_core::{ArtKind, ErrorCode, Kind, TitleCard, TitleId};
-use torrential_search::catalog::{Catalog, CatalogConfig, ImageFormat};
 
 const NOTLD: &str = "tt0063350";
 const SINTEL: &str = "tt1727587";
@@ -171,7 +171,7 @@ async fn recorded_but(down: &'static str) -> Server {
 
 fn scratch_dir(name: &str) -> PathBuf {
     let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos();
-    std::env::temp_dir().join(format!("torrential-catalog-{name}-{}-{nanos}", std::process::id()))
+    std::env::temp_dir().join(format!("newsreel-catalog-{name}-{}-{nanos}", std::process::id()))
 }
 
 /// Moves every file under `dir` back in time by `by`, as if it had been kept that long.

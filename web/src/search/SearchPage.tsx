@@ -92,7 +92,7 @@ export function SearchPage({ query, everything }: Props) {
   const { text } = search;
 
   useEffect(() => {
-    document.title = query ? `${query} · torrential` : "torrential";
+    document.title = query ? `${query} · newsreel` : "newsreel";
   }, [query]);
 
   const open = (release: Release) => navigate(watchPath(release.id));

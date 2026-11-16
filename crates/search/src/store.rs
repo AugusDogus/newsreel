@@ -176,7 +176,7 @@ mod tests {
             [("pictures/old", false), ("pictures/used", true), ("pictures/new", false), ("titles/old", true)];
         let expected: Vec<(String, bool)> = expected.map(|(name, kept)| (name.to_string(), kept)).into();
         let nanos = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap().as_nanos();
-        let dir = std::env::temp_dir().join(format!("torrential-store-{}-{nanos}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("newsreel-store-{}-{nanos}", std::process::id()));
         assert_eq!(trimmed(&Store::new(Some(dir.clone()))).await, expected, "on disk");
         assert_eq!(trimmed(&Store::new(None)).await, expected, "in memory");
         let _ = std::fs::remove_dir_all(dir);

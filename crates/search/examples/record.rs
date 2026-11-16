@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use torrential_search::{IndexerConfig, SearchConfig};
+use newsreel_search::{IndexerConfig, SearchConfig};
 
 const MAX_BODY: usize = 256 << 10;
 const RSS_ITEMS: usize = 40;
@@ -9,17 +9,17 @@ const RSS_ITEMS: usize = 40;
 async fn main() {
     let mut args = std::env::args().skip(1);
     let (Some(source), query, Ok(url)) =
-        (args.next(), args.collect::<Vec<_>>().join(" "), std::env::var("TORRENTIAL_RECORD_URL"))
+        (args.next(), args.collect::<Vec<_>>().join(" "), std::env::var("NEWSREEL_RECORD_URL"))
     else {
         eprintln!(
-            "usage: TORRENTIAL_RECORD_URL=<newznab api url> [TORRENTIAL_RECORD_API_KEY=<key>] record <name> <query words...>"
+            "usage: NEWSREEL_RECORD_URL=<newznab api url> [NEWSREEL_RECORD_API_KEY=<key>] record <name> <query words...>"
         );
         std::process::exit(2);
     };
-    let api_key = std::env::var("TORRENTIAL_RECORD_API_KEY").ok();
+    let api_key = std::env::var("NEWSREEL_RECORD_API_KEY").ok();
     let config =
         SearchConfig { indexers: vec![IndexerConfig { name: source.clone(), url, api_key }], ..Default::default() };
-    let (outcome, bodies) = torrential_search::record(&config, &source, &query).await.unwrap_or_else(|e| {
+    let (outcome, bodies) = newsreel_search::record(&config, &source, &query).await.unwrap_or_else(|e| {
         eprintln!("{e}");
         std::process::exit(1);
     });

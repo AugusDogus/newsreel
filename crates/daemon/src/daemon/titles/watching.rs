@@ -1,5 +1,5 @@
 //! Where a person stopped each film and episode, and which screen keeps that place. A browser
-//! tab, a TV, a title play and `torrential play` all read and save it here.
+//! tab, a TV, a title play and `newsreel play` all read and save it here.
 //!
 //! The last screen to start or resume a video keeps its place. Another screen that plays it on
 //! saves nothing until it starts or resumes again, or until the keeper stops.
@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use torrential_core::watching::WORTH_SAVING;
-use torrential_core::{Error, VideoRef, Watched};
+use newsreel_core::watching::WORTH_SAVING;
+use newsreel_core::{Error, VideoRef, Watched};
 
 use super::super::shelf::Shelf;
 
@@ -19,7 +19,7 @@ pub enum Screen {
     Tab(String),
     /// A cast to a TV, by its number.
     Cast(u64),
-    /// A player `torrential play` opened, by its number.
+    /// A player `newsreel play` opened, by its number.
     Player(u64),
 }
 
@@ -40,7 +40,7 @@ impl Watching {
 
     /// Where the person stopped `video`, unless they finished it or stopped too near the start.
     pub fn resume_at(&self, video: &VideoRef) -> Result<Option<f64>, Error> {
-        Ok(torrential_core::watching::resume_at(&self.shelf.watched(&video.title)?, video))
+        Ok(newsreel_core::watching::resume_at(&self.shelf.watched(&video.title)?, video))
     }
 
     /// `screen` starts or resumes `video`, so it keeps the place from now on.

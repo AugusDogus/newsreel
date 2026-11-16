@@ -1,6 +1,6 @@
-use torrential_core::error::{Candidate, CandidateKind, Details};
-use torrential_core::id::shortest_unique_prefix;
-use torrential_core::{DownloadId, Error, ErrorCode, HexPrefix, Release};
+use newsreel_core::error::{Candidate, CandidateKind, Details};
+use newsreel_core::id::shortest_unique_prefix;
+use newsreel_core::{DownloadId, Error, ErrorCode, HexPrefix, Release};
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Found<'a> {
@@ -46,7 +46,7 @@ pub fn prefix<'a>(
                 Scope::Downloads => no_download(&typed),
                 Scope::DownloadsAndResults => {
                     Error::new(ErrorCode::NotFound, format!("no download or recent search result matches {typed}"))
-                        .with_hint("run torrential search <words> to find it, or pass an .nzb file or URL")
+                        .with_hint("run newsreel search <words> to find it, or pass an .nzb file or URL")
                 }
             };
             Err(error)
@@ -66,10 +66,10 @@ pub fn prefix<'a>(
             let thing = if prefix.is_result() { "search result" } else { "download" };
             Err(Error::new(
                 ErrorCode::AmbiguousRef,
-                format!("{typed} matches {}", torrential_core::units::count(n, thing)),
+                format!("{typed} matches {}", newsreel_core::units::count(n, thing)),
             )
             .with_details(Details::Candidates(candidates))
-            .with_hint(format!("use a longer prefix, such as: torrential {command} {first}")))
+            .with_hint(format!("use a longer prefix, such as: newsreel {command} {first}")))
         }
     }
 }
@@ -77,15 +77,15 @@ pub fn prefix<'a>(
 /// The error for a reference that names no download.
 pub fn no_download(reference: &str) -> Error {
     Error::new(ErrorCode::NotFound, format!("no download matches {reference}"))
-        .with_hint("run torrential status to list downloads")
-        .with_next("torrential status")
+        .with_hint("run newsreel status to list downloads")
+        .with_next("newsreel status")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use newsreel_core::ResultId;
     use std::collections::BTreeSet;
-    use torrential_core::ResultId;
 
     fn bytes(hex_prefix: &str) -> [u8; 20] {
         let id: DownloadId = format!("{hex_prefix}{}", "0".repeat(40 - hex_prefix.len())).parse().unwrap();
@@ -130,7 +130,7 @@ mod tests {
         let err = prefix(&"ue3a1".parse().unwrap(), &[], &results, Scope::DownloadsAndResults, "get").unwrap_err();
         assert_eq!(err.code, ErrorCode::AmbiguousRef);
         assert_eq!(err.message, "ue3a1 matches 2 search results");
-        assert_eq!(err.hint.as_deref(), Some("use a longer prefix, such as: torrential get ue3a1f0"));
+        assert_eq!(err.hint.as_deref(), Some("use a longer prefix, such as: newsreel get ue3a1f0"));
         let Some(Details::Candidates(c)) = err.details else { panic!("expected candidates") };
         assert_eq!(
             c.iter().map(|c| (c.id.as_str(), c.kind.as_str())).collect::<Vec<_>>(),

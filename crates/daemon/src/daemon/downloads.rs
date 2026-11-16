@@ -5,15 +5,15 @@ use std::time::{Duration, Instant};
 
 use crate::playback::media::RUNTIME_BYTES;
 use crate::playback::stream::{self, Playable};
-use serde::Serialize;
-use tokio::sync::{broadcast, mpsc};
-use torrential_core::Plays;
-use torrential_core::protocol::{Change, Event, FilesReply, GetRequest, PlayReply, PlayRequest, Stream};
-use torrential_core::text::sanitize;
-use torrential_core::{
+use newsreel_core::Plays;
+use newsreel_core::protocol::{Change, Event, FilesReply, GetRequest, PlayReply, PlayRequest, Stream};
+use newsreel_core::text::sanitize;
+use newsreel_core::{
     DownloadId, Error, ErrorCode, HexPrefix, Job, JobStatus, Release, ReleaseFile, ResultId, SearchQuery, SearchResult,
     Target,
 };
+use serde::Serialize;
+use tokio::sync::{broadcast, mpsc};
 
 use super::BoxFuture;
 use super::ctx::Ctx;
@@ -128,7 +128,7 @@ impl<'a> JobEvents<'a> {
                     Err(broadcast::error::RecvError::Lagged(_)) => self.lagged = true,
                     Err(broadcast::error::RecvError::Closed) => return None,
                 },
-                _ = self.heartbeat.tick() => break Event::Heartbeat { at: torrential_core::time::now() },
+                _ = self.heartbeat.tick() => break Event::Heartbeat { at: newsreel_core::time::now() },
             }
         };
         self.heartbeat.reset();
@@ -206,7 +206,7 @@ pub(super) async fn resolve(ctx: &Ctx, target: Target, command: &'static str) ->
         }
         Target::NzbUrl(url) => Ok(Source::Release { layout: fetch(ctx, url, None).await?, origin: Origin::Url }),
         Target::NzbFile(path) => Ok(Source::Release { layout: read_nzb(ctx, &path).await?, origin: Origin::File }),
-        Target::Title(video) => Err(torrential_core::target::not_a_release(&video, command)),
+        Target::Title(video) => Err(newsreel_core::target::not_a_release(&video, command)),
     }
 }
 
@@ -226,7 +226,7 @@ pub(super) async fn download_files(ctx: &Ctx, id: DownloadId) -> Result<FilesInf
     ctx.owner.ask(|reply| Command::Files { id, reply }).await
 }
 
-pub(super) async fn get(ctx: &Ctx, request: GetRequest) -> Result<torrential_core::protocol::GetReply, Error> {
+pub(super) async fn get(ctx: &Ctx, request: GetRequest) -> Result<newsreel_core::protocol::GetReply, Error> {
     let GetRequest { target, dir, files, max_size, dry_run } = request;
     let setup_max_size = (ctx.preferences)().max_size;
     let source = resolve(ctx, target, "get").await?;
@@ -421,12 +421,12 @@ pub(super) fn choose(layout: &Layout, file: Option<u32>, reference: Option<&str>
             // An NZB URL can carry an API key, so it is never shown.
             match reference.map(str::trim) {
                 Some(reference) if reference.contains("://") => {
-                    error.with_hint("list its files with torrential files and the same NZB URL")
+                    error.with_hint("list its files with newsreel files and the same NZB URL")
                 }
                 Some(reference) => {
                     let (lead, hex) = reference.strip_prefix('u').map_or(("", reference), |rest| ("u", rest));
-                    let short = &hex[..hex.len().min(torrential_core::id::SHORT_ID)];
-                    error.with_hint(format!("run torrential files {lead}{short} to list its files"))
+                    let short = &hex[..hex.len().min(newsreel_core::id::SHORT_ID)];
+                    error.with_hint(format!("run newsreel files {lead}{short} to list its files"))
                 }
                 None => error,
             }

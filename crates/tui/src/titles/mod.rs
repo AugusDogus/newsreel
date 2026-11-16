@@ -6,12 +6,12 @@ pub mod view;
 use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use torrential_core::catalog::Episode;
-use torrential_core::protocol::{Home, TitlePage, TitlePlayed};
-use torrential_core::text::sanitize;
-use torrential_core::title::title_name;
-use torrential_core::units::count;
-use torrential_core::{AttemptEvent, Check, EpisodeInfo, Error, TitleCard, TitleId, VideoRef};
+use newsreel_core::catalog::Episode;
+use newsreel_core::protocol::{Home, TitlePage, TitlePlayed};
+use newsreel_core::text::sanitize;
+use newsreel_core::title::title_name;
+use newsreel_core::units::count;
+use newsreel_core::{AttemptEvent, Check, EpisodeInfo, Error, TitleCard, TitleId, VideoRef};
 
 use crate::layout;
 use crate::state::{Focus, Input, Page, State, Tone};
@@ -42,7 +42,7 @@ pub enum Pick {
     Saved(TitleId),
     /// A title the search found. Enter opens it.
     Found(TitleId),
-    /// The open title's Play row, which plays what comes next as `torrential play <title id>` does.
+    /// The open title's Play row, which plays what comes next as `newsreel play <title id>` does.
     Next,
     Episode(Episode),
 }
@@ -385,7 +385,7 @@ impl State {
             Some(Opened { page: Load::Ready(page), .. }) => Some(page),
             _ => None,
         };
-        // A title alone plays what comes next, as `torrential play <title id>` does.
+        // A title alone plays what comes next, as `newsreel play <title id>` does.
         let episode = match &pick {
             Pick::Continue(video) => video.episode,
             Pick::Saved(_) | Pick::Found(_) | Pick::Next => None,

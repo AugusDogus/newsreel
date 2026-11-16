@@ -105,11 +105,11 @@ pub fn name(s: &str, max: usize) -> String {
     format!("{head}…{tail}")
 }
 
-pub use torrential_core::units::{format_rate as rate, format_size as size};
+pub use newsreel_core::units::{format_rate as rate, format_size as size};
 
 /// How long before `now` the Unix time `at` was, by core's rule.
 pub fn age(at: i64, now: i64) -> String {
-    torrential_core::units::age(now.saturating_sub(at).max(0) as u64)
+    newsreel_core::units::age(now.saturating_sub(at).max(0) as u64)
 }
 
 pub fn grabs(n: Option<u64>) -> String {

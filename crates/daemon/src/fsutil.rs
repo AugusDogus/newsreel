@@ -3,8 +3,8 @@
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
+use newsreel_core::{Error, ErrorCode};
 use sha2::{Digest, Sha256};
-use torrential_core::{Error, ErrorCode};
 
 use crate::env::Env;
 

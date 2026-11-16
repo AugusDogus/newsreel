@@ -2,11 +2,11 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Mutex;
 use std::time::Duration;
 
+use newsreel_core::{Error, ErrorCode};
 use tokio::time::{Instant, timeout_at};
-use torrential_core::{Error, ErrorCode};
 use url::Url;
 
-pub(crate) const USER_AGENT: &str = concat!("torrential/", env!("CARGO_PKG_VERSION"));
+pub(crate) const USER_AGENT: &str = concat!("newsreel/", env!("CARGO_PKG_VERSION"));
 /// A browser's name, so lookups of titles, pictures and subtitles say nothing about the program or
 /// the person.
 pub(crate) const BROWSER: &str = "Mozilla/5.0";

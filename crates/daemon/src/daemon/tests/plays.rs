@@ -5,9 +5,9 @@ use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use newsreel_core::protocol::{Change, GetRequest, Kept, PlayRequest, Request, Response};
+use newsreel_core::{DownloadId, ErrorCode, JobStatus, Place, Selection, Target};
 use serde_json::json;
-use torrential_core::protocol::{Change, GetRequest, Kept, PlayRequest, Request, Response};
-use torrential_core::{DownloadId, ErrorCode, JobStatus, Place, Selection, Target};
 
 use super::super::admission::GIB;
 use super::super::book::{Identity, PlayName};
@@ -41,8 +41,8 @@ impl Harness {
         assert_eq!(status, 200, "{body}");
     }
 
-    /// Gets `t` into `dir`, as `torrential get --dir` does.
-    async fn get_into(&self, t: &fake::Posting, dir: PathBuf) -> Result<(), torrential_core::Error> {
+    /// Gets `t` into `dir`, as `newsreel get --dir` does.
+    async fn get_into(&self, t: &fake::Posting, dir: PathBuf) -> Result<(), newsreel_core::Error> {
         let target = self.nzb_file(t);
         let request = GetRequest { target, dir: Some(dir), files: vec![], max_size: None, dry_run: false };
         self.get_with(request).await.map(drop)
@@ -235,7 +235,7 @@ async fn get_refuses_a_folder_inside_the_plays_folder_even_through_a_link() {
     let iso = release(0x21, "iso", &[("disc.iso", MIB)]);
     let error = h.get_into(&iso, films.join("mine")).await.unwrap_err();
     let message = format!(
-        "{} is inside {}, the folder torrential keeps plays in",
+        "{} is inside {}, the folder newsreel keeps plays in",
         films.join("mine").display(),
         h.plays().display()
     );
@@ -523,7 +523,7 @@ async fn a_play_folder_moved_away_with_another_folder_put_at_its_name_has_nothin
     written(&folder.join("film/film.mp4"), 4);
 
     let removed = h.rm(vec![prefix(&film)], false).await;
-    let refused = "it is not the folder torrential made for the play";
+    let refused = "it is not the folder newsreel made for the play";
     assert_eq!(
         (removed[0].deleted.clone(), removed[0].kept.clone()),
         (vec![], vec![Kept { path: folder.clone(), reason: refused.into() }])
@@ -557,7 +557,7 @@ async fn plays_in_a_plays_folder_replaced_while_the_engine_was_stopped_stop_and_
         (error.code, error.message.as_str(), error.hint.as_deref()),
         (
             ErrorCode::PathConflict,
-            "the plays folder it was in was moved or replaced, so torrential stopped it",
+            "the plays folder it was in was moved or replaced, so newsreel stopped it",
             Some("resume it to go on downloading where it was, or remove it")
         )
     );
@@ -700,8 +700,8 @@ async fn a_plays_folder_replaced_by_a_link_while_the_engine_is_stopped_stops_eve
     let jobs = h.until("the film stops", |jobs| jobs[0].status.name() == "error").await;
     let JobStatus::Error { error } = &jobs[0].status else { panic!("{jobs:#?}") };
     let why = format!(
-        "torrential cannot use the plays folder {}: it is a link, and torrential deletes plays only in a folder of its \
-         own, so torrential stopped it",
+        "newsreel cannot use the plays folder {}: it is a link, and newsreel deletes plays only in a folder of its \
+         own, so newsreel stopped it",
         plays.display()
     );
     assert_eq!((error.code, error.message.as_str()), (ErrorCode::PathConflict, why.as_str()));
@@ -781,7 +781,7 @@ async fn a_title_play_says_it_waits_for_a_plays_folder_that_does_not_answer() {
         "check start",
     ];
     assert_eq!(steps[..5], tried);
-    let waiting = format!("torrential is waiting for access to {}", h.play_folder(&night[3]).display());
+    let waiting = format!("newsreel is waiting for access to {}", h.play_folder(&night[3]).display());
     assert!(steps[5].starts_with("skipped a4a4a4") && steps[5].contains(&waiting), "{}", steps[5]);
 }
 
@@ -802,7 +802,7 @@ async fn rm_delete_keeps_the_files_while_another_downloads_folder_does_not_answe
     let stalled = h.disk.stall(&share, h.dir.path().join("stall"));
 
     let removed = h.rm(vec![prefix(&ours)], true).await;
-    let reason = format!("torrential is waiting for access to {}, where another download is", share.display());
+    let reason = format!("newsreel is waiting for access to {}, where another download is", share.display());
     assert_eq!(removed[0].kept, [Kept { path: file.clone(), reason }]);
     assert!(file.exists());
     drop(stalled);

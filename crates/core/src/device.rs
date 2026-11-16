@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Device {
-    /// Eight hex digits, which `torrential devices remove` takes.
+    /// Eight hex digits, which `newsreel devices remove` takes.
     pub id: String,
     /// What the browser said it is, such as "iPhone" or "LG TV".
     pub name: String,
@@ -16,7 +16,7 @@ pub struct Device {
     /// Unix seconds of its last request, to within a minute.
     pub seen_at: i64,
     /// The address its last request came from, such as `192.168.1.40` or `100.101.3.4`. `None`
-    /// for a device paired before torrential 0.7 that has not asked since.
+    /// for a device paired before newsreel 0.7 that has not asked since.
     pub seen_from: Option<String>,
 }
 

@@ -1,15 +1,15 @@
-//! Asks an address what it is before torrential searches it: a Newznab endpoint, such as
+//! Asks an address what it is before newsreel searches it: a Newznab endpoint, such as
 //! NZBHydra's or an indexer's own API, or a Prowlarr server, whose indexers each have an endpoint
 //! of their own.
 
 use std::time::Duration;
 
+use newsreel_core::indexer::{ApiKey, Check, IndexerCategory};
+use newsreel_core::{Error, ErrorCode, text};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::{Reader, XmlVersion};
 use serde::Deserialize;
 use tokio::time::Instant;
-use torrential_core::indexer::{ApiKey, Check, IndexerCategory};
-use torrential_core::{Error, ErrorCode, text};
 use url::Url;
 
 use crate::http::{FetchError, Http, Retry};
@@ -35,7 +35,7 @@ pub struct Hosted {
     pub url: Url,
 }
 
-/// Why an address is not an indexer torrential can search.
+/// Why an address is not an indexer newsreel can search.
 #[derive(Clone, PartialEq, Eq, Debug)]
 enum Problem {
     /// No answer, and why.

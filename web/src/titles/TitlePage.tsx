@@ -118,7 +118,7 @@ export function TitlePage({ id, season, sources }: Props) {
   const page = state.kind === "ready" ? state.page : null;
 
   useEffect(() => {
-    document.title = page ? `${page.name}${page.year ? ` (${page.year})` : ""} · torrential` : "torrential";
+    document.title = page ? `${page.name}${page.year ? ` (${page.year})` : ""} · newsreel` : "newsreel";
   }, [page]);
 
   return (

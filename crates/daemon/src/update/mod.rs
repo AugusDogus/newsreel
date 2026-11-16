@@ -1,4 +1,4 @@
-//! What torrential knows about its own releases: their versions, when it last looked for one,
+//! What newsreel knows about its own releases: their versions, when it last looked for one,
 //! and which one an update installed.
 
 use std::fmt;
@@ -78,9 +78,9 @@ pub fn target(os: &str, arch: &str) -> Option<&'static str> {
 /// How a release packs its binary for one target.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Archive {
-    /// `torrential` in a gzipped tarball.
+    /// `newsreel` in a gzipped tarball.
     TarGz,
-    /// `torrential.exe` in a zip, as Windows opens.
+    /// `newsreel.exe` in a zip, as Windows opens.
     Zip,
 }
 
@@ -92,16 +92,16 @@ impl Archive {
     /// The release asset that holds the binary for `target`.
     pub fn asset(self, target: &str) -> String {
         match self {
-            Archive::TarGz => format!("torrential-{target}.tar.gz"),
-            Archive::Zip => format!("torrential-{target}.zip"),
+            Archive::TarGz => format!("newsreel-{target}.tar.gz"),
+            Archive::Zip => format!("newsreel-{target}.zip"),
         }
     }
 
     /// The binary's name in the archive.
     pub fn binary(self) -> &'static str {
         match self {
-            Archive::TarGz => "torrential",
-            Archive::Zip => "torrential.exe",
+            Archive::TarGz => "newsreel",
+            Archive::Zip => "newsreel.exe",
         }
     }
 }
@@ -161,8 +161,7 @@ pub enum Audience {
 
 impl Audience {
     pub fn out(self, current: &str, latest: Version) -> String {
-        let news =
-            format!("torrential {latest} is available (you have {current}). Run torrential update to install it.");
+        let news = format!("newsreel {latest} is available (you have {current}). Run newsreel update to install it.");
         match self {
             Self::Person => news,
             Self::Agent => format!("# update: {news}"),
@@ -171,8 +170,8 @@ impl Audience {
 
     pub fn updated(self, from: &str, to: &str) -> String {
         match self {
-            Self::Person => format!("Updated torrential to {to}."),
-            Self::Agent => format!("# updated torrential from {from} to {to}"),
+            Self::Person => format!("Updated newsreel to {to}."),
+            Self::Agent => format!("# updated newsreel from {from} to {to}"),
         }
     }
 

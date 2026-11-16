@@ -1,17 +1,17 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use torrential_core::{Error, ErrorCode};
+use newsreel_core::{Error, ErrorCode};
 
 use crate::env::{Env, TestHooks, hooks};
 use crate::fsutil::write_atomic;
 use crate::paths::Paths;
 use crate::update::Audience;
 
-pub const LABEL: &str = "dev.torrential.engine";
+pub const LABEL: &str = "dev.newsreel.engine";
 
 /// The name of the Windows logon task.
-pub const TASK: &str = "torrential engine";
+pub const TASK: &str = "newsreel engine";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Manager {
@@ -40,12 +40,12 @@ impl Manager {
         }
     }
 
-    /// Where the unit is. Task Scheduler keeps its tasks itself, so torrential keeps the task it
+    /// Where the unit is. Task Scheduler keeps its tasks itself, so newsreel keeps the task it
     /// registered in its state folder, to know what it registered.
     pub fn unit_path(self, home: &Path, paths: &Paths) -> PathBuf {
         match self {
             Self::Launchd => home.join("Library/LaunchAgents").join(format!("{LABEL}.plist")),
-            Self::Systemd => home.join(".config/systemd/user/torrential.service"),
+            Self::Systemd => home.join(".config/systemd/user/newsreel.service"),
             Self::TaskScheduler => paths.state.join("logon-task.xml"),
         }
     }
@@ -55,13 +55,13 @@ fn xml(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
-pub fn unit(manager: Manager, exe: &Path, log: &Path, torrential_home: Option<&str>, user: &str) -> String {
+pub fn unit(manager: Manager, exe: &Path, log: &Path, newsreel_home: Option<&str>, user: &str) -> String {
     let exe = exe.display().to_string();
     match manager {
         Manager::Launchd => {
-            let env = torrential_home.map_or_else(String::new, |home| {
+            let env = newsreel_home.map_or_else(String::new, |home| {
                 format!(
-                    "  <key>EnvironmentVariables</key>\n  <dict>\n    <key>TORRENTIAL_HOME</key>\n    <string>{}</string>\n  </dict>\n",
+                    "  <key>EnvironmentVariables</key>\n  <dict>\n    <key>NEWSREEL_HOME</key>\n    <string>{}</string>\n  </dict>\n",
                     xml(home)
                 )
             });
@@ -98,16 +98,15 @@ pub fn unit(manager: Manager, exe: &Path, log: &Path, torrential_home: Option<&s
             )
         }
         Manager::Systemd => {
-            let env =
-                torrential_home.map_or_else(String::new, |home| format!("Environment=\"TORRENTIAL_HOME={home}\"\n"));
+            let env = newsreel_home.map_or_else(String::new, |home| format!("Environment=\"NEWSREEL_HOME={home}\"\n"));
             format!(
-                "[Unit]\nDescription=torrential engine\n\n[Service]\nExecStart=\"{exe}\" daemon run --service\n{env}Restart=on-failure\n\n[Install]\nWantedBy=default.target\n"
+                "[Unit]\nDescription=newsreel engine\n\n[Service]\nExecStart=\"{exe}\" daemon run --service\n{env}Restart=on-failure\n\n[Install]\nWantedBy=default.target\n"
             )
         }
         Manager::TaskScheduler => {
-            // A task passes no environment and keeps no output, so cmd sets TORRENTIAL_HOME and
+            // A task passes no environment and keeps no output, so cmd sets NEWSREEL_HOME and
             // appends what the engine prints to its log. conhost gives it a console with no window.
-            let set = torrential_home.map_or_else(String::new, |home| format!("set \"TORRENTIAL_HOME={home}\"&& "));
+            let set = newsreel_home.map_or_else(String::new, |home| format!("set \"NEWSREEL_HOME={home}\"&& "));
             let exe = without_verbatim(&exe);
             let command =
                 format!("cmd.exe /d /s /c \"{set}\"{exe}\" daemon run --service >> \"{}\" 2>&1\"", log.display());
@@ -115,7 +114,7 @@ pub fn unit(manager: Manager, exe: &Path, log: &Path, torrential_home: Option<&s
                 r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Starts the torrential engine when you log in.</Description>
+    <Description>Starts the newsreel engine when you log in.</Description>
   </RegistrationInfo>
   <Triggers>
     <LogonTrigger>
@@ -152,14 +151,14 @@ pub fn unit(manager: Manager, exe: &Path, log: &Path, torrential_home: Option<&s
     }
 }
 
-/// What a login service unit starts: the torrential binary, and the `TORRENTIAL_HOME` it sets.
+/// What a login service unit starts: the newsreel binary, and the `NEWSREEL_HOME` it sets.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Starts {
     pub exe: String,
     pub home: Option<String>,
 }
 
-/// Reads back what `unit` wrote, or `None` for a unit torrential did not write.
+/// Reads back what `unit` wrote, or `None` for a unit newsreel did not write.
 fn starts(manager: Manager, unit: &str) -> Option<Starts> {
     let between = |text: &str, from: &str, to: &str| -> Option<String> {
         let rest = &text[text.find(from)? + from.len()..];
@@ -169,19 +168,19 @@ fn starts(manager: Manager, unit: &str) -> Option<Starts> {
     match manager {
         Manager::Launchd => Some(Starts {
             exe: unxml(&between(after("<key>ProgramArguments</key>")?, "<string>", "</string>")?),
-            home: after("<key>TORRENTIAL_HOME</key>")
+            home: after("<key>NEWSREEL_HOME</key>")
                 .and_then(|rest| between(rest, "<string>", "</string>"))
                 .map(|h| unxml(&h)),
         }),
         Manager::Systemd => Some(Starts {
             exe: between(unit, "ExecStart=\"", "\"")?,
-            home: between(unit, "Environment=\"TORRENTIAL_HOME=", "\""),
+            home: between(unit, "Environment=\"NEWSREEL_HOME=", "\""),
         }),
         Manager::TaskScheduler => {
             let command = &unit[..unit.find("\" daemon run --service")?];
             Some(Starts {
                 exe: unxml(&command[command.rfind('"')? + 1..]),
-                home: between(unit, "set \"TORRENTIAL_HOME=", "\"").map(|h| unxml(&h)),
+                home: between(unit, "set \"NEWSREEL_HOME=", "\"").map(|h| unxml(&h)),
             })
         }
     }
@@ -191,7 +190,7 @@ fn unxml(text: &str) -> String {
     text.replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
 }
 
-/// The binary the login service starts, when torrential wrote the service for this engine's
+/// The binary the login service starts, when newsreel wrote the service for this engine's
 /// state folder and it starts another binary than this one, as an install from another path
 /// leaves it.
 pub fn starts_another(env: &Env, paths: &Paths) -> Option<String> {
@@ -206,7 +205,7 @@ pub fn starts_another(env: &Env, paths: &Paths) -> Option<String> {
     };
     let service = starts(manager, &text)?;
     let this = env.installed().ok()?.display().to_string();
-    (service.home.as_deref() == env.var("TORRENTIAL_HOME") && service.exe != without_verbatim(&this))
+    (service.home.as_deref() == env.var("NEWSREEL_HOME") && service.exe != without_verbatim(&this))
         .then_some(service.exe)
 }
 
@@ -227,7 +226,7 @@ fn user(env: &Env) -> String {
     }
 }
 
-torrential_core::words! {
+newsreel_core::words! {
     /// What `engine install` and `engine uninstall` did to the login service.
     pub enum Change {
         Installed = "installed",
@@ -304,9 +303,9 @@ pub fn linger(env: &Env, uid: u32, on: bool, terminal: bool) -> Result<(), Error
         return Ok(());
     }
     let (message, then) = if on {
-        ("systemd cannot keep the engine running without a login until lingering is on", "torrential server install")
+        ("systemd cannot keep the engine running without a login until lingering is on", "newsreel server install")
     } else {
-        ("systemd keeps starting the engine at boot until lingering is off", "torrential server uninstall")
+        ("systemd keeps starting the engine at boot until lingering is off", "newsreel server uninstall")
     };
     Err(Error::new(ErrorCode::Usage, message).with_hint(format!("run sudo loginctl {verb} {uid}, then {then} again")))
 }
@@ -326,7 +325,7 @@ fn encoded(manager: Manager, text: &str) -> Vec<u8> {
 fn put(manager: Manager, path: &Path, text: &str) -> Result<bool, Error> {
     let write_failed = |e: std::io::Error| {
         Error::new(ErrorCode::SandboxWriteBlocked, format!("cannot write {}: {e}", path.display()))
-            .with_hint("run torrential engine install from a terminal outside any sandbox")
+            .with_hint("run newsreel engine install from a terminal outside any sandbox")
     };
     let dir = path.parent().expect("unit paths have a parent");
     let mut wrote = false;
@@ -339,7 +338,7 @@ fn put(manager: Manager, path: &Path, text: &str) -> Result<bool, Error> {
     #[cfg(unix)]
     if manager == Manager::Systemd {
         let wants = dir.join("default.target.wants");
-        let link = wants.join("torrential.service");
+        let link = wants.join("newsreel.service");
         if std::fs::read_link(&link).ok().as_deref() != Some(path) {
             std::fs::create_dir_all(&wants).map_err(write_failed)?;
             let _ = std::fs::remove_file(&link);
@@ -360,7 +359,7 @@ fn activate(env: &Env, manager: Manager, path: &Path) -> Result<(), Error> {
         }
         Manager::Systemd => {
             run(env, "systemctl", &["--user", "daemon-reload"])?;
-            run(env, "systemctl", &["--user", "enable", "--now", "torrential.service"])
+            run(env, "systemctl", &["--user", "enable", "--now", "newsreel.service"])
         }
         Manager::TaskScheduler => {
             run(env, "schtasks", &["/Create", "/TN", TASK, "/XML", &path.display().to_string(), "/F"])?;
@@ -383,7 +382,7 @@ pub fn install(env: &Env, paths: &Paths) -> Result<Report, Error> {
     let manager = Manager::current();
     let path = manager.unit_path(home(env)?, paths);
     let _ = std::fs::remove_file(paths.login_service_declined());
-    let text = unit(manager, &env.installed()?, &paths.log(), env.var("TORRENTIAL_HOME"), &user(env));
+    let text = unit(manager, &env.installed()?, &paths.log(), env.var("NEWSREEL_HOME"), &user(env));
     let wrote = put(manager, &path, &text)?;
     activate(env, manager, &path)?;
     let result = if wrote { Change::Installed } else { Change::AlreadyInstalled };
@@ -404,7 +403,7 @@ pub fn uninstall(env: &Env, paths: &Paths) -> Result<Report, Error> {
             let _ = run(env, "launchctl", &["bootout", &format!("{}/{LABEL}", gui_domain())]);
         }
         Manager::Systemd => {
-            let _ = run(env, "systemctl", &["--user", "disable", "--now", "torrential.service"]);
+            let _ = run(env, "systemctl", &["--user", "disable", "--now", "newsreel.service"]);
         }
         // Deleting a task leaves its engine running, so the command stops the engine itself.
         Manager::TaskScheduler => {
@@ -419,11 +418,11 @@ pub fn uninstall(env: &Env, paths: &Paths) -> Result<Report, Error> {
 }
 
 /// Adds the login service the first time the default home's engine starts, unless the person
-/// removed it with `torrential engine uninstall`. It takes effect at the next login. A test engine
+/// removed it with `newsreel engine uninstall`. It takes effect at the next login. A test engine
 /// adds one only when its test supplies stand-ins for launchctl and systemctl.
 pub fn add_at_start(env: &Env, paths: &Paths) -> Result<Option<PathBuf>, Error> {
     let stand_ins = |test: TestHooks| test.var(hooks::SERVICE_BIN).is_some();
-    if env.var("TORRENTIAL_HOME").is_some()
+    if env.var("NEWSREEL_HOME").is_some()
         || env.test().is_some_and(|test| !stand_ins(test))
         || paths.login_service_declined().exists()
     {
@@ -454,9 +453,9 @@ pub fn notice(paths: &Paths, audience: Audience) -> Option<String> {
     std::fs::remove_file(paths.login_service_added()).ok()?;
     Some(match audience {
         Audience::Person => {
-            "The engine now starts when you log in. To turn that off, run torrential engine uninstall.".to_string()
+            "The engine now starts when you log in. To turn that off, run newsreel engine uninstall.".to_string()
         }
-        Audience::Agent => "# the engine now starts at login; torrential engine uninstall turns that off".to_string(),
+        Audience::Agent => "# the engine now starts at login; newsreel engine uninstall turns that off".to_string(),
     })
 }
 
@@ -520,7 +519,7 @@ mod tests {
     fn the_line_about_an_added_service_comes_once() {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().display().to_string();
-        let env = Env::from_pairs([("HOME", home.as_str()), ("TORRENTIAL_HOME", home.as_str())]);
+        let env = Env::from_pairs([("HOME", home.as_str()), ("NEWSREEL_HOME", home.as_str())]);
         let paths = Paths::resolve(&env, 501, None).unwrap();
         std::fs::create_dir_all(&paths.state).unwrap();
         let said = |audience| notice(&paths, audience);
@@ -530,45 +529,43 @@ mod tests {
         assert_eq!(
             [said(Audience::Person), said(Audience::Person)],
             [
-                Some(
-                    "The engine now starts when you log in. To turn that off, run torrential engine uninstall.".into()
-                ),
+                Some("The engine now starts when you log in. To turn that off, run newsreel engine uninstall.".into()),
                 None
             ]
         );
         std::fs::write(paths.login_service_added(), b"").unwrap();
         assert_eq!(
             said(Audience::Agent).as_deref(),
-            Some("# the engine now starts at login; torrential engine uninstall turns that off")
+            Some("# the engine now starts at login; newsreel engine uninstall turns that off")
         );
     }
 
     #[test]
     fn the_logon_task_runs_the_engine_for_this_person_with_no_window_and_logs_what_it_prints() {
-        let exe = Path::new(r"C:\Users\Ada & Bo\AppData\Local\Programs\torrential\torrential.exe");
-        let log = Path::new(r"C:\Users\Ada & Bo\AppData\Local\torrential\state\engine.log");
+        let exe = Path::new(r"C:\Users\Ada & Bo\AppData\Local\Programs\newsreel\newsreel.exe");
+        let log = Path::new(r"C:\Users\Ada & Bo\AppData\Local\newsreel\state\engine.log");
         let task = unit(Manager::TaskScheduler, exe, log, None, r"STUDIO\ada");
         let line = |tag: &str| task.lines().find(|line| line.contains(tag)).unwrap().trim().to_string();
         assert_eq!(line("<UserId>"), r"<UserId>STUDIO\ada</UserId>");
         assert_eq!(line("<Command>"), "<Command>conhost.exe</Command>");
         assert_eq!(
             line("<Arguments>"),
-            r#"<Arguments>--headless cmd.exe /d /s /c ""C:\Users\Ada &amp; Bo\AppData\Local\Programs\torrential\torrential.exe" daemon run --service &gt;&gt; "C:\Users\Ada &amp; Bo\AppData\Local\torrential\state\engine.log" 2&gt;&amp;1"</Arguments>"#
+            r#"<Arguments>--headless cmd.exe /d /s /c ""C:\Users\Ada &amp; Bo\AppData\Local\Programs\newsreel\newsreel.exe" daemon run --service &gt;&gt; "C:\Users\Ada &amp; Bo\AppData\Local\newsreel\state\engine.log" 2&gt;&amp;1"</Arguments>"#
         );
-        let canonical = Path::new(r"\\?\C:\Users\Ada & Bo\AppData\Local\Programs\torrential\torrential.exe");
+        let canonical = Path::new(r"\\?\C:\Users\Ada & Bo\AppData\Local\Programs\newsreel\newsreel.exe");
         assert_eq!(
             unit(Manager::TaskScheduler, canonical, log, None, r"STUDIO\ada"),
             task,
             "cmd runs no verbatim path"
         );
         let home = unit(Manager::TaskScheduler, exe, log, Some(r"D:\th"), r"STUDIO\ada");
-        assert!(home.contains(r#"/c "set "TORRENTIAL_HOME=D:\th"&amp;&amp; "C:\"#), "{home}");
+        assert!(home.contains(r#"/c "set "NEWSREEL_HOME=D:\th"&amp;&amp; "C:\"#), "{home}");
         assert_eq!(encoded(Manager::TaskScheduler, "<a/>")[..4], [0xFF, 0xFE, b'<', 0]);
     }
 
     #[test]
     fn every_unit_reads_back_the_binary_and_the_home_it_starts() {
-        let (exe, log) = (r"C:\Ada & Bo\<bin>\torrential", Path::new("/state/engine.log"));
+        let (exe, log) = (r"C:\Ada & Bo\<bin>\newsreel", Path::new("/state/engine.log"));
         for manager in [Manager::Launchd, Manager::Systemd, Manager::TaskScheduler] {
             for home in [None, Some(r"D:\th & co")] {
                 let written = unit(manager, Path::new(exe), log, home, "ada");

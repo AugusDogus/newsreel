@@ -10,11 +10,11 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use torrential_core::catalog::Episode;
-use torrential_core::protocol::{Continue, Home, TitlePage, TitleSources};
-use torrential_core::title::{Wanted, season_episodes, title_name};
-use torrential_core::watching::{next, play_target};
-use torrential_core::{
+use newsreel_core::catalog::Episode;
+use newsreel_core::protocol::{Continue, Home, TitlePage, TitleSources};
+use newsreel_core::title::{Wanted, season_episodes, title_name};
+use newsreel_core::watching::{next, play_target};
+use newsreel_core::{
     Category, EpisodeInfo, Error, ErrorCode, HexPrefix, Job, Kind, Next, Player, Preferences, Profile, Quality,
     Release, ResultId, SearchQuery, Skip, TitleDetails, TitleId, VideoRef,
 };
@@ -170,7 +170,7 @@ pub struct Resolved {
 impl Resolved {
     /// The film's name and year, or the series' name and the episode, as a person reads it.
     pub fn name(&self) -> String {
-        torrential_core::title::title_name(&self.details.card, self.video.episode)
+        newsreel_core::title::title_name(&self.details.card, self.video.episode)
     }
 }
 
@@ -208,7 +208,7 @@ fn holding(job: &Job, video: &VideoRef, ranked: &[Release]) -> Option<(Release, 
 }
 
 /// The episode a series plays next, or its first aired one when the person has caught up.
-fn next_episode(details: &TitleDetails, watched: &[torrential_core::Watched], now: i64) -> Result<VideoRef, Error> {
+fn next_episode(details: &TitleDetails, watched: &[newsreel_core::Watched], now: i64) -> Result<VideoRef, Error> {
     play_target(details, watched, now)
         .map(|target| target.video)
         .ok_or_else(|| Error::new(ErrorCode::NotFound, format!("no episode of {} has aired yet", details.card.name)))
@@ -229,7 +229,7 @@ pub fn playable(details: &TitleDetails, episode: Option<Episode>, now: i64) -> R
     let named = format!("{} {e}", details.card.name);
     Err(match info.aired {
         Some(aired) => {
-            let day = &torrential_core::units::timestamp(aired)[..10];
+            let day = &newsreel_core::units::timestamp(aired)[..10];
             Error::new(ErrorCode::Usage, format!("{named} has not aired: it airs on {day}"))
         }
         None => Error::new(ErrorCode::Usage, format!("{named} has not aired, and has no air date yet")),
@@ -239,7 +239,7 @@ pub fn playable(details: &TitleDetails, episode: Option<Episode>, now: i64) -> R
 /// One title as the catalog describes it, with where the person stopped, what plays next, and
 /// the downloads made by playing it. The socket's `title` and `GET /api/title` both answer with it.
 pub(super) async fn title_page(ctx: &Ctx, id: TitleId) -> Result<TitlePage, Error> {
-    let now = torrential_core::time::now();
+    let now = newsreel_core::time::now();
     let details = ctx.titles.catalog.title(&id).await?;
     let watched = ctx.titles.shelf.watched(&id)?;
     let jobs = ctx.owner.ask(|reply| Command::Status { refs: Vec::new(), reply }).await?;
@@ -258,7 +258,7 @@ pub(super) async fn title_page(ctx: &Ctx, id: TitleId) -> Result<TitlePage, Erro
 /// deadline, so an unreachable catalog cannot hold the lists up. Past it, each title's details
 /// come from the copy kept on this machine, and a title with none is left out.
 pub(super) async fn home(ctx: &Ctx) -> Result<Home, Error> {
-    let now = torrential_core::time::now();
+    let now = newsreel_core::time::now();
     let deadline = tokio::time::Instant::now() + ctx.titles.timing.home;
     let catalog = &ctx.titles.catalog;
     let mut going_on = Vec::new();
@@ -282,7 +282,7 @@ pub(super) async fn home(ctx: &Ctx) -> Result<Home, Error> {
 
 /// The releases of the film or episode `video` names, in the order a play tries them.
 pub(super) async fn sources(ctx: &Ctx, video: VideoRef) -> Result<TitleSources, Error> {
-    let title = ctx.titles.resolve(&video, torrential_core::time::now()).await?;
+    let title = ctx.titles.resolve(&video, newsreel_core::time::now()).await?;
     let mut result = search(ctx, ctx.titles.query(&title, (ctx.preferences)(), Player::External).await?).await?;
     let jobs = ctx.owner.ask(|reply| Command::Status { refs: Vec::new(), reply }).await?;
     let ffmpeg = ctx.media.ffmpeg.converts();
@@ -302,8 +302,8 @@ pub(super) async fn pinned(ctx: &Ctx, video: &VideoRef, prefix: &str) -> Result<
     match matching.as_slice() {
         [one] => Ok((*one).clone()),
         [] => Err(Error::new(ErrorCode::NotFound, format!("no source of {name} has an ID that starts with {prefix}"))
-            .with_hint(format!("run torrential sources {video} to list them"))
-            .with_next(format!("torrential sources {video}"))),
+            .with_hint(format!("run newsreel sources {video} to list them"))
+            .with_next(format!("newsreel sources {video}"))),
         many => Err(Error::new(
             ErrorCode::AmbiguousRef,
             format!("{prefix} starts the IDs of {} sources of {name}", many.len()),
@@ -315,8 +315,8 @@ pub(super) async fn pinned(ctx: &Ctx, video: &VideoRef, prefix: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use torrential_core::title::Span;
-    use torrential_core::{DownloadId, JobStatus, Progress, Selection, TitleLink, Watched};
+    use newsreel_core::title::Span;
+    use newsreel_core::{DownloadId, JobStatus, Progress, Selection, TitleLink, Watched};
 
     fn video(text: &str) -> VideoRef {
         text.parse().unwrap()
@@ -362,7 +362,7 @@ mod tests {
             selection: Selection::All,
             added_at: 0,
             title,
-            place: torrential_core::Place::Folder,
+            place: newsreel_core::Place::Folder,
         };
         titles.failed(release(2).id, Skip::NoVideo);
         titles.failed(release(40).id, Skip::NoData { waited_s: 30 });
@@ -419,7 +419,7 @@ mod tests {
             selection: Selection::All,
             added_at: 0,
             title: Some(TitleLink { title: "tt0063350".parse().unwrap(), span: Span::Film, release: Some(release) }),
-            place: torrential_core::Place::Folder,
+            place: newsreel_core::Place::Folder,
         };
         let jobs = [job(50, "Night.1968.720p", first), job(60, "NightOfTheLivingDeadwithSpanishSubtitles_595", second)];
         let line = titles.line(&jobs, &video("tt0063350"), ranked, Player::External, false);

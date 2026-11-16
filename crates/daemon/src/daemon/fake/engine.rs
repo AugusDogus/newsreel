@@ -3,8 +3,8 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use newsreel_core::{DownloadId, Error, ErrorCode, PieceMap, Slice};
 use serde::{Deserialize, Serialize};
-use torrential_core::{DownloadId, Error, ErrorCode, PieceMap, Slice};
 
 use crate::daemon::engine_port::{self, Activity, AddDownload, EngineEvent, EnginePort, Missing, Stats};
 use crate::daemon::layout::{Layout, LayoutFile};

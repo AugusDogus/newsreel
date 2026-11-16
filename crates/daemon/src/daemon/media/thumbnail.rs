@@ -4,7 +4,7 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use torrential_core::{DownloadId, Error, ErrorCode};
+use newsreel_core::{DownloadId, Error, ErrorCode};
 
 use super::super::ctx::Ctx;
 use super::super::owner::{Command, StreamFile};

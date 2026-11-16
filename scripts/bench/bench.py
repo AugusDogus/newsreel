@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
-"""Rerunnable performance benchmarks for torrential on macOS.
+"""Rerunnable performance benchmarks for newsreel on macOS.
 
-    python3 -I scripts/bench/bench.py SUITE --bin target/release/torrential --out /tmp/bench [options]
+    python3 -I scripts/bench/bench.py SUITE --bin target/release/newsreel --out /tmp/bench [options]
 
 Suites:
   cli         CLI latency with the engine running: --version, status, and a cached search.
   cold        The first command when no engine runs, and where that time goes.
-  startup     Process start of torrential --version against floor binaries given by --floor.
+  startup     Process start of newsreel --version against floor binaries given by --floor.
   search      Live search with --fresh, spread over time, then the cached repeat.
   search-words  A search for words the engine has not searched, without --fresh, spread over time.
   cache-idle  Whether a search is still cached after the engine sat idle.
   rest        Engine CPU, wakeups, and memory with nothing to do.
   tui-download  TUI CPU in tmux while the real engine downloads --nzb.
-  download    torrential downloading one --nzb, checked by SHA-256, optionally alternating with http.
+  download    newsreel downloading one --nzb, checked by SHA-256, optionally alternating with http.
   http        The same file over plain HTTP, to show what the link carries.
   summary     Median, p95, and range per case from runs.jsonl.
 
 Every run appends one JSON object to OUT/runs.jsonl with its wall time, whether it did
 the work (exit code and output checked), and the 1-minute load average. Each suite uses
-its own TORRENTIAL_HOME under OUT with downloads.dir under OUT, deletes what it
+its own NEWSREEL_HOME under OUT with downloads.dir under OUT, deletes what it
 downloaded, and stops every engine it started. CPU time and memory come from
 proc_pid_rusage, which reads a process's kernel counters without attaching to it.
 """
@@ -131,7 +131,7 @@ class Home:
         self.downloads = self.root / "dl"
         self.downloads.mkdir()
         (self.root / "config" / "config.yaml").write_text(f"downloads:\n  dir: {self.downloads}\n")
-        self.env = dict(os.environ, TORRENTIAL_HOME=str(self.root))
+        self.env = dict(os.environ, NEWSREEL_HOME=str(self.root))
 
     def run(self, *args, timeout=600):
         wall_ms, rc, out, _ = self.measure(*args, timeout=timeout)
@@ -222,7 +222,7 @@ def suite_cli(a, record):
                 elif name == "status-json" and ok:
                     ok = json.loads(out)["type"] == "jobs"
                 elif name == "version" and ok:
-                    ok = out.startswith("torrential ")
+                    ok = out.startswith("newsreel ")
                 calls += name != "version"
                 record(name, run=i, wall_ms=round(wall_ms, 2), ok=ok, note=note, **client)
         engine_after = usage(pid)
@@ -300,7 +300,7 @@ def launch(cmd):
 
 
 def suite_startup(a, record):
-    commands = {"torrential --version": [a.bin, "--version"]} | {Path(f).name: [f] for f in a.floor}
+    commands = {"newsreel --version": [a.bin, "--version"]} | {Path(f).name: [f] for f in a.floor}
     for i in range(a.runs):
         names = list(commands)
         for name in names[i % len(names) :] + names[: i % len(names)]:
@@ -453,7 +453,7 @@ def suite_tui_download(a, record):
         try:
             home.run("--json", "get", a.nzb, "--dir", str(home.downloads))
             engine = home.engine_pid()
-            env = f"TORRENTIAL_HOME={home.root} TERM=xterm-256color COLORTERM=truecolor"
+            env = f"NEWSREEL_HOME={home.root} TERM=xterm-256color COLORTERM=truecolor"
             tui_cmd = f"exec env {env} {a.bin} tui"
             subprocess.run(["tmux", "new-session", "-d", "-s", session, "-x", "100", "-y", "30", tui_cmd], check=True)
             panes = ["tmux", "list-panes", "-t", session, "-F", "#{pane_pid}"]
@@ -490,7 +490,7 @@ def sha256(path):
     return h.hexdigest()
 
 
-def torrential_once(a, i, record):
+def newsreel_once(a, i, record):
     home = Home(a.bin, a.out, f"dl-t{i}")
     try:
         ensure_ms, _, _ = home.run("--json", "status")
@@ -522,7 +522,7 @@ def torrential_once(a, i, record):
         wall = finished - started
         record(
             "download",
-            side="torrential",
+            side="newsreel",
             run=i,
             ok=outcome == "done" and digest == a.sha256,
             outcome=outcome,
@@ -543,7 +543,7 @@ def torrential_once(a, i, record):
 
 
 def suite_download(a, record):
-    sides = {"t": torrential_once, "h": http_once}
+    sides = {"t": newsreel_once, "h": http_once}
     for i in range(a.start, a.start + a.runs):
         k = i % len(a.order) if a.rotate else 0
         for side in a.order[k:] + a.order[:k]:
@@ -673,17 +673,17 @@ def download_summary(rows):
             f"{med(cpus):.2f} ({min(cpus):.2f}-{max(cpus):.2f}) | {med([r['peak_rss_mib'] for r in group]):.1f} | "
             f"{fmt(med([r['peak_footprint_mib'] for r in group if 'peak_footprint_mib' in r]))} |"
         )
-    base = [r["wall_s"] for r in sides.get("torrential", [])]
+    base = [r["wall_s"] for r in sides.get("newsreel", [])]
     for side, group in sides.items():
-        if side != "torrential" and base:
+        if side != "newsreel" and base:
             other = [r["wall_s"] for r in group]
             p = rank_sum_p(base, other)
-            print(f"wall_s torrential vs {side}: exact rank-sum p = {p:.3f} (n = {len(base)} and {len(other)})")
-    cpu_base = [r["cpu_s"] for r in sides.get("torrential", [])]
+            print(f"wall_s newsreel vs {side}: exact rank-sum p = {p:.3f} (n = {len(base)} and {len(other)})")
+    cpu_base = [r["cpu_s"] for r in sides.get("newsreel", [])]
     for side, group in sides.items():
-        if side != "torrential" and side != "http" and cpu_base:
+        if side != "newsreel" and side != "http" and cpu_base:
             other = [r["cpu_s"] for r in group]
-            print(f"cpu_s torrential vs {side}: exact rank-sum p = {rank_sum_p(cpu_base, other):.3f}")
+            print(f"cpu_s newsreel vs {side}: exact rank-sum p = {rank_sum_p(cpu_base, other):.3f}")
 
 
 def main():
@@ -695,7 +695,7 @@ def main():
             "http", "summary",
         ],
     )
-    p.add_argument("--bin", default="target/release/torrential")
+    p.add_argument("--bin", default="target/release/newsreel")
     p.add_argument("--out", required=True)
     p.add_argument("--runs", type=int, default=5)
     p.add_argument(
@@ -707,7 +707,7 @@ def main():
     p.add_argument("--seconds", type=float, default=60, help="rest, tui-download: measurement window")
     p.add_argument("--nzb", help="download, tui-download: the NZB file or URL to download")
     p.add_argument("--sha256", help="download, http: expected SHA-256 of the file")
-    p.add_argument("--order", default="t", help="download: t torrential, h HTTP from --url")
+    p.add_argument("--order", default="t", help="download: t newsreel, h HTTP from --url")
     p.add_argument("--rotate", action="store_true", help="download: start each round one side later")
     p.add_argument("--poll", type=float, default=2, help="download: seconds between progress samples")
     p.add_argument("--url", help="http: the file to fetch")

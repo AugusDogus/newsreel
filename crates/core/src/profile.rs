@@ -75,7 +75,7 @@ impl Viewer {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Player {
-    /// The player `torrential play` and the terminal UI open on this machine, which searches rank
+    /// The player `newsreel play` and the terminal UI open on this machine, which searches rank
     /// for too: config.yaml's `screen` and `playback`, else what the engine detected.
     #[default]
     External,
@@ -276,7 +276,7 @@ pub enum Source {
     Detected,
     /// What the browser that pressed play reported.
     Viewer,
-    /// A preference from `torrential setup`.
+    /// A preference from `newsreel setup`.
     Override,
 }
 

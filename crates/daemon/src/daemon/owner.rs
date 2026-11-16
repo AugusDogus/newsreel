@@ -4,13 +4,13 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use tokio::sync::{broadcast, mpsc, oneshot};
-use torrential_core::protocol::{Change, ChangeResult, FileListSource, GetOutcome, GetReply};
-use torrential_core::time::now;
-use torrential_core::{
+use newsreel_core::protocol::{Change, ChangeResult, FileListSource, GetOutcome, GetReply};
+use newsreel_core::time::now;
+use newsreel_core::{
     DownloadId, Error, ErrorCode, HexPrefix, Job, PieceMap, Release, ResultId, Selection, Target, TitleCard, TitleId,
     TitleLink,
 };
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 use super::admission::{self, Cap, Plan};
 use super::book::{self, Home, Intent, JobEntry, JobRecord, Linked, Observed, Phase, Verify};
@@ -643,9 +643,9 @@ impl Owner {
                 ErrorCode::InvalidRef,
                 format!("{command} takes a download ID, not an .nzb file or URL"),
             )
-            .with_hint("run torrential status to list download IDs")
-            .with_next("torrential status")),
-            Target::Title(video) => Err(torrential_core::target::not_a_release(&video, command)),
+            .with_hint("run newsreel status to list download IDs")
+            .with_next("newsreel status")),
+            Target::Title(video) => Err(newsreel_core::target::not_a_release(&video, command)),
         }
     }
 
@@ -828,12 +828,7 @@ impl Owner {
         let unchanged = selection == Selection::All || selection == job.record.selection;
         if unchanged && cap == job.record.cap && !recheck {
             let plan = self.current_plan(job);
-            return Ok(GetReply {
-                outcome: GetOutcome::Existing,
-                job: job.view(),
-                plan,
-                previous_selection: None,
-            });
+            return Ok(GetReply { outcome: GetOutcome::Existing, job: job.view(), plan, previous_selection: None });
         }
         let previous = (!unchanged).then(|| job.record.selection.clone());
         let selection = if unchanged { job.record.selection.clone() } else { selection };
@@ -900,12 +895,7 @@ impl Owner {
             (None, true) => GetOutcome::Queued,
             (None, false) => GetOutcome::Existing,
         };
-        Ok(GetReply {
-            outcome,
-            job: job.view(),
-            plan: Some(plan.public(cap)),
-            previous_selection: previous,
-        })
+        Ok(GetReply { outcome, job: job.view(), plan: Some(plan.public(cap)), previous_selection: previous })
     }
 
     /// Whether a selected file of the download is gone from disk or shorter than the release says.
@@ -944,7 +934,7 @@ impl Owner {
         };
         let short = id.to_hex()[..6].to_string();
         let see_files = |e: Error| {
-            e.with_hint(format!("run torrential files {short} first")).with_next(format!("torrential files {short}"))
+            e.with_hint(format!("run newsreel files {short} first")).with_next(format!("newsreel files {short}"))
         };
         let count = layout.files.len();
         if let Some(missing) = files.iter().find(|&&i| i as usize >= count) {
@@ -962,7 +952,7 @@ impl Owner {
             },
         };
         for &i in &files {
-            let pattern = globset::escape(&torrential_core::text::sanitize(&layout.files[i as usize].path));
+            let pattern = globset::escape(&newsreel_core::text::sanitize(&layout.files[i as usize].path));
             if !wanted[i as usize] && !patterns.contains(&pattern) {
                 patterns.push(pattern);
             }
@@ -1087,7 +1077,7 @@ impl Owner {
         }
     }
 
-    fn current_plan(&self, job: &JobEntry) -> Option<torrential_core::protocol::DownloadPlan> {
+    fn current_plan(&self, job: &JobEntry) -> Option<newsreel_core::protocol::DownloadPlan> {
         let plan = self.plan(&job.layout, &job.record.selection, &job.record.dir).ok()?;
         Some(plan.public(job.record.cap))
     }
@@ -1273,7 +1263,7 @@ impl Owner {
         }
         if matches!(job.observed, Observed::InEngine(Phase::Pausing | Phase::Finishing { .. })) {
             return Err(Error::new(ErrorCode::JobConflict, format!("{short} is busy saving its state"))
-                .with_hint(format!("try torrential verify {short} again in a few seconds")));
+                .with_hint(format!("try newsreel verify {short} again in a few seconds")));
         }
         let links = self.reach.ask(&job.record.dir, links(job))?;
         self.check_writes(id, &links, "verify")?;
@@ -1412,22 +1402,22 @@ impl Owner {
         let pieces = job.stats.missing.map_or(0, |m| m.pieces) as usize;
         let verified = job.verified();
         let missing = job.selected_size().saturating_sub(verified);
-        let size = |bytes| torrential_core::units::format_size(bytes);
+        let size = |bytes| newsreel_core::units::format_size(bytes);
         let error = Error::new(
             ErrorCode::NoSource,
             format!(
                 "no server has sent the remaining {} ({}) for {}",
-                torrential_core::units::count(pieces, "piece"),
+                newsreel_core::units::count(pieces, "piece"),
                 size(missing),
-                torrential_core::units::elapsed(self.config.stall_after),
+                newsreel_core::units::elapsed(self.config.stall_after),
             ),
         )
         .with_hint(format!(
-            "run torrential resume {} to try again; the {} already verified is kept",
+            "run newsreel resume {} to try again; the {} already verified is kept",
             &id.to_hex()[..6],
             size(verified)
         ))
-        .with_next(format!("torrential resume {}", &id.to_hex()[..6]));
+        .with_next(format!("newsreel resume {}", &id.to_hex()[..6]));
         self.fail(id, error);
     }
 
@@ -1465,10 +1455,10 @@ impl Owner {
 
     fn still_writing(&self, ids: &BTreeSet<DownloadId>) -> Error {
         let shorts: Vec<String> = ids.iter().map(|id| id.to_hex()[..6].to_string()).collect();
-        let within = torrential_core::units::elapsed(self.config.writes_stop_within);
+        let within = newsreel_core::units::elapsed(self.config.writes_stop_within);
         Error::new(ErrorCode::JobConflict, format!("writes to {} did not stop within {within}", shorts.join(", ")))
-            .with_hint(format!("run torrential pause {} again; it returns once writes stop", shorts.join(" ")))
-            .with_next(format!("torrential pause {}", shorts.join(" ")))
+            .with_hint(format!("run newsreel pause {} again; it returns once writes stop", shorts.join(" ")))
+            .with_next(format!("newsreel pause {}", shorts.join(" ")))
     }
 
     fn resume_data(
@@ -1586,10 +1576,10 @@ impl Owner {
             (Intent::Done { .. }, n, Verify::Report) => {
                 let error = Error::new(
                     ErrorCode::VerificationFailed,
-                    format!("{} in the selected files", torrential_core::units::count(n as usize, "damaged piece")),
+                    format!("{} in the selected files", newsreel_core::units::count(n as usize, "damaged piece")),
                 )
-                .with_hint(format!("run torrential verify {short} --repair to download them again"))
-                .with_next(format!("torrential verify {short} --repair"));
+                .with_hint(format!("run newsreel verify {short} --repair to download them again"))
+                .with_next(format!("newsreel verify {short} --repair"));
                 let failed = Intent::Failed { error };
                 record(&mut self.store, Some(&failed));
                 job.record.intent = failed;
@@ -1667,7 +1657,7 @@ impl Owner {
         let job = &self.jobs[&id];
         let Some(wanted) = job.wanted() else { return Ok(()) };
         let layout = &job.layout;
-        let (dir, retry) = (&job.record.dir, format!("torrential {command} {}", &id.to_hex()[..6]));
+        let (dir, retry) = (&job.record.dir, format!("newsreel {command} {}", &id.to_hex()[..6]));
         admission::check_links(links, dir, Some(&retry))?;
         self.check_claims(id, layout, dir, &wanted, Some(&retry))
     }

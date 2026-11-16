@@ -4,7 +4,7 @@
 use std::net::Ipv4Addr;
 use std::time::Duration;
 
-use torrential_core::{Container, Containers, Error, ErrorCode, Playback, Tv};
+use newsreel_core::{Container, Containers, Error, ErrorCode, Playback, Tv};
 use url::Url;
 
 use super::ssdp::at;
@@ -17,7 +17,7 @@ const ANSWER_WITHIN: Duration = Duration::from_secs(4);
 const ACT_WITHIN: Duration = Duration::from_secs(30);
 /// The actions that change what a TV plays.
 const ACTIONS: [&str; 5] = ["SetAVTransportURI", "Play", "Pause", "Seek", "Stop"];
-/// The most of a description or an answer torrential reads. A TV's run to a few kilobytes.
+/// The most of a description or an answer newsreel reads. A TV's run to a few kilobytes.
 const READ_AT_MOST: usize = 256 * 1024;
 const AV_TRANSPORT: &str = "urn:schemas-upnp-org:service:AVTransport:";
 const RENDERING: &str = "urn:schemas-upnp-org:service:RenderingControl:";
@@ -236,7 +236,7 @@ fn gone(tv: &str, error: &reqwest::Error) -> Failed {
     let why = if error.is_timeout() { "it did not answer in time".to_string() } else { error.to_string() };
     Failed::Gone(
         Error::new(ErrorCode::NetworkUnavailable, format!("{tv} cannot be reached ({why})"))
-            .with_hint("check that the TV is on and on the same network as the computer running torrential"),
+            .with_hint("check that the TV is on and on the same network as the computer running newsreel"),
     )
 }
 

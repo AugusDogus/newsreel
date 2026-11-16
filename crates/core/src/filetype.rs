@@ -9,7 +9,7 @@ pub enum Kind {
     Subtitle,
 }
 
-/// One extension and what each part of torrential takes a file with it as.
+/// One extension and what each part of newsreel takes a file with it as.
 #[derive(Debug)]
 pub struct FileType {
     pub extension: &'static str,
@@ -21,7 +21,7 @@ pub struct FileType {
     pub served_as: Option<&'static str>,
     /// The MIME type a browser plays it as without ffmpeg.
     pub browser: Option<&'static str>,
-    /// ffmpeg's name for its format, where torrential names it to ffmpeg.
+    /// ffmpeg's name for its format, where newsreel names it to ffmpeg.
     pub ffmpeg: Option<&'static str>,
     /// Counts toward a release that is mostly media, where an executable file is a risk.
     pub media: bool,

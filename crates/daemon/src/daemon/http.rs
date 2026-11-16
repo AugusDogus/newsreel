@@ -1,5 +1,5 @@
 //! The engine's HTTP server. It serves downloads to video players, the web app with its API, and
-//! the requests of torrential at `wire::PATH`, this user's and paired machines'. It listens on
+//! the requests of newsreel at `wire::PATH`, this user's and paired machines'. It listens on
 //! 127.0.0.1, and on the home network too while a phone or TV is paired. A request for bytes that
 //! have not arrived asks the engine for their pieces first and waits for them, so a player can
 //! start and seek while the rest of the file downloads.
@@ -11,12 +11,12 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use newsreel_core::filetype::FileType;
+use newsreel_core::{DownloadId, ErrorCode};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{oneshot, watch};
-use torrential_core::filetype::FileType;
-use torrential_core::{DownloadId, ErrorCode};
 
 use super::cast::{Dlna, HELLO};
 use super::ctx::Ctx;
@@ -51,7 +51,7 @@ const MAX_BODY: usize = 64 * 1024;
 /// The most of a refused body the engine reads, and for how long, before it closes the connection.
 const LINGER_MOST: usize = 1 << 20;
 const LINGER: Duration = Duration::from_secs(1);
-const MAX_FRAME: usize = torrential_core::protocol::MAX_FRAME;
+const MAX_FRAME: usize = newsreel_core::protocol::MAX_FRAME;
 /// Smaller chunks of a streamed answer go out in one write with their framing.
 const ONE_WRITE: usize = 8 * 1024;
 
@@ -412,7 +412,7 @@ pub struct Request {
     from: Sender,
     /// The device token in the request's cookie.
     pub cookie: Option<String>,
-    /// The token in an `Authorization: Bearer` header, which this user's torrential sends.
+    /// The token in an `Authorization: Bearer` header, which this user's newsreel sends.
     bearer: Option<String>,
     /// The User-Agent, lowercased.
     pub agent: Option<String>,
@@ -478,17 +478,16 @@ impl Connection<'_> {
                     let ctx = self.ctx;
                     self.peer = self.accepted.of_request(&request, &ctx.devices.addressing());
                     let peer = self.peer;
-                    let now = torrential_core::time::now();
+                    let now = newsreel_core::time::now();
                     // No token from an address that offered too many that opened nothing is checked.
                     if (request.cookie.is_some() || request.bearer.is_some()) && ctx.devices.spent(peer.ip(), now) {
                         self.empty("429 Too Many Requests", "Retry-After: 60\r\n", false).await?;
                         self.linger(request.length).await;
                         return Ok(());
                     }
-                    let ask_now = |request: &Request| {
-                        ask(peer, request, ctx.http_port, &ctx.devices, torrential_core::time::now())
-                    };
-                    // This user's torrential may name every file of a large release.
+                    let ask_now =
+                        |request: &Request| ask(peer, request, ctx.http_port, &ctx.devices, newsreel_core::time::now());
+                    // This user's newsreel may name every file of a large release.
                     let most =
                         if request.path == wire::PATH && ask_now(&request).is_ok() { MAX_FRAME } else { MAX_BODY };
                     if request.length > most {
@@ -632,9 +631,7 @@ impl Connection<'_> {
             }
             Refusal::Elsewhere(address) => (
                 "403 Forbidden",
-                format!(
-                    "torrential answers only at its own address, so open http://{address} on this device instead.\n"
-                ),
+                format!("newsreel answers only at its own address, so open http://{address} on this device instead.\n"),
             ),
             Refusal::CastEnded => ("404 Not Found", "This cast has ended, so press Play on TV again.\n".to_string()),
             Refusal::Moved(location) => {
@@ -982,7 +979,7 @@ enum Refusal {
 
 /// Who sent `request`. Over loopback, a request that names this Mac's .local name moves to
 /// 127.0.0.1 first. At `wire::PATH`, this user's token over loopback lets a request in, and so does
-/// a paired device's token, such as torrential's on another machine. A cast URL is let in by its
+/// a paired device's token, such as newsreel's on another machine. A cast URL is let in by its
 /// grant alone, anything else over loopback is this Mac, and from the network a paired device's
 /// cookie lets it in.
 fn ask(peer: Peer, request: &Request, port: u16, devices: &Devices, now: i64) -> Result<Asker, Refusal> {

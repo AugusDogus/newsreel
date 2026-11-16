@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize, Serializer};
 use crate::id::ResultId;
 
 crate::words! {
-    /// Every failure torrential reports. The code is the contract; messages are for people.
+    /// Every failure newsreel reports. The code is the contract; messages are for people.
     #[derive(Hash)]
     #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
     pub enum ErrorCode {
@@ -274,10 +274,10 @@ mod tests {
 
     #[test]
     fn errors_serialize_with_optional_parts_omitted() {
-        let e = Error::new(ErrorCode::NotFound, "no download matches 9b52").with_hint("run torrential status");
+        let e = Error::new(ErrorCode::NotFound, "no download matches 9b52").with_hint("run newsreel status");
         assert_eq!(
             serde_json::to_string(&e).unwrap(),
-            r#"{"code":"not_found","message":"no download matches 9b52","hint":"run torrential status"}"#
+            r#"{"code":"not_found","message":"no download matches 9b52","hint":"run newsreel status"}"#
         );
     }
 }

@@ -1,5 +1,5 @@
-use torrential_core::protocol::{Change, Event, FilesReply, GetReply, Home, TitlePage, TitlePlayed};
-use torrential_core::{
+use newsreel_core::protocol::{Change, Event, FilesReply, GetReply, Home, TitlePage, TitlePlayed};
+use newsreel_core::{
     AttemptEvent, Error, Machine, Preferences, SearchQuery, SearchResult, TitleCard, TitleId, VideoRef,
 };
 
@@ -39,9 +39,9 @@ pub trait Backend: Send + Sync + 'static {
     /// Applies `edit` to the overrides in config.yaml, read fresh, and saves the result, which it
     /// returns. Later searches rank with it, and downloads take their size cap from it.
     fn save_preferences(&self, edit: Edit) -> Result<Preferences, Error>;
-    /// A newer torrential that the engine's last check found, unless updates are off.
+    /// A newer newsreel that the engine's last check found, unless updates are off.
     fn newer_version(&self) -> Option<String>;
-    /// Installs the latest torrential over this binary and returns its version, or `None` when
+    /// Installs the latest newsreel over this binary and returns its version, or `None` when
     /// this binary is already the latest.
     fn upgrade(&self) -> Result<Option<String>, Error>;
     /// Opens a folder in the desktop's file manager.
@@ -53,7 +53,7 @@ pub trait Backend: Send + Sync + 'static {
     /// One film or series, with where the person stopped and what plays next.
     fn title(&self, id: &TitleId) -> Result<TitlePage, Error>;
     /// Plays a film or an episode from the first of its sources that starts, as
-    /// `torrential play <title id>` does, and opens it in a player. `step` receives each step of
+    /// `newsreel play <title id>` does, and opens it in a player. `step` receives each step of
     /// the play. Returns the player's name and what played.
     fn play_title(&self, video: &VideoRef, step: &mut dyn FnMut(AttemptEvent)) -> Result<(String, TitlePlayed), Error>;
 }

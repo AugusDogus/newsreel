@@ -1,13 +1,13 @@
 use std::time::Duration;
 
-use ratatui::buffer::Buffer;
-use ratatui::layout::{Position, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use torrential_core::units::{count, format_duration};
-use torrential_core::{
+use newsreel_core::units::{count, format_duration};
+use newsreel_core::{
     Eighths, ErrorCode, Flag, Job, JobStatus, Machine, Preferences, Profile, Quality, Release, ReleaseFile, Resolution,
     ResultId, Slice, SourceOutcome,
 };
+use ratatui::buffer::Buffer;
+use ratatui::layout::{Position, Rect};
+use ratatui::style::{Color, Modifier, Style};
 
 use crate::format::{
     self, age, ellipsize, first_fit, grabs, home_path, middle, percent, rate, shortenings, size, width,
@@ -214,10 +214,10 @@ fn masthead(buf: &mut Buffer, state: &State, screen: &Screen) {
     let at = screen.at;
     let used = match at.margin {
         Some(_) => {
-            margin(buf, at, MASTHEAD, "torrential", bold(INK));
+            margin(buf, at, MASTHEAD, "newsreel", bold(INK));
             0
         }
-        None => at.content + put(buf, at.content, MASTHEAD, screen.right - at.content, "torrential", bold(INK)) + 3,
+        None => at.content + put(buf, at.content, MASTHEAD, screen.right - at.content, "newsreel", bold(INK)) + 3,
     };
     let room = screen.right.saturating_sub(used);
     let total = rate(state.rate());
@@ -682,7 +682,7 @@ fn download_detail(buf: &mut Buffer, state: &State, job: &Job, g: &Grid, (y, vie
     match &job.status {
         JobStatus::Done { finished_at } => {
             facts.push(size(p.size));
-            let ago = torrential_core::units::ago(state.clock.saturating_sub(*finished_at).max(0) as u64);
+            let ago = newsreel_core::units::ago(state.clock.saturating_sub(*finished_at).max(0) as u64);
             facts.push(format!("finished {ago}"));
         }
         _ => facts.push(format!("{} of {}", size(p.verified), size(p.size))),
@@ -1106,9 +1106,9 @@ fn footer(buf: &mut Buffer, state: &State, screen: &Screen) {
                 Page::Downloads => state.focus == Focus::Query,
             };
             let texts = match typing {
-                true => vec![format!("torrential {latest} available"), format!("{latest} available")],
+                true => vec![format!("newsreel {latest} available"), format!("{latest} available")],
                 false => vec![
-                    format!("torrential {latest} available · U update"),
+                    format!("newsreel {latest} available · U update"),
                     format!("{latest} available · U update"),
                     format!("U update to {latest}"),
                 ],

@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use torrential_core::filetype::{FileType, Kind};
+use newsreel_core::filetype::{FileType, Kind};
 
 use super::Media;
 

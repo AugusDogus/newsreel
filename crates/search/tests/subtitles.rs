@@ -4,11 +4,11 @@
 use std::path::Path;
 use std::sync::{Arc, Mutex};
 
+use newsreel_core::catalog::Episode;
+use newsreel_core::title::{self, Title};
+use newsreel_search::subtitles::{FileHash, Found, Online, SubtitleConfig, Video};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use torrential_core::catalog::Episode;
-use torrential_core::title::{self, Title};
-use torrential_search::subtitles::{FileHash, Found, Online, SubtitleConfig, Video};
 
 const SINTEL: &str = "/os/subtitles/movie/tt1727587";
 const SINTEL_SRT: &str = "/en/download/subencoding-stremio-utf8/src-api/file/1952537611";
@@ -222,7 +222,7 @@ async fn a_source_that_does_not_answer_is_no_answer_and_not_an_empty_one() {
     let error = online.fetch(&subtitle).await.unwrap_err();
     assert_eq!(
         (error.code, error.message.as_str()),
-        (torrential_core::ErrorCode::FetchFailed, "cannot download the subtitle from opensubtitles: HTTP 503")
+        (newsreel_core::ErrorCode::FetchFailed, "cannot download the subtitle from opensubtitles: HTTP 503")
     );
     subtitle.url = "file:///etc/passwd".into();
     assert!(online.fetch(&subtitle).await.unwrap_err().message.ends_with("its address is not a web address"));

@@ -1,17 +1,17 @@
-//! The requests of torrential, this user's and paired machines': each a POST to the engine's HTTP
+//! The requests of newsreel, this user's and paired machines': each a POST to the engine's HTTP
 //! port, answered in frames, with the updates of a request that streams before its reply.
 
 use std::collections::BTreeSet;
 use std::io;
 
-use serde::Serialize;
-use tokio::sync::{broadcast, mpsc, oneshot};
-use torrential_core::error::Details;
-use torrential_core::protocol::{
+use newsreel_core::error::Details;
+use newsreel_core::protocol::{
     Event, Frame, GetOutcome, GetReply, PlayReply, Request, Response, TitlePlayed, TitleRequest, TitleStep,
     WIRE_VERSION, encode_frame,
 };
-use torrential_core::{AttemptEvent, CastRequest, DownloadId, Error, ErrorCode, Player, Plays, SearchQuery};
+use newsreel_core::{AttemptEvent, CastRequest, DownloadId, Error, ErrorCode, Player, Plays, SearchQuery};
+use serde::Serialize;
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 use super::ctx::Ctx;
 use super::devices::Asker;
@@ -66,7 +66,7 @@ pub async fn handle(ctx: &Ctx, request: Request) -> Response {
         }
         Request::Devices => Ok(Response::Devices { list: ctx.devices.list(ctx.http_port) }),
         Request::AddDevice => {
-            ctx.devices.add(ctx.http_port, torrential_core::time::now()).map(|list| Response::Devices { list })
+            ctx.devices.add(ctx.http_port, newsreel_core::time::now()).map(|list| Response::Devices { list })
         }
         Request::RemoveDevice { id } => ctx.devices.remove(&id, ctx.http_port).map(|list| Response::Devices { list }),
         Request::Tvs { fresh } => Ok(Response::Tvs { list: ctx.casts.search(fresh).await }),
@@ -115,8 +115,8 @@ pub async fn answer(conn: &mut Connection<'_>, http: &Http, asker: &Asker) -> io
                 ErrorCode::DaemonVersion,
                 format!("the engine uses protocol version {WIRE_VERSION}, but this client uses {speaks}"),
             )
-            .with_hint("run torrential engine stop, then run the command again")
-            .with_next("torrential engine stop");
+            .with_hint("run newsreel engine stop, then run the command again")
+            .with_next("newsreel engine stop");
             Response::Error { error }
         }
         Err(e) => Response::Error { error: Error::internal(format!("the engine cannot read the request: {e}")) },
@@ -245,20 +245,20 @@ async fn cast_frames(conn: &mut Connection<'_>, request: CastRequest) -> io::Res
 }
 
 /// Answers a stop that a client sends without the person asking, to run its own version instead. An
-/// engine newer than the client keeps running, since torrential 0.4 sends this stop to an engine of
+/// engine newer than the client keeps running, since newsreel 0.4 sends this stop to an engine of
 /// any other version. Any other engine stops only when nothing plays and every download is saved.
 async fn switch(ctx: &Ctx, client: &str) -> Response {
     if Version::newer(&ctx.version, client) {
-        log(&format!("torrential {client} asked the engine to stop for its own version"));
+        log(&format!("newsreel {client} asked the engine to stop for its own version"));
         let error = Error::new(
             ErrorCode::DaemonVersion,
-            format!("the engine runs the newer torrential {}, so it keeps running", ctx.version),
+            format!("the engine runs the newer newsreel {}, so it keeps running", ctx.version),
         )
-        .with_hint("restart this torrential");
+        .with_hint("restart this newsreel");
         return Response::Error { error };
     }
     let Some(closed) = ctx.playing.try_close() else {
-        let error = Error::new(ErrorCode::DaemonVersion, format!("torrential switches to {client} when the film ends"));
+        let error = Error::new(ErrorCode::DaemonVersion, format!("newsreel switches to {client} when the film ends"));
         return Response::Error { error };
     };
     match super::switch::stop_for_next(ctx, closed).await {

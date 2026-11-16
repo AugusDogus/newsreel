@@ -576,7 +576,7 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
             fix={/mac/i.test(navigator.userAgent) ? "brew install ffmpeg" : "sudo apt install ffmpeg"}
             note={
               <>
-                To watch in a desktop player instead, run <code className="font-mono">torrential play {id.slice(0, 6)}</code>.
+                To watch in a desktop player instead, run <code className="font-mono">newsreel play {id.slice(0, 6)}</code>.
               </>
             }
             onRetry={onReload}
@@ -584,7 +584,7 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
             back={back}
           >
             <p className="text-sm text-pretty text-soft">
-              Browsers cannot read {media.container === "matroska" ? "MKV" : media.container} files by themselves. torrential
+              Browsers cannot read {media.container === "matroska" ? "MKV" : media.container} files by themselves. newsreel
               repackages them with ffmpeg as they download. Install it, then try again.
             </p>
           </Problem>
@@ -593,7 +593,7 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
           <Problem title="This browser cannot play the video" onRetry={onReload} onBack={onBack} back={back}>
             <p className="text-sm text-pretty text-soft">
               It has no decoder for {media.video?.codec.toUpperCase() ?? "this format"}. Try another browser, or run{" "}
-              <code className="font-mono">torrential play {id.slice(0, 6)}</code> to watch in a desktop player.
+              <code className="font-mono">newsreel play {id.slice(0, 6)}</code> to watch in a desktop player.
             </p>
           </Problem>
         )}

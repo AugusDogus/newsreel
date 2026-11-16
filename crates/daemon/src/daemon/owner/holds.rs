@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use torrential_core::{DownloadId, Error};
+use newsreel_core::{DownloadId, Error};
 
 use super::super::book::{Intent, JobEntry, Observed, Phase};
 use super::Hold;

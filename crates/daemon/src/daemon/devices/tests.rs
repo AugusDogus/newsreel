@@ -100,7 +100,7 @@ async fn a_code_closes_ten_minutes_after_it_opens_even_when_the_clock_is_set_bac
     let home = Home::new();
     let reach = home.devices.reach();
     // The Mac's clock ran an hour fast when the code opened, and was put right after.
-    let fast = torrential_core::time::now() + 3600;
+    let fast = newsreel_core::time::now() + 3600;
     home.devices.add(PORT, fast).unwrap();
     tokio::time::sleep(Duration::from_secs(599)).await;
     assert_eq!(*reach.borrow(), Reach::Network, "the code is still open");
@@ -196,7 +196,7 @@ async fn a_removed_device_is_locked_out_and_its_open_requests_end() {
         (
             ErrorCode::NotFound,
             format!("no device has the ID {}", device.id),
-            Some("run torrential devices to list them".into())
+            Some("run newsreel devices to list them".into())
         )
     );
 }

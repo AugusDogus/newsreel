@@ -1,0 +1,938 @@
+// Its releases are shell scripts that run the real binary under another version.
+#![cfg(unix)]
+
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, mpsc};
+use std::time::Duration;
+
+use sha2::{Digest, Sha256};
+
+#[allow(dead_code)]
+#[path = "../../daemon/src/env/hooks.rs"]
+mod hooks;
+
+const SKILL: &str = include_str!("../../../skills/newsreel/SKILL.md");
+const SCRIPT: &[u8] = b"#!/bin/sh\necho newsreel 0.1.1\n";
+const BROKEN: &[u8] = b"#!/bin/sh\nexit 1\n";
+/// A release that says it is 0.1.1 and exits as soon as it is asked to run an engine.
+const CRASHES: &[u8] = b"#!/bin/sh\ncase \"$1\" in\n  --version) echo newsreel 0.1.1 ;;\n  *) exit 3 ;;\nesac\n";
+const AGENT_VARS: [&str; 8] = [
+    "CLAUDECODE",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CODEX_THREAD_ID",
+    "CODEX_CI",
+    "CODEX_SANDBOX",
+    "GEMINI_CLI",
+    "CURSOR_AGENT",
+    "AI_AGENT",
+];
+
+fn target() -> Option<&'static str> {
+    match (std::env::consts::OS, std::env::consts::ARCH) {
+        ("macos", "aarch64") => Some("aarch64-apple-darwin"),
+        ("linux", "x86_64") => Some("x86_64-unknown-linux-musl"),
+        ("linux", "aarch64") => Some("aarch64-unknown-linux-musl"),
+        _ => None,
+    }
+}
+
+/// The newsreel under test, linked into a folder of its own. An engine that a release starts
+/// runs from here, so whatever it replaces later leaves the build alone.
+struct Built(tempfile::TempDir);
+
+impl Built {
+    fn new() -> Built {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("newsreel");
+        if std::fs::hard_link(env!("CARGO_BIN_EXE_newsreel"), &link).is_err() {
+            std::fs::copy(env!("CARGO_BIN_EXE_newsreel"), &link).unwrap();
+        }
+        Built(dir)
+    }
+
+    /// A release whose binary says it is newsreel `version` and runs as that version.
+    fn release(&self, version: &str) -> Vec<u8> {
+        let real = self.0.path().join("newsreel").display().to_string();
+        format!(
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo \"newsreel {version}\" ;;\n  *) \
+             NEWSREEL_TEST_VERSION={version} exec '{real}' \"$@\" ;;\nesac\n"
+        )
+        .into_bytes()
+    }
+
+    /// A release like `release` that waits `seconds` before it runs, as an engine slow to start does.
+    fn slow(&self, version: &str, seconds: u32) -> Vec<u8> {
+        let real = self.0.path().join("newsreel").display().to_string();
+        format!(
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo \"newsreel {version}\" ;;\n  *) sleep {seconds}; \
+             NEWSREEL_TEST_VERSION={version} exec '{real}' \"$@\" ;;\nesac\n"
+        )
+        .into_bytes()
+    }
+
+    /// A release like `release` that writes its process ID to `marks/pid`, and that hangs instead of
+    /// exiting once its engine stops, after it leaves `marks/hangs`.
+    fn hanging(&self, version: &str, marks: &Path) -> Vec<u8> {
+        let (real, marks) = (self.0.path().join("newsreel").display().to_string(), marks.display());
+        format!(
+            "#!/bin/sh\ncase \"$1\" in\n  --version) echo \"newsreel {version}\" ;;\n  *) echo $$ > '{marks}/pid'; \
+             NEWSREEL_TEST_VERSION={version} '{real}' \"$@\"; : > '{marks}/hangs'; exec sleep 600 ;;\nesac\n"
+        )
+        .into_bytes()
+    }
+}
+
+fn alive(pid: i32) -> bool {
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
+fn hex(bytes: &[u8]) -> String {
+    Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn tarball(binary: &[u8]) -> Vec<u8> {
+    let gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    let mut builder = tar::Builder::new(gz);
+    for (name, bytes) in [("LICENSE", b"MIT\n".as_slice()), ("newsreel", binary)] {
+        let mut header = tar::Header::new_gnu();
+        header.set_size(bytes.len() as u64);
+        header.set_mode(0o755);
+        header.set_cksum();
+        builder.append_data(&mut header, name, bytes).unwrap();
+    }
+    builder.into_inner().unwrap().finish().unwrap()
+}
+
+struct Server {
+    base: String,
+    asked: Arc<Mutex<Vec<String>>>,
+}
+
+impl Server {
+    fn start(version: &str, binary: &[u8], published_sum: Option<&str>) -> Server {
+        Server::gated(version, binary, published_sum, None)
+    }
+
+    /// The first request whose path ends with the gate's text waits until the gate receives. Other
+    /// requests are answered meanwhile.
+    fn gated(
+        version: &str,
+        binary: &[u8],
+        published_sum: Option<&str>,
+        gate: Option<(&'static str, mpsc::Receiver<()>)>,
+    ) -> Server {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let tarball = Arc::new(tarball(binary));
+        let sum = published_sum.map_or_else(|| hex(&tarball), str::to_string);
+        let asked: Arc<Mutex<Vec<String>>> = Arc::default();
+        let (log, location, gate) = (asked.clone(), format!("{base}/tag/v{version}"), Arc::new(Mutex::new(gate)));
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                let (log, location, gate, tarball, sum) =
+                    (log.clone(), location.clone(), gate.clone(), tarball.clone(), sum.clone());
+                std::thread::spawn(move || {
+                    let path = request_path(&stream);
+                    log.lock().unwrap().push(path.clone());
+                    let held = {
+                        let mut gate = gate.lock().unwrap();
+                        if gate.as_ref().is_some_and(|(end, _)| path.ends_with(end)) { gate.take() } else { None }
+                    };
+                    if let Some((_, wait)) = held {
+                        let _ = wait.recv();
+                    }
+                    let reply = match path.as_str() {
+                        "/latest" => (302, vec![("Location", location)], Vec::new()),
+                        p if p.ends_with(".tar.gz") => (200, Vec::new(), tarball.to_vec()),
+                        p if p.ends_with(".tar.gz.sha256") => {
+                            let name = p.rsplit('/').next().unwrap().trim_end_matches(".sha256");
+                            (200, Vec::new(), format!("{sum}  {name}\n").into_bytes())
+                        }
+                        _ => (404, Vec::new(), b"Not Found".to_vec()),
+                    };
+                    respond(stream, reply);
+                });
+            }
+        });
+        Server { base, asked }
+    }
+
+    fn asked(&self) -> Vec<String> {
+        self.asked.lock().unwrap().clone()
+    }
+}
+
+fn request_path(mut stream: &TcpStream) -> String {
+    let mut head = Vec::new();
+    let mut buf = [0u8; 4096];
+    while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+        match stream.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => head.extend_from_slice(&buf[..n]),
+        }
+    }
+    String::from_utf8_lossy(&head).split_whitespace().nth(1).unwrap_or("/").to_string()
+}
+
+fn respond(mut stream: TcpStream, (status, headers, body): (u16, Vec<(&str, String)>, Vec<u8>)) {
+    let mut head = format!("HTTP/1.1 {status} X\r\nContent-Length: {}\r\nConnection: close\r\n", body.len());
+    for (name, value) in headers {
+        head.push_str(&format!("{name}: {value}\r\n"));
+    }
+    head.push_str("\r\n");
+    let _ = stream.write_all(head.as_bytes()).and_then(|()| stream.write_all(&body));
+}
+
+struct Install {
+    dir: tempfile::TempDir,
+    vars: Vec<(&'static str, String)>,
+}
+
+struct Run {
+    code: i32,
+    stdout: String,
+    stderr: String,
+}
+
+impl Install {
+    fn new(server: &Server) -> Install {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("bin")).unwrap();
+        std::fs::copy(env!("CARGO_BIN_EXE_newsreel"), dir.path().join("bin/newsreel")).unwrap();
+        let vars = vec![
+            ("HOME", dir.path().display().to_string()),
+            ("NEWSREEL_HOME", dir.path().join("th").display().to_string()),
+            (hooks::RELEASES, server.base.clone()),
+            (hooks::VERSION, "0.1.0".to_string()),
+            (hooks::NETWORK, "loopback".to_string()),
+        ];
+        Install { dir, vars }
+    }
+
+    fn set(&mut self, key: &'static str, value: &str) {
+        self.vars.retain(|(k, _)| *k != key);
+        self.vars.push((key, value.to_string()));
+    }
+
+    fn bin(&self) -> PathBuf {
+        self.dir.path().join("bin").canonicalize().unwrap()
+    }
+
+    fn exe(&self) -> PathBuf {
+        self.bin().join("newsreel")
+    }
+
+    fn command(&self, program: &Path, args: &[&str]) -> std::process::Command {
+        let mut cmd = std::process::Command::new(program);
+        for key in AGENT_VARS.iter().chain(&["CODEX_SANDBOX_NETWORK_DISABLED", hooks::ENGINE]) {
+            cmd.env_remove(key);
+        }
+        cmd.args(args).envs(self.vars.iter().map(|(k, v)| (*k, v.as_str())));
+        cmd
+    }
+
+    fn run(&self, args: &[&str]) -> Run {
+        let mut child = assert_cmd::Command::from_std(self.command(&self.exe(), args));
+        child.timeout(Duration::from_secs(60));
+        let out = child.output().unwrap();
+        Run {
+            code: out.status.code().unwrap_or(-1),
+            stdout: String::from_utf8(out.stdout).unwrap(),
+            stderr: String::from_utf8(out.stderr).unwrap(),
+        }
+    }
+
+    fn files_in_bin(&self) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(self.bin())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+}
+
+impl Drop for Install {
+    fn drop(&mut self) {
+        let _ = std::fs::set_permissions(self.dir.path().join("bin"), std::fs::Permissions::from_mode(0o755));
+        let _ = self.command(Path::new(env!("CARGO_BIN_EXE_newsreel")), &["daemon", "stop"]).output();
+    }
+}
+
+fn assets(target: &str) -> [String; 2] {
+    let asset = format!("/download/v0.1.1/newsreel-{target}.tar.gz");
+    [asset.clone(), format!("{asset}.sha256")]
+}
+
+#[test]
+fn update_replaces_the_binary_with_the_verified_release() {
+    let Some(target) = target() else { return };
+    let built = Built::new();
+    let server = Server::start("0.1.1", &built.release("0.1.1"), None);
+    let install = Install::new(&server);
+    let old_inode = std::fs::metadata(install.exe()).unwrap().ino();
+
+    let run = install.run(&["update"]);
+
+    assert_eq!((run.code, run.stdout.as_str(), run.stderr.as_str()), (0, "Updated newsreel 0.1.0 → 0.1.1.\n", ""));
+    let installed = std::fs::metadata(install.exe()).unwrap();
+    assert_eq!(std::fs::read(install.exe()).unwrap(), built.release("0.1.1"));
+    assert_eq!(installed.permissions().mode() & 0o777, 0o755);
+    assert_ne!(installed.ino(), old_inode, "a rename put the new file in place");
+    assert_eq!(install.files_in_bin(), ["newsreel"]);
+    let [tarball, sum] = assets(target);
+    assert_eq!(server.asked(), ["/latest".to_string(), tarball, sum]);
+}
+
+#[test]
+fn update_refreshes_the_installed_skill_and_then_reports_the_latest() {
+    if target().is_none() {
+        return;
+    }
+    let built = Built::new();
+    let server = Server::start("0.1.1", &built.release("0.1.1"), None);
+    let mut install = Install::new(&server);
+    let copy = install.dir.path().join(".agents/skills/newsreel");
+    std::fs::create_dir_all(&copy).unwrap();
+    std::fs::write(copy.join("SKILL.md"), "the skill from 0.1.0\n").unwrap();
+    let sidecar =
+        serde_json::json!({"managed_by": "newsreel", "version": "0.1.0", "sha256": hex(b"the skill from 0.1.0\n")});
+    std::fs::write(copy.join(".newsreel.json"), sidecar.to_string()).unwrap();
+
+    let updated = install.run(&["update", "--json"]);
+    install.set(hooks::VERSION, "0.1.1");
+    let again = install.run(&["update"]);
+    let again_json = install.run(&["update", "--json"]);
+
+    assert_eq!(
+        updated.stdout,
+        "{\"schema\":1,\"type\":\"update\",\"current\":\"0.1.0\",\"latest\":\"0.1.1\",\"result\":\"updated\",\"next\":null}\n"
+    );
+    assert_eq!(std::fs::read_to_string(copy.join("SKILL.md")).unwrap(), SKILL);
+    assert_eq!((again.code, again.stdout.as_str()), (0, "newsreel 0.1.1 is up to date.\n"));
+    assert_eq!(
+        again_json.stdout,
+        "{\"schema\":1,\"type\":\"update\",\"current\":\"0.1.1\",\"latest\":\"0.1.1\",\"result\":\"up_to_date\",\"next\":\
+         null}\n"
+    );
+}
+
+#[test]
+fn a_checksum_mismatch_leaves_the_binary_untouched() {
+    let Some(target) = target() else { return };
+    let server = Server::start("0.1.1", SCRIPT, Some(&"0".repeat(64)));
+    let install = Install::new(&server);
+    let before = std::fs::read(install.exe()).unwrap();
+
+    let run = install.run(&["update"]);
+
+    assert_eq!(
+        (run.code, run.stdout.as_str(), run.stderr.as_str()),
+        (
+            7,
+            "",
+            format!(
+                "error[verification_failed]: newsreel-{target}.tar.gz does not match its published checksum, so the \
+                 installed newsreel is unchanged\nhint: run newsreel update again later; if it fails again, \
+                 report it at https://github.com/nexxeln/torrential/issues\n"
+            )
+            .as_str()
+        )
+    );
+    assert!(std::fs::read(install.exe()).unwrap() == before, "the old binary is still in place");
+    assert_eq!(install.files_in_bin(), ["newsreel"]);
+}
+
+#[test]
+fn update_check_reports_without_installing() {
+    let server = Server::start("0.1.1", SCRIPT, None);
+    let mut install = Install::new(&server);
+    let before = std::fs::read(install.exe()).unwrap();
+
+    let text = install.run(&["update", "--check"]);
+    let json = install.run(&["update", "--check", "--json"]);
+    install.set(hooks::VERSION, "0.1.1");
+    let current = install.run(&["update", "--check", "--json"]);
+
+    assert_eq!(text.stdout, "current: 0.1.0\nlatest:  0.1.1\npolicy:  auto\nnext:    newsreel update\n");
+    assert_eq!(
+        json.stdout,
+        "{\"schema\":1,\"type\":\"update_check\",\"current\":\"0.1.0\",\"latest\":\"0.1.1\",\"update_available\":true,\
+         \"policy\":\"auto\",\"next\":\"newsreel update\"}\n"
+    );
+    assert_eq!(
+        current.stdout,
+        "{\"schema\":1,\"type\":\"update_check\",\"current\":\"0.1.1\",\"latest\":\"0.1.1\",\"update_available\":\
+         false,\"policy\":\"auto\",\"next\":null}\n"
+    );
+    assert!(std::fs::read(install.exe()).unwrap() == before, "--check installs nothing");
+    assert_eq!(server.asked(), ["/latest", "/latest", "/latest"]);
+}
+
+#[test]
+fn an_unwritable_folder_is_refused_before_the_download() {
+    if target().is_none() || unsafe { libc::geteuid() } == 0 {
+        return;
+    }
+    let server = Server::start("0.1.1", SCRIPT, None);
+    let install = Install::new(&server);
+    std::fs::set_permissions(install.bin(), std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let run = install.run(&["update"]);
+
+    let bin = install.bin().display().to_string();
+    assert_eq!(
+        (run.code, run.stderr),
+        (
+            7,
+            format!(
+                "error[storage_error]: cannot write {bin}: Permission denied (os error 13)\nhint: reinstall newsreel \
+                 in a folder you can write, such as ~/.local/bin, or run newsreel update as a user who can write \
+                 {bin}\n"
+            )
+        )
+    );
+    assert_eq!(server.asked(), ["/latest"]);
+}
+
+fn eventually(what: &str, mut done: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(30);
+    while !done() {
+        assert!(std::time::Instant::now() < deadline, "timed out waiting until {what}");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+impl Install {
+    fn agent_with_engine(server: &Server) -> Install {
+        let mut install = Install::new(server);
+        install.set(hooks::ENGINE, "fake");
+        install.set("CLAUDECODE", "1");
+        install
+    }
+
+    fn state(&self) -> PathBuf {
+        self.dir.path().join("th/state")
+    }
+
+    fn found(&self, latest: &str) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        std::fs::create_dir_all(self.state()).unwrap();
+        let checked = serde_json::json!({"latest": latest, "checked_at": now});
+        std::fs::write(self.state().join("update.json"), checked.to_string()).unwrap();
+    }
+
+    fn engine(&self) -> (i64, String) {
+        self.running().expect("the engine is running")
+    }
+
+    /// The engine's process ID and version, or nothing while it restarts.
+    fn running(&self) -> Option<(i64, String)> {
+        let doc: serde_json::Value = serde_json::from_str(&self.run(&["daemon", "status", "--json"]).stdout).ok()?;
+        Some((doc["pid"].as_i64()?, doc["version"].as_str()?.to_string()))
+    }
+
+    fn configure(&self, text: &str) {
+        std::fs::create_dir_all(self.dir.path().join("th/config")).unwrap();
+        std::fs::write(self.dir.path().join("th/config/config.yaml"), text).unwrap();
+    }
+}
+
+#[test]
+fn an_agent_hears_of_a_newer_version_once_a_day_and_json_output_never_changes() {
+    let server = Server::start("0.1.1", SCRIPT, None);
+    let install = Install::agent_with_engine(&server);
+    install.configure("updates: notify\n");
+    install.found("0.1.1");
+
+    let json = install.run(&["status", "--json"]);
+    let first = install.run(&["status"]);
+    let second = install.run(&["status"]);
+
+    assert_eq!((json.code, json.stderr.as_str()), (0, ""));
+    assert!(json.stdout.starts_with("{\"schema\":1,\"type\":\"jobs\""), "{}", json.stdout);
+    assert_eq!(
+        first.stderr,
+        "# update: newsreel 0.1.1 is available (you have 0.1.0). Run newsreel update to install it.\n"
+    );
+    assert_eq!(second.stderr, "");
+    assert_eq!(server.asked(), Vec::<String>::new(), "a check from the last day needs no new one");
+}
+
+impl Install {
+    fn checked(&self) -> serde_json::Value {
+        serde_json::from_slice(&std::fs::read(self.state().join("update.json")).unwrap()).unwrap()
+    }
+
+    fn downloads_of_the_release(server: &Server) -> usize {
+        server.asked().iter().filter(|path| path.ends_with(".tar.gz")).count()
+    }
+}
+
+#[test]
+fn a_release_whose_binary_does_not_run_is_never_installed() {
+    if target().is_none() {
+        return;
+    }
+    let server = Server::start("0.1.1", BROKEN, None);
+    let install = Install::agent_with_engine(&server);
+    install.found("0.1.1");
+    let before = std::fs::read(install.exe()).unwrap();
+
+    assert_eq!(install.run(&["status", "--json"]).code, 0);
+    eventually("the engine refused the release", || install.checked()["refused"] == "0.1.1");
+
+    assert!(std::fs::read(install.exe()).unwrap() == before, "the installed binary is unchanged");
+    assert_eq!(install.files_in_bin(), ["newsreel"], "no partial file is left behind");
+    assert_eq!(install.engine().1, "0.1.0");
+    let log = std::fs::read_to_string(install.state().join("engine.log")).unwrap();
+    let refused =
+        "the binary of newsreel 0.1.1 does not run here (exit status: 1), so the installed newsreel is unchanged";
+    assert!(log.contains(refused), "{log}");
+}
+
+#[test]
+fn a_release_whose_binary_says_another_version_is_neither_installed_nor_tried_again() {
+    if target().is_none() {
+        return;
+    }
+    let built = Built::new();
+    let server = Server::start("0.1.1", &built.release("0.1.0"), None);
+    let install = Install::agent_with_engine(&server);
+    install.configure("updates: auto\n");
+    install.found("0.1.1");
+    let old_inode = std::fs::metadata(install.exe()).unwrap().ino();
+
+    assert_eq!(install.run(&["status", "--json"]).code, 0);
+    let (pid, _) = install.engine();
+    eventually("the engine refused the release", || install.checked()["refused"] == "0.1.1");
+    std::thread::sleep(Duration::from_secs(3));
+    let after = (install.running(), Install::downloads_of_the_release(&server));
+    assert_eq!(install.run(&["engine", "stop"]).code, 0);
+    assert_eq!(install.run(&["status", "--json"]).code, 0);
+    let (next_pid, next_version) = install.engine();
+    std::thread::sleep(Duration::from_secs(3));
+
+    assert_eq!(after, (Some((pid, "0.1.0".into())), 1), "the engine kept running and fetched the release once");
+    assert_ne!(next_pid, pid);
+    assert_eq!(next_version, "0.1.0");
+    assert_eq!(Install::downloads_of_the_release(&server), 1, "a new engine does not try it again");
+    assert_eq!(std::fs::metadata(install.exe()).unwrap().ino(), old_inode);
+    assert_eq!(install.files_in_bin(), ["newsreel"]);
+    let log = std::fs::read_to_string(install.state().join("engine.log")).unwrap();
+    assert!(log.contains("says it is newsreel 0.1.0"), "{log}");
+}
+
+#[test]
+fn a_release_that_says_its_version_but_cannot_run_an_engine_is_never_installed_or_fetched_again() {
+    if target().is_none() {
+        return;
+    }
+    let server = Server::start("0.1.1", CRASHES, None);
+    let mut install = Install::agent_with_engine(&server);
+    let tmp = install.dir.path().join("t");
+    std::fs::create_dir(&tmp).unwrap();
+    install.set("TMPDIR", &tmp.display().to_string());
+    install.found("0.1.1");
+    let before = std::fs::read(install.exe()).unwrap();
+
+    assert_eq!(install.run(&["status", "--json"]).code, 0);
+    eventually("the engine refused the release", || install.checked()["refused"] == "0.1.1");
+    let (pid, version) = install.engine();
+    assert_eq!(install.run(&["engine", "stop"]).code, 0);
+    // Two days on, the engine asks for the latest release again and still leaves this one alone.
+    let mut checked = install.checked();
+    let days_ago = checked["checked_at"].as_i64().unwrap() - 2 * 24 * 60 * 60;
+    checked["checked_at"] = days_ago.into();
+    std::fs::write(install.state().join("update.json"), checked.to_string()).unwrap();
+    assert_eq!(install.run(&["status", "--json"]).code, 0);
+    eventually("the next engine asks for the latest release", || server.asked().contains(&"/latest".to_string()));
+    std::thread::sleep(Duration::from_secs(3));
+
+    assert_eq!(version, "0.1.0");
+    assert_ne!(install.engine().0, pid);
+    assert!(std::fs::read(install.exe()).unwrap() == before, "the installed binary is unchanged");
+    assert_eq!(install.files_in_bin(), ["newsreel"], "no partial file is left behind");
+    assert_eq!(std::fs::read_dir(&tmp).unwrap().count(), 0, "the trial home is gone");
+    assert_eq!(Install::downloads_of_the_release(&server), 1, "the refused release is never fetched again");
+    let log = std::fs::read_to_string(install.state().join("engine.log")).unwrap();
+    let refused = "update failed: the binary of newsreel 0.1.1 does not start an engine (exit status: 3), so the \
+                   installed newsreel is unchanged";
+    assert!(log.contains(refused), "{log}");
+}
+
+#[test]
+fn a_release_that_hangs_once_its_trial_engine_stops_holds_up_neither_the_engine_nor_a_stop() {
+    if target().is_none() {
+        return;
+    }
+    let (built, marks) = (Built::new(), tempfile::tempdir().unwrap());
+    let server = Server::start("0.1.1", &built.hanging("0.1.1", marks.path()), None);
+    let mut install = Install::agent_with_engine(&server);
+    // One worker thread, which a trial that blocks it would keep from answering anyone.
+    install.set("TOKIO_WORKER_THREADS", "1");
+    install.found("0.1.1");
+    let before = std::fs::read(install.exe()).unwrap();
+
+    assert_eq!(install.run(&["status", "--json"]).code, 0);
+    eventually("the trial engine stopped and its release hangs", || marks.path().join("hangs").exists());
+    let release: i32 = std::fs::read_to_string(marks.path().join("pid")).unwrap().trim().parse().unwrap();
+    let answered = install.running();
+    let asked = std::time::Instant::now();
+    let stop = install.run(&["engine", "stop"]);
+    let took = asked.elapsed();
+
+    assert_eq!(answered.map(|(_, version)| version).as_deref(), Some("0.1.0"), "the engine answers during the trial");
+    assert_eq!(stop.code, 0, "{}", stop.stderr);
+    assert!(took < Duration::from_secs(5), "the stop took {took:?}");
+    assert!(!alive(release), "the stop killed the release on trial");
+    assert!(std::fs::read(install.exe()).unwrap() == before, "the installed binary is unchanged");
+    assert_eq!(install.files_in_bin(), ["newsreel"], "no partial file is left behind");
+}
+
+#[test]
+fn an_engine_that_aims_at_an_older_release_than_the_installed_one_leaves_the_newer_in_place() {
+    if target().is_none() {
+        return;
+    }
+    let (answer, gate) = mpsc::channel();
+    let built = Built::new();
+    let server = Server::gated("0.1.1", &built.release("0.1.1"), None, Some(("/latest", gate)));
+    let mut install = Install::agent_with_engine(&server);
+    let port = free_port();
+    install.set(hooks::HTTP_PORT, &port.to_string());
+    assert_eq!(install.run(&["status", "--json"]).code, 0);
+    eventually("the engine asks for the latest release", || server.asked() == ["/latest"]);
+    // Meanwhile another home's engine installs 0.1.2 over the shared executable.
+    let newer = built.release("0.1.2");
+    let partial = install.bin().join(".newsreel.other.update");
+    std::fs::write(&partial, &newer).unwrap();
+    std::fs::set_permissions(&partial, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::rename(&partial, install.exe()).unwrap();
+
+    answer.send(()).unwrap();
+    let log = || std::fs::read_to_string(install.state().join("engine.log")).unwrap();
+    eventually("the engine found 0.1.2 installed", || log().contains("newsreel 0.1.2 is already installed"));
+
+    assert_eq!(std::fs::read(install.exe()).unwrap(), newer, "0.1.2 stays installed");
+    assert_eq!(server.asked(), ["/latest"], "the engine fetched no release");
+    assert!(!log().contains("installed newsreel 0.1.1"), "{}", log());
+    assert_eq!(
+        Install::news(port).unwrap()["notice"],
+        "newsreel 0.1.2 is installed and starts the next time the engine starts."
+    );
+}
+
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port()
+}
+
+impl Install {
+    /// Runs the engine the way the login service does: `daemon run --service`, started again each
+    /// time it exits with the restart status. Its output goes to the engine log.
+    fn supervise(&self) -> std::process::Child {
+        let script = r#"while :; do "$0" daemon run --service >>"$1" 2>&1; s=$?; [ "$s" = 75 ] || exit "$s"; done"#;
+        std::fs::create_dir_all(self.state()).unwrap();
+        let (exe, log) = (self.exe().display().to_string(), self.state().join("engine.log").display().to_string());
+        self.command(Path::new("/bin/sh"), &["-c", script, &exe, &log]).spawn().unwrap()
+    }
+
+    /// What the web app on `port` hears about versions, or nothing while no engine answers there.
+    fn news(port: u16) -> Option<serde_json::Value> {
+        let mut page = TcpStream::connect(("127.0.0.1", port)).ok()?;
+        page.write_all(b"GET /api/version HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n").ok()?;
+        let mut answer = String::new();
+        page.read_to_string(&mut answer).ok()?;
+        serde_json::from_str(answer.split_once("\r\n\r\n")?.1).ok()
+    }
+
+    /// Each engine that started in this home, as its version, process ID, and web port.
+    fn starts(&self) -> Vec<(String, u32, u16)> {
+        let log = std::fs::read_to_string(self.state().join("engine.log")).unwrap_or_default();
+        log.lines()
+            .filter_map(|line| {
+                let (version, rest) = line.split_once(" engine ")?.1.split_once(" started, pid ")?;
+                let (pid, rest) = rest.split_once(", ")?;
+                let (_, port) = rest.rsplit_once("http://127.0.0.1:")?;
+                Some((version.to_string(), pid.parse().ok()?, port.parse().ok()?))
+            })
+            .collect()
+    }
+
+    /// The ID of the test download that never finishes while `NEWSREEL_TEST_FAKE_RATE` is 0.
+    fn wikipedia(&self) -> String {
+        let jobs: serde_json::Value = serde_json::from_str(&self.run(&["status", "--json"]).stdout).unwrap();
+        let jobs = jobs["jobs"].as_array().unwrap();
+        jobs.iter().find(|j| j["name"] == "wikipedia-en-2026-09-text").unwrap()["id"].as_str().unwrap().to_string()
+    }
+}
+
+/// A player asking for the end of a file that has not arrived, so its stream stays open.
+fn open_stream(port: u16, id: &str) -> (TcpStream, [u8; 12]) {
+    let mut player = TcpStream::connect(("127.0.0.1", port)).unwrap();
+    let ask = format!("GET /{id}/0/enwiki.xml.bz2 HTTP/1.1\r\nHost: 127.0.0.1\r\nRange: bytes=23514217000-\r\n\r\n");
+    player.write_all(ask.as_bytes()).unwrap();
+    let mut head = [0; 12];
+    player.read_exact(&mut head).unwrap();
+    (player, head)
+}
+
+#[test]
+fn under_the_login_service_an_update_installs_while_a_film_plays_and_starts_once_it_ends() {
+    let Some(target) = target() else { return };
+    let (answer, gate) = mpsc::channel();
+    let built = Built::new();
+    let server = Server::gated("0.1.1", &built.release("0.1.1"), None, Some(("/latest", gate)));
+    let mut install = Install::agent_with_engine(&server);
+    let port = free_port();
+    install.set(hooks::FAKE_RATE, "0");
+    install.set(hooks::HTTP_PORT, &port.to_string());
+    let old_inode = std::fs::metadata(install.exe()).unwrap().ino();
+    let mut service = install.supervise();
+    eventually("the service started the engine", || install.running().is_some());
+    let (pid, _) = install.engine();
+
+    let (player, head) = open_stream(port, &install.wikipedia());
+    answer.send(()).unwrap();
+    eventually("the engine says the update waits", || {
+        Install::news(port)
+            .is_some_and(|news| news["notice"] == "newsreel 0.1.1 is installed and starts when nothing is playing.")
+    });
+    std::thread::sleep(Duration::from_secs(1));
+    let playing = (std::fs::read(install.exe()).unwrap(), install.running());
+    drop(player);
+    eventually("the service started 0.1.1", || install.running().is_some_and(|(now, v)| now != pid && v == "0.1.1"));
+    let news = Install::news(port);
+    install.set(hooks::VERSION, "0.1.1");
+    let stop = install.run(&["engine", "stop"]);
+    let ended = service.wait().unwrap();
+
+    assert_eq!(&head, b"HTTP/1.1 206");
+    assert_eq!(playing.0, built.release("0.1.1"), "the release was installed while the film played");
+    assert_eq!(playing.1, Some((pid, "0.1.0".into())), "the engine kept its version until the film ended");
+    assert_ne!(std::fs::metadata(install.exe()).unwrap().ino(), old_inode);
+    assert_eq!(news, Some(serde_json::json!({"version": "0.1.1", "notice": "Updated newsreel to 0.1.1."})));
+    assert_eq!((stop.code, ended.code()), (0, Some(0)), "a stop the person asks for does not start it again");
+    let [tarball, sum] = assets(target);
+    assert_eq!(server.asked(), ["/latest".to_string(), tarball, sum]);
+}
+
+#[test]
+fn without_the_login_service_an_installed_update_starts_with_the_next_command() {
+    let Some(target) = target() else { return };
+    let built = Built::new();
+    let server = Server::start("0.1.1", &built.release("0.1.1"), None);
+    let mut install = Install::agent_with_engine(&server);
+    let port = free_port();
+    install.set(hooks::HTTP_PORT, &port.to_string());
+    install.found("0.1.1");
+
+    let started = install.run(&["status", "--json"]);
+    let (old_pid, _) = install.engine();
+    eventually("the engine installed 0.1.1", || {
+        Install::news(port).is_some_and(|news| {
+            news["notice"] == "newsreel 0.1.1 is installed and starts the next time the engine starts."
+        })
+    });
+    let kept = install.running();
+    install.set(hooks::VERSION, "0.1.1");
+    let first = install.run(&["status"]);
+    let second = install.run(&["status"]);
+
+    assert_eq!(started.code, 0);
+    assert_eq!(std::fs::read(install.exe()).unwrap(), built.release("0.1.1"));
+    assert_eq!(kept, Some((old_pid, "0.1.0".into())), "the engine kept the version it started with");
+    assert_eq!(first.stderr, "# updated newsreel from 0.1.0 to 0.1.1\n");
+    assert_eq!(second.stderr, "");
+    let (pid, version) = install.engine();
+    assert_eq!(version, "0.1.1", "the next command started the engine on the new version");
+    assert_ne!(pid, old_pid);
+    assert_eq!(server.asked(), assets(target), "a release found within the day needs no new check");
+}
+
+#[test]
+fn two_engines_that_share_one_executable_install_an_update_once() {
+    if target().is_none() {
+        return;
+    }
+    let (answer, gate) = mpsc::channel();
+    let built = Built::new();
+    let release = built.release("0.1.1");
+    let server = Server::gated("0.1.1", &release, None, Some((".tar.gz", gate)));
+    let homes = [Install::agent_with_engine(&server), Install::agent_with_engine(&server)];
+    std::fs::remove_dir_all(homes[1].dir.path().join("bin")).unwrap();
+    std::os::unix::fs::symlink(homes[0].bin(), homes[1].dir.path().join("bin")).unwrap();
+    let mut pids = Vec::new();
+    for home in &homes {
+        home.found("0.1.1");
+        assert_eq!(home.run(&["status", "--json"]).code, 0);
+        pids.push(home.engine().0);
+    }
+
+    eventually("one engine downloads the release", || Install::downloads_of_the_release(&server) == 1);
+    std::thread::sleep(Duration::from_secs(2));
+    let while_downloading = Install::downloads_of_the_release(&server);
+    answer.send(()).unwrap();
+    let logs = || homes.each_ref().map(|home| std::fs::read_to_string(home.state().join("engine.log")).unwrap());
+    eventually("both engines know 0.1.1 is installed", || {
+        logs().iter().all(|log| log.contains("installed newsreel 0.1.1") || log.contains("0.1.1 is already installed"))
+    });
+    let installed = logs().iter().filter(|log| log.contains("installed newsreel 0.1.1")).count();
+    let running = homes.each_ref().map(|home| home.running());
+
+    assert_eq!(while_downloading, 1, "the second engine waited for the first instead of downloading too");
+    assert_eq!(installed, 1);
+    assert_eq!(Install::downloads_of_the_release(&server), 1);
+    assert_eq!(std::fs::read(homes[0].exe()).unwrap(), release);
+    assert_eq!(homes[0].files_in_bin(), ["newsreel"], "no partial file is left behind");
+    assert_eq!(running, [Some((pids[0], "0.1.0".into())), Some((pids[1], "0.1.0".into()))]);
+}
+
+#[test]
+fn an_engine_that_finds_the_release_after_another_home_installed_it_starts_it_too() {
+    if target().is_none() {
+        return;
+    }
+    let (answer, gate) = mpsc::channel();
+    let built = Built::new();
+    let release = built.release("0.1.1");
+    let server = Server::gated("0.1.1", &release, None, Some(("/latest", gate)));
+    let mut homes = [Install::agent_with_engine(&server), Install::agent_with_engine(&server)];
+    std::fs::remove_dir_all(homes[1].dir.path().join("bin")).unwrap();
+    std::os::unix::fs::symlink(homes[0].bin(), homes[1].dir.path().join("bin")).unwrap();
+    for home in &mut homes {
+        home.set(hooks::HTTP_PORT, "0");
+    }
+    // Home two starts on 0.1.0 and asks for the latest release, whose answer waits until home one
+    // has installed the release it found and runs it.
+    let second = homes[1].supervise();
+    eventually("home two asks for the latest release", || server.asked().contains(&"/latest".to_string()));
+    let (two, before) = homes[1].engine();
+    homes[0].found("0.1.1");
+    let first = homes[0].supervise();
+    eventually("home one runs 0.1.1", || homes[0].running().is_some_and(|(_, version)| version == "0.1.1"));
+
+    answer.send(()).unwrap();
+    eventually("home two runs 0.1.1", || homes[1].running().is_some_and(|(_, version)| version == "0.1.1"));
+    let (two_after, _) = homes[1].engine();
+    let logs = homes.each_ref().map(|home| std::fs::read_to_string(home.state().join("engine.log")).unwrap());
+    let stops = homes.each_ref().map(|home| home.run(&["engine", "stop"]).code);
+    let ended = [first, second].map(|mut service| service.wait().unwrap().code());
+
+    assert_eq!(before, "0.1.0");
+    assert_ne!(two_after, two, "the login service started home two again");
+    assert_eq!(std::fs::read(homes[0].exe()).unwrap(), release);
+    assert_eq!(Install::downloads_of_the_release(&server), 1);
+    assert!(logs[0].contains("installed newsreel 0.1.1"), "{}", logs[0]);
+    assert!(logs[1].contains("newsreel 0.1.1 is already installed"), "{}", logs[1]);
+    assert!(!logs[1].contains("update failed"), "{}", logs[1]);
+    assert_eq!((stops, ended), ([0, 0], [Some(0), Some(0)]));
+}
+
+#[test]
+fn a_stop_asked_while_the_login_service_starts_an_update_stops_the_new_engine() {
+    if target().is_none() {
+        return;
+    }
+    let built = Built::new();
+    let server = Server::start("0.1.1", &built.slow("0.1.1", 3), None);
+    let install = Install::agent_with_engine(&server);
+    install.found("0.1.1");
+    let mut service = install.supervise();
+    let log = || std::fs::read_to_string(install.state().join("engine.log")).unwrap_or_default();
+    eventually("the engine stopped for 0.1.1", || {
+        log().contains("installed newsreel 0.1.1") && log().contains("engine stopped")
+    });
+
+    // The installed binary is the slow release now, so the stop runs the build.
+    let stop =
+        install.command(Path::new(env!("CARGO_BIN_EXE_newsreel")), &["engine", "stop", "--json"]).output().unwrap();
+    let stop: serde_json::Value = serde_json::from_slice(&stop.stdout).unwrap();
+    let started: Vec<(String, u32)> = install.starts().into_iter().map(|(version, pid, _)| (version, pid)).collect();
+    assert_eq!(stop["result"], "stopped", "{stop}");
+    let mut ended = None;
+    eventually("the login service has nothing to run", || {
+        ended = service.try_wait().unwrap();
+        ended.is_some()
+    });
+
+    assert_eq!(started.iter().map(|(version, _)| version.as_str()).collect::<Vec<_>>(), ["0.1.0", "0.1.1"]);
+    assert_eq!(stop["pid"].as_u64(), Some(started[1].1.into()), "the stop names the engine that started for 0.1.1");
+    assert_eq!(ended.map(|status| status.code()), Some(Some(0)));
+}
+
+#[test]
+fn an_engine_on_another_port_because_its_own_was_taken_comes_back_on_that_port_after_an_update() {
+    if target().is_none() {
+        return;
+    }
+    let built = Built::new();
+    let server = Server::start("0.1.1", &built.release("0.1.1"), None);
+    let mut install = Install::agent_with_engine(&server);
+    let taken = TcpListener::bind("127.0.0.1:0").unwrap();
+    let wanted = taken.local_addr().unwrap().port();
+    install.set(hooks::HTTP_PORT, &wanted.to_string());
+    install.found("0.1.1");
+
+    let mut service = install.supervise();
+    eventually("the service started 0.1.1", || install.starts().iter().any(|(version, ..)| version == "0.1.1"));
+    let ports: Vec<u16> = install.starts().into_iter().map(|(_, _, port)| port).collect();
+    let news = Install::news(ports[0]);
+    install.set(hooks::VERSION, "0.1.1");
+    let stop = install.run(&["engine", "stop"]);
+    let ended = service.wait().unwrap();
+
+    assert_ne!(ports[0], wanted);
+    assert_eq!(ports, [ports[0], ports[0]], "the new engine serves where the old one did");
+    assert_eq!(news.map(|news| news["version"].clone()), Some("0.1.1".into()));
+    assert_eq!((stop.code, ended.code()), (0, Some(0)));
+}
+
+/// Starts an engine that has found release 0.1.1, and sets `updates: notify` while the request
+/// whose path ends with `gate` waits. Returns the installed binary, the release, and the engine log.
+fn notify_while_waiting_on(gate: &'static str) -> (Vec<u8>, Vec<u8>, String, Install, Server) {
+    let (answer, wait) = mpsc::channel();
+    let built = Built::new();
+    let release = built.release("0.1.1");
+    let server = Server::gated("0.1.1", &release, None, Some((gate, wait)));
+    let install = Install::agent_with_engine(&server);
+    if gate != "/latest" {
+        install.found("0.1.1");
+    }
+    assert_eq!(install.run(&["status", "--json"]).code, 0);
+    eventually("the engine asks the release server", || server.asked().iter().any(|path| path.ends_with(gate)));
+    install.configure("updates: notify\n");
+    answer.send(()).unwrap();
+    let log = || std::fs::read_to_string(install.state().join("engine.log")).unwrap();
+    eventually("the engine leaves the release", || log().contains("updates is no longer auto"));
+    (std::fs::read(install.exe()).unwrap(), release, log(), install, server)
+}
+
+#[test]
+fn updates_notify_set_while_the_release_downloads_keeps_it_from_being_installed() {
+    if target().is_none() {
+        return;
+    }
+    let (installed, release, log, install, server) = notify_while_waiting_on(".tar.gz");
+
+    assert_ne!(installed, release);
+    assert_eq!(install.files_in_bin(), ["newsreel"], "no partial file is left behind");
+    assert_eq!(install.engine().1, "0.1.0");
+    assert!(log.contains("updates is no longer auto, so newsreel 0.1.1 is not installed"), "{log}");
+    assert_eq!(Install::downloads_of_the_release(&server), 1);
+}
+
+#[test]
+fn updates_notify_set_while_the_engine_looks_for_releases_keeps_it_from_downloading() {
+    if target().is_none() {
+        return;
+    }
+    let (installed, release, _, install, server) = notify_while_waiting_on("/latest");
+
+    assert_ne!(installed, release);
+    assert_eq!(install.engine().1, "0.1.0");
+    assert_eq!(server.asked(), ["/latest"]);
+}

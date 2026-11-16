@@ -4,8 +4,8 @@
 use std::cmp::{Ordering, Reverse};
 use std::ops::RangeInclusive;
 
-use torrential_core::title::{Span, Wanted};
-use torrential_core::{
+use newsreel_core::title::{Span, Wanted};
+use newsreel_core::{
     Arch, Category, Codec, Decoding, Flag, Language, Player, Profile, Quality, Resolution, Sort, name,
 };
 
@@ -242,7 +242,7 @@ fn known_first_desc<T: Ord>(a: Option<T>, b: Option<T>) -> Ordering {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use torrential_core::{Decoders, Display, Machine, Os, Playback, Preferences, Screen, Viewer};
+    use newsreel_core::{Decoders, Display, Machine, Os, Playback, Preferences, Screen, Viewer};
 
     fn mac() -> Machine {
         Machine {

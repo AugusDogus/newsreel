@@ -1,9 +1,9 @@
 //! `POST /api/play`: starts or joins a download and fetches one video first, in playing order.
 
 use crate::playback::stream::Playable;
+use newsreel_core::text::sanitize;
+use newsreel_core::{DownloadId, Error, ErrorCode, Job, ReleaseFile};
 use serde::{Deserialize, Serialize};
-use torrential_core::text::sanitize;
-use torrential_core::{DownloadId, Error, ErrorCode, Job, ReleaseFile};
 
 use super::super::ctx::Ctx;
 use super::super::downloads::{self, Served, served};

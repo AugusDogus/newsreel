@@ -28,9 +28,9 @@ use std::time::Duration;
 
 use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt};
+use newsreel_core::{Error, ErrorCode, Profile, Release, SearchQuery, SearchResult, text};
 use serde::{Deserialize, Serialize};
 use tokio::time::{Instant, timeout_at};
-use torrential_core::{Error, ErrorCode, Profile, Release, SearchQuery, SearchResult, text};
 use url::Url;
 
 use crate::assemble::{Answer, Linked, Run, assemble, merged, vet};
@@ -162,7 +162,7 @@ impl Search {
         };
         if texts.iter().any(Terms::is_empty) {
             return Err(
-                Error::new(ErrorCode::Usage, "a search needs at least one word").with_hint("torrential search <words>")
+                Error::new(ErrorCode::Usage, "a search needs at least one word").with_hint("newsreel search <words>")
             );
         }
         // The first query's words weigh relevance, since it names the title most fully.
@@ -249,16 +249,15 @@ impl Search {
         let registry = self.inner.registry();
         let Some(source) = registry.enabled.iter().find(|s| s.meta.name == *name) else {
             return Err(if registry.disabled.contains(name) {
-                let hint = format!(
-                    "remove {name} from sources.disabled in the torrential config and run torrential engine stop"
-                );
+                let hint =
+                    format!("remove {name} from sources.disabled in the newsreel config and run newsreel engine stop");
                 needs_key("is disabled", hint)
             } else {
-                needs_key("is not configured", format!("add {name} back with torrential indexers add"))
+                needs_key("is not configured", format!("add {name} back with newsreel indexers add"))
             });
         };
         let url = source.link(&saved).ok_or_else(|| {
-            needs_key("has none", format!("give {name} its key with torrential indexers add <its address> --key <key>"))
+            needs_key("has none", format!("give {name} its key with newsreel indexers add <its address> --key <key>"))
         })?;
         Ok(Some(url))
     }
@@ -291,7 +290,7 @@ impl Search {
             let Some(source) = all.iter().find(|s| s.meta.name.eq_ignore_ascii_case(name.trim())) else {
                 if let Some(off) = registry.disabled.iter().find(|d| d.eq_ignore_ascii_case(name.trim())) {
                     return Err(Error::new(ErrorCode::Usage, format!("source {off:?} is disabled"))
-                        .with_hint("remove it from sources.disabled in the torrential config"));
+                        .with_hint("remove it from sources.disabled in the newsreel config"));
                 }
                 let known: Vec<&str> = all.iter().map(|s| s.meta.name.as_str()).collect();
                 return Err(Error::new(ErrorCode::Usage, format!("unknown source {name:?}"))

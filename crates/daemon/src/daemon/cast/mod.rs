@@ -13,15 +13,15 @@ use std::net::{IpAddr, Ipv4Addr};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
-use tokio::sync::{broadcast, mpsc, oneshot, watch};
-use torrential_core::filetype::extension;
-use torrential_core::text::sanitize;
-use torrential_core::time::now;
-use torrential_core::title::Span;
-use torrential_core::{
+use newsreel_core::filetype::extension;
+use newsreel_core::text::sanitize;
+use newsreel_core::time::now;
+use newsreel_core::title::Span;
+use newsreel_core::{
     AttemptEvent, Cast, CastAction, CastRequest, CastState, Container, DownloadId, Error, ErrorCode, Player, Plays,
     Quality, Resolution, ResultId, Target, TitleLink, Tv, TvList, VideoRef, Viewer, Watched,
 };
+use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 use super::ctx::Ctx;
 use super::downloads;
@@ -34,10 +34,10 @@ use super::titles;
 use super::titles::attempt::{self, Outcome, PlayTitle, Played};
 use super::titles::watching::{Screen, Watching};
 use crate::log::log;
+use newsreel_core::title::title_name;
+use newsreel_core::watching::{SAVE_EVERY, WORTH_SAVING};
 pub use ssdp::Find;
 use ssdp::Heard;
-use torrential_core::title::title_name;
-use torrential_core::watching::{SAVE_EVERY, WORTH_SAVING};
 use upnp::{Failed, Renderer, Service};
 
 /// A search this recent answers a request for the TVs without searching again.
@@ -62,7 +62,7 @@ const ENDED_KEPT: Duration = Duration::from_secs(60);
 /// How long the engine waits to be reachable on the home network before it gives up on a cast.
 const REACHABLE_WITHIN: Duration = Duration::from_secs(5);
 /// Where the engine answers with its word, for anyone who asks.
-pub const HELLO: &str = "/.well-known/torrential";
+pub const HELLO: &str = "/.well-known/newsreel";
 /// Tries at the seek that resumes a video, since some TVs refuse one while they start.
 const RESUME_TRIES: u32 = 3;
 /// How long a TV that took the seek that resumes a video may take to get there. Until then the
@@ -368,11 +368,11 @@ impl Casts {
         match (tvs.as_slice(), wanted) {
             ([one], _) => Ok((*one).clone()),
             ([], None) => Err(Error::new(ErrorCode::NotFound, "no TV answered on the home network").with_hint(
-                "check that the TV is on and on the same network as the computer running torrential, and that its DLNA or media sharing setting is on",
+                "check that the TV is on and on the same network as the computer running newsreel, and that its DLNA or media sharing setting is on",
             )),
             ([], Some(wanted)) => Err(Error::new(ErrorCode::NotFound, format!("no TV named {wanted} answered"))
-                .with_hint("run torrential tv to list the TVs on the network")
-                .with_next("torrential tv")),
+                .with_hint("run newsreel tv to list the TVs on the network")
+                .with_next("newsreel tv")),
             (many, _) => {
                 let names: Vec<String> = many.iter().map(|r| at_address(&r.tv.name, &r.tv.id)).collect();
                 Err(Error::new(ErrorCode::AmbiguousRef, format!("{} TVs answered: {}", names.len(), names.join(", ")))
@@ -401,7 +401,7 @@ pub async fn playing(view: &mut watch::Receiver<Cast>) -> Result<Cast, Error> {
 }
 
 fn nothing_plays() -> Error {
-    Error::new(ErrorCode::NotFound, "no cast is playing").with_hint("start one with torrential tv play")
+    Error::new(ErrorCode::NotFound, "no cast is playing").with_hint("start one with newsreel tv play")
 }
 
 /// Whether `wanted` is the TV's ID or address, or a part of its name in any case.
@@ -702,10 +702,7 @@ impl Run {
             }
             CastAction::Volume { level } => {
                 let Some(rendering) = &self.tv.rendering else {
-                    return Err(Error::new(
-                        ErrorCode::Usage,
-                        format!("torrential cannot set the volume of {}", tv.name),
-                    ));
+                    return Err(Error::new(ErrorCode::Usage, format!("newsreel cannot set the volume of {}", tv.name)));
                 };
                 let level = level.min(100);
                 let desired = level.to_string();
@@ -871,7 +868,7 @@ enum Transport {
     Paused,
     /// Stopped, or holding nothing to play.
     Stopped,
-    /// Loading, seeking, or a state torrential has no use for.
+    /// Loading, seeking, or a state newsreel has no use for.
     Busy,
 }
 
@@ -951,7 +948,7 @@ async fn find(
                             ErrorCode::Usage,
                             format!("{} cannot decode the video of this source", tv.tv.name),
                         )
-                        .with_hint("let torrential choose a source, or play it here"));
+                        .with_hint("let newsreel choose a source, or play it here"));
                     }
                     Some(release.id)
                 }
@@ -1023,8 +1020,8 @@ async fn find(
                     format!("file {index} is not a subtitle of {}", file_name(&path)),
                 )
                 .with_hint(format!(
-                    "run torrential files {} to list its files",
-                    &id.to_hex()[..torrential_core::id::SHORT_ID]
+                    "run newsreel files {} to list its files",
+                    &id.to_hex()[..newsreel_core::id::SHORT_ID]
                 )));
             }
             Some((index, sanitize(&info.layout.files[index as usize].path)))
@@ -1067,7 +1064,7 @@ fn file_name(path: &str) -> String {
 /// This Mac's address on the network the TV at `address` is on.
 fn facing(address: &str) -> Result<IpAddr, Error> {
     let unreachable = |e: std::io::Error| {
-        Error::new(ErrorCode::NetworkUnavailable, format!("torrential has no way to the TV at {address} ({e})"))
+        Error::new(ErrorCode::NetworkUnavailable, format!("newsreel has no way to the TV at {address} ({e})"))
     };
     let tv: IpAddr = address.parse().map_err(|_| Error::internal(format!("{address} is not an IP address")))?;
     let socket = std::net::UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).map_err(unreachable)?;
@@ -1086,7 +1083,7 @@ async fn reachable(ctx: &Ctx, host: IpAddr) -> Result<(), Error> {
             let why = ctx.devices.list(ctx.http_port).unreachable;
             return Err(Error::new(
                 ErrorCode::NetworkUnavailable,
-                why.unwrap_or_else(|| format!("the TV cannot reach torrential at {host}:{}", ctx.http_port)),
+                why.unwrap_or_else(|| format!("the TV cannot reach newsreel at {host}:{}", ctx.http_port)),
             ));
         }
         tokio::time::sleep(Duration::from_millis(100)).await;

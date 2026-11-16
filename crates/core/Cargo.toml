@@ -1,6 +1,6 @@
 [package]
-name = "torrential-core"
-description = "Domain types and the wire protocol shared by the torrential engine, CLI, and TUI"
+name = "newsreel-core"
+description = "Domain types and the wire protocol shared by the newsreel engine, CLI, and TUI"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,5 +11,5 @@ serde_json = "1"
 ts-rs = { version = "12", optional = true }
 
 [features]
-# TypeScript for the wire types, which the torrential crate's tests write to web/src/wire.ts.
+# TypeScript for the wire types, which the newsreel crate's tests write to web/src/wire.ts.
 ts = ["dep:ts-rs"]

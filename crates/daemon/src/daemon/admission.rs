@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use torrential_core::error::Details;
-use torrential_core::protocol::DownloadPlan;
-use torrential_core::units::{format_limit, format_size};
-use torrential_core::{DownloadId, Error, ErrorCode, Selection};
+use newsreel_core::error::Details;
+use newsreel_core::protocol::DownloadPlan;
+use newsreel_core::units::{format_limit, format_size};
+use newsreel_core::{DownloadId, Error, ErrorCode, Selection};
 
 use super::files;
 use super::layout::Layout;
@@ -117,7 +117,7 @@ pub fn check_size(selected: u64, cap: Cap) -> Result<(), Error> {
     if selected <= cap.bytes {
         return Ok(());
     }
-    let from = if cap.from_setup { " from torrential setup" } else { "" };
+    let from = if cap.from_setup { " from newsreel setup" } else { "" };
     let allow = selected.div_ceil(GIB);
     Err(Error::new(
         ErrorCode::TooLarge,
@@ -137,7 +137,7 @@ pub fn check_conflicts(plan: &Plan) -> Result<(), Error> {
         ErrorCode::PathConflict,
         format!(
             "{} already {} under {}",
-            torrential_core::units::count(n, "file"),
+            newsreel_core::units::count(n, "file"),
             if n == 1 { "exists" } else { "exist" },
             plan.destination.display()
         ),
@@ -156,7 +156,7 @@ pub fn check_links(links: &[PathBuf], dir: &Path, retry: Option<&str>) -> Result
         None => "remove the link, or choose another folder with --dir".to_string(),
         Some(retry) => format!("remove the link, then run {retry}"),
     };
-    Err(Error::new(ErrorCode::PathConflict, format!("{what}, and torrential writes only inside {}", dir.display()))
+    Err(Error::new(ErrorCode::PathConflict, format!("{what}, and newsreel writes only inside {}", dir.display()))
         .with_details(Details::Paths(links.iter().map(|p| p.display().to_string()).collect()))
         .with_hint(hint))
 }
@@ -166,16 +166,16 @@ pub fn claimed(destination: &Path, owner: DownloadId, name: &str, paths: &[PathB
     let (are, files) = if n == 1 { ("is", "a file") } else { ("are", "files") };
     let other = &owner.to_hex()[..6];
     let hint = match retry {
-        None => format!("choose another folder with --dir, or remove {other} with torrential rm {other}"),
-        Some(retry) => format!("remove {other} with torrential rm {other}, then run {retry}"),
+        None => format!("choose another folder with --dir, or remove {other} with newsreel rm {other}"),
+        Some(retry) => format!("remove {other} with newsreel rm {other}, then run {retry}"),
     };
     Error::new(
         ErrorCode::PathConflict,
         format!(
             "{} under {} {are} already {files} of download {other} ({})",
-            torrential_core::units::count(n, "file"),
+            newsreel_core::units::count(n, "file"),
             destination.display(),
-            torrential_core::text::sanitize(name)
+            newsreel_core::text::sanitize(name)
         ),
     )
     .with_details(Details::Paths(paths.iter().map(|p| p.display().to_string()).collect()))
@@ -203,7 +203,7 @@ pub fn check_free(disk: &dyn Disk, paths: &[PathBuf], id: DownloadId) -> Result<
             path.display()
         ),
     };
-    let get = format!("torrential get {}", &id.to_hex()[..6]);
+    let get = format!("newsreel get {}", &id.to_hex()[..6]);
     Err(Error::new(ErrorCode::PathConflict, message)
         .with_details(Details::Paths(vec![path.display().to_string()]))
         .with_hint(format!("move it away, or run {get} to download this release yourself")))
@@ -289,7 +289,7 @@ mod tests {
         assert_eq!(
             (err.message.as_str(), err.hint.as_deref()),
             (
-                "the selection is 2.1 GiB, over the 2 GB cap from torrential setup",
+                "the selection is 2.1 GiB, over the 2 GB cap from newsreel setup",
                 Some("add --max-size 3GiB to allow it, or pick fewer files with --files")
             )
         );
@@ -335,7 +335,7 @@ mod tests {
             (
                 ErrorCode::PathConflict,
                 format!(
-                    "{} is a symbolic link, and torrential writes only inside {}",
+                    "{} is a symbolic link, and newsreel writes only inside {}",
                     dir.join("set").display(),
                     dir.display()
                 ),

@@ -16,7 +16,7 @@ export function Header({ current }: { current: "search" | "downloads" | "devices
   return (
     <header className="flex flex-wrap items-center justify-between gap-x-2 py-4 pointer-coarse:py-2">
       <Link href="/" className="rounded-lg text-base font-semibold tracking-tight text-ink pointer-coarse:py-2.5">
-        torrential
+        newsreel
       </Link>
       {/* A line about the engine. On a phone it takes a row of its own under the navigation. */}
       <div className="min-w-0 max-sm:order-last max-sm:basis-full sm:flex-1">
@@ -24,10 +24,10 @@ export function Header({ current }: { current: "search" | "downloads" | "devices
           <p role="status" className="text-sm text-pretty text-error sm:truncate sm:px-3">
             {ON_MAC ? (
               <>
-                The engine is not running. Start it with <code className="font-mono">torrential web</code>.
+                The engine is not running. Start it with <code className="font-mono">newsreel web</code>.
               </>
             ) : (
-              "torrential cannot be reached. Check that the computer running it is awake and on this network."
+              "newsreel cannot be reached. Check that the computer running it is awake and on this network."
             )}
           </p>
         ) : (

@@ -1,0 +1,22 @@
+---
+source: crates/newsreel/tests/golden.rs
+expression: value
+---
+{
+  "code": 0,
+  "stdout": {
+    "schema": 1,
+    "type": "devices",
+    "devices": [],
+    "offer": {
+      "code": "[redacted]",
+      "url": "[redacted]",
+      "address": "[redacted]",
+      "lan_address": "[redacted]",
+      "tailnet_address": "[redacted]",
+      "expires_at": "[redacted]"
+    },
+    "unreachable": null,
+    "next": "newsreel devices"
+  }
+}

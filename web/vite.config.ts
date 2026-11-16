@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 // The engine serves the built app. In development, Vite serves it and forwards everything else to the engine.
-const ENGINE = process.env.TORRENTIAL_ENGINE ?? "http://127.0.0.1:47919";
+const ENGINE = process.env.NEWSREEL_ENGINE ?? "http://127.0.0.1:47919";
 
 // The engine refuses requests that name another origin, and through the proxy that is Vite's.
 const toEngine = {

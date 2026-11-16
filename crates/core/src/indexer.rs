@@ -28,7 +28,7 @@ impl fmt::Debug for ApiKey {
     }
 }
 
-/// A `sources.newznab` entry, as `torrential indexers` lists it.
+/// A `sources.newznab` entry, as `newsreel indexers` lists it.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Indexer {
     /// The `--source` name.

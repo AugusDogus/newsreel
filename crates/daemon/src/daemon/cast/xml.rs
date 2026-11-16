@@ -1,6 +1,6 @@
 //! Just enough XML for UPnP: the text of an element found by its name, whatever namespace prefix
 //! the device gives it, and escaping. Device descriptions and SOAP answers nest no element inside
-//! one of the same name that torrential reads.
+//! one of the same name that newsreel reads.
 
 /// The inside of each element named `name`, prefix or not, in document order.
 pub fn all<'a>(xml: &'a str, name: &str) -> Vec<&'a str> {

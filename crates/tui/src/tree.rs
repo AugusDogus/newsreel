@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use torrential_core::{FileRisk, ReleaseFile};
+use newsreel_core::{FileRisk, ReleaseFile};
 
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum NodeKind {

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#14120f">
 <link rel="icon" href="data:,">
-<title>Pair with torrential</title>
+<title>Pair with newsreel</title>
 <style>
   :root { color-scheme: dark; }
   html { background: #14120f; color: #bdb5a6; font: 16px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
@@ -25,7 +25,7 @@
 </head>
 <body>
 <main>
-  <h1>torrential</h1>
+  <h1>newsreel</h1>
   <p>{{lead}}</p>
   <form id="pair" novalidate>
     <label for="code">Code</label>
@@ -71,7 +71,7 @@
         location.replace("/");
         return;
       }
-      var message = "torrential refused the code, so try again";
+      var message = "newsreel refused the code, so try again";
       try {
         message = JSON.parse(request.responseText).error.message;
       } catch (e) {}
@@ -81,7 +81,7 @@
     };
     request.onerror = function () {
       go.disabled = false;
-      show("Cannot reach torrential, so check that the computer running it is awake and on this network.", true);
+      show("Cannot reach newsreel, so check that the computer running it is awake and on this network.", true);
     };
     request.send(JSON.stringify({ code: code }));
   }

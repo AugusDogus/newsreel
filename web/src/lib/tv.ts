@@ -16,7 +16,7 @@ export function looksLikeTv({ userAgent, width, touch, pointerless }: Signals): 
   return width >= 960 && !touch && (pointerless || TV_BROWSER.test(userAgent));
 }
 
-const CHOICE = "torrential:tv";
+const CHOICE = "newsreel:tv";
 
 /** `?tv=on` or `?tv=off` in any address settles the question for this browser, and `?tv=auto` asks the signals again. */
 function chosen(): boolean | null {

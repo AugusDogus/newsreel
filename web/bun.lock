@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "torrential-web",
+      "name": "newsreel-web",
       "dependencies": {
         "@heroicons/react": "^2.2.0",
         "inter-ui": "^4.1.1",

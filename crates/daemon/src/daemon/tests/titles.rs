@@ -7,14 +7,14 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde_json::Value;
 #[cfg(unix)]
-use torrential_core::error::Details;
-use torrential_core::protocol::{Request, Response, TitleRequest};
-use torrential_core::title::Span;
-use torrential_core::{
+use newsreel_core::error::Details;
+use newsreel_core::protocol::{Request, Response, TitleRequest};
+use newsreel_core::title::Span;
+use newsreel_core::{
     AttemptEvent, Category, Check, DownloadId, Error, ErrorCode, Job, Player, Release, ResultId, TitleLink,
 };
+use serde_json::Value;
 
 use super::super::admission::GIB;
 use super::super::fake;
@@ -192,7 +192,7 @@ impl Harness {
             pin: pin.map(result_of),
             replace,
             player: Player::External,
-            plays: torrential_core::Plays::BROWSER,
+            plays: newsreel_core::Plays::BROWSER,
             to: Destination::Plays,
         };
         let mut steps = Vec::new();
@@ -200,7 +200,7 @@ impl Harness {
         steps
     }
 
-    /// Gets the film to keep from the search, or from `pin` alone, as `torrential get tt0063350`
+    /// Gets the film to keep from the search, or from `pin` alone, as `newsreel get tt0063350`
     /// does into the downloads folder, and answers each step as the web app reads it.
     async fn get_film(&self, pin: Option<&fake::Posting>) -> Vec<Value> {
         let ask = PlayTitle {
@@ -208,7 +208,7 @@ impl Harness {
             pin: pin.map(result_of),
             replace: None,
             player: Player::External,
-            plays: torrential_core::Plays::BROWSER,
+            plays: newsreel_core::Plays::BROWSER,
             to: Destination::Folder(None),
         };
         let mut steps = Vec::new();
@@ -434,7 +434,7 @@ async fn getting_a_title_skips_a_source_whose_folder_already_exists_and_gets_the
                     "{} already exists, and playing a title writes only where nothing is",
                     theirs.display()
                 ),
-                "hint": "move it away, or run torrential get a3a3a3 to download this release yourself",
+                "hint": "move it away, or run newsreel get a3a3a3 to download this release yourself",
                 "details": { "paths": [theirs.display().to_string()] },
             },
             "text": format!("{} already exists, and playing a title writes only where nothing is", theirs.display()),
@@ -720,7 +720,7 @@ async fn testing(h: &Harness, source: &fake::Posting) -> tokio::task::JoinHandle
         pin: Some(result_of(source)),
         replace: None,
         player: Player::External,
-        plays: torrential_core::Plays::BROWSER,
+        plays: newsreel_core::Plays::BROWSER,
         to: Destination::Plays,
     };
     let (told, mut steps) = tokio::sync::mpsc::unbounded_channel();
@@ -896,7 +896,7 @@ async fn an_episode_in_a_season_pack_plays_the_file_whose_name_reads_as_it() {
     assert_eq!(
         (job.selection, link.title.as_str(), link.span.to_string()),
         (
-            torrential_core::Selection::Patterns(vec![
+            newsreel_core::Selection::Patterns(vec![
                 "Harbor.Lights.S01E02.1080p.WEB.x264.mp4".into(),
                 "Harbor.Lights.S01E02.1080p.WEB.x264.srt".into()
             ]),
@@ -1043,7 +1043,7 @@ async fn three_dead_releases_in_a_row_cost_one_wait_for_a_file_list() {
 async fn a_paused_download_a_trial_resumes_is_paused_again_when_it_does_not_start() {
     let (h, night) = night();
     h.get(h.nzb_file(&night[2]), &[]).await.unwrap();
-    let pause = torrential_core::protocol::Request::Pause { refs: vec![prefix(&night[2])] };
+    let pause = newsreel_core::protocol::Request::Pause { refs: vec![prefix(&night[2])] };
     assert_eq!(h.changes(pause).await.unwrap(), [(prefix(&night[2]), "paused".into())]);
     assert_eq!(
         h.play_title("tt0063350", Some(&night[2]), None).await[1..7],

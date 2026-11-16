@@ -2,11 +2,11 @@
 
 use std::sync::Arc;
 
-use torrential_core::catalog::Country;
-use torrential_core::catalog::Episode;
-use torrential_core::title::normalized;
-use torrential_core::{Art, ArtKind, EpisodeInfo, Error, ErrorCode, Kind, Season, TitleCard, TitleDetails, TitleId};
-use torrential_search::catalog::{Catalog, CatalogConfig, ImageFormat, Picture};
+use newsreel_core::catalog::Country;
+use newsreel_core::catalog::Episode;
+use newsreel_core::title::normalized;
+use newsreel_core::{Art, ArtKind, EpisodeInfo, Error, ErrorCode, Kind, Season, TitleCard, TitleDetails, TitleId};
+use newsreel_search::catalog::{Catalog, CatalogConfig, ImageFormat, Picture};
 
 use super::super::BoxFuture;
 
@@ -235,7 +235,7 @@ impl CatalogPort for Fake {
 mod tests {
     use std::time::Duration;
 
-    use torrential_core::title::{Namesakes, Wanted};
+    use newsreel_core::title::{Namesakes, Wanted};
 
     use super::*;
 

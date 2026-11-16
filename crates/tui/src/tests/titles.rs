@@ -1,12 +1,12 @@
 use crossterm::event::KeyCode;
-use ratatui::style::Modifier;
-use torrential_core::catalog::Episode;
-use torrential_core::error::Details;
-use torrential_core::protocol::{Continue, Home, TitlePage, TitlePlayed};
-use torrential_core::{
+use newsreel_core::catalog::Episode;
+use newsreel_core::error::Details;
+use newsreel_core::protocol::{Continue, Home, TitlePage, TitlePlayed};
+use newsreel_core::{
     Art, AttemptEvent, Check, EpisodeInfo, Kind, Next, Season, Skip, TitleCard, TitleDetails, TitleId, Tried, VideoRef,
     Watched,
 };
+use ratatui::style::Modifier;
 
 use super::render::{MARK, find, line, render, snapshots};
 use super::*;
@@ -152,7 +152,7 @@ fn played(name: &str, video_text: &str, resume_at: Option<f64>) -> TitlePlayed {
     TitlePlayed { video: video(video_text), name: name.into(), release, tried: Vec::new(), resume_at }
 }
 
-/// Bare `torrential` once the engine has answered with the downloads of `jobs()` and this home.
+/// Bare `newsreel` once the engine has answered with the downloads of `jobs()` and this home.
 fn opened(size: (u16, u16)) -> State {
     let mut state = titles_app(size);
     state.update(Msg::Watch(Event::Snapshot { jobs: jobs() }));
@@ -160,7 +160,7 @@ fn opened(size: (u16, u16)) -> State {
     state
 }
 
-/// Bare `torrential` once the engine has answered with no downloads and an empty home.
+/// Bare `newsreel` once the engine has answered with no downloads and an empty home.
 fn empty(size: (u16, u16)) -> State {
     let mut state = titles_app(size);
     state.update(Msg::Watch(Event::Snapshot { jobs: Vec::new() }));
@@ -194,7 +194,7 @@ fn series(size: (u16, u16)) -> State {
 fn no_player() -> Error {
     let url = "http://127.0.0.1:47919/4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c/0/night_of_the_living_dead.mp4";
     Error::new(ErrorCode::NotFound, "no media player found (looked for IINA, mpv, and VLC)").with_hint(format!(
-        "open {url} in any player, or set player: in /Users/ada/.config/torrential/config.yaml to the player's \
+        "open {url} in any player, or set player: in /Users/ada/.config/newsreel/config.yaml to the player's \
          absolute path"
     ))
 }
@@ -209,7 +209,7 @@ fn footer(state: &State) -> String {
 }
 
 #[test]
-fn bare_torrential_opens_on_what_to_go_on_with_and_the_saved_titles() {
+fn bare_newsreel_opens_on_what_to_go_on_with_and_the_saved_titles() {
     let mut state = titles_app((100, 30));
     assert_eq!(state.page, Page::Titles);
     let effects = state.update(Msg::Watch(Event::Snapshot { jobs: jobs() }));
@@ -404,10 +404,10 @@ fn the_update_key_shows_only_where_keys_are_not_typed() {
     let mut state = opened((100, 30));
     state.update(Msg::NewerVersion("0.5.1".into()));
     state.toast = None;
-    assert!(footer(&state).starts_with("              torrential 0.5.1 available · U update"), "{}", footer(&state));
+    assert!(footer(&state).starts_with("              newsreel 0.5.1 available · U update"), "{}", footer(&state));
     press(&mut state, "/");
     state.toast = None;
-    assert!(footer(&state).starts_with("              torrential 0.5.1 available "), "{}", footer(&state));
+    assert!(footer(&state).starts_with("              newsreel 0.5.1 available "), "{}", footer(&state));
     assert!(!footer(&state).contains("U update"), "{}", footer(&state));
 }
 
@@ -532,7 +532,7 @@ fn a_play_that_fails_says_why_and_what_to_do_in_place_of_the_list_until_esc() {
             "       play │ Playback failed: no media player found (looked for IINA, mpv, and VLC)",
             "            │ open http://127.0.0.1:47919/4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c/0/night_of_the_",
             "            │ living_dead.mp4 in any player, or set player: in",
-            "            │ /Users/ada/.config/torrential/config.yaml to the player's absolute path",
+            "            │ /Users/ada/.config/newsreel/config.yaml to the player's absolute path",
             "            │",
         ]
     );
@@ -629,7 +629,7 @@ fn a_failed_play_taller_than_the_screen_shows_from_its_first_row_and_scrolls_on_
             "│ open http://127.0.0.1:47919/4c1e9a5d3b8e2f1c",
             "│ 4a5d3b8e2f1c4a5d3b8e2f1c/0/night_of_the_livi",
             "│ ng_dead.mp4 in any player, or set player: in",
-            "│ /Users/ada/.config/torrential/config.yaml to",
+            "│ /Users/ada/.config/newsreel/config.yaml to",
             "│ the player's absolute path",
         ]
     );

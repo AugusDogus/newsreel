@@ -125,7 +125,7 @@ fn multicast_socket(ip: Ipv4Addr) -> io::Result<UdpSocket> {
 fn request(to: SocketAddr) -> String {
     format!(
         "M-SEARCH * HTTP/1.1\r\nHOST: {to}\r\nMAN: \"ssdp:discover\"\r\nMX: {MX}\r\nST: {RENDERER}\r\n\
-         USER-AGENT: UPnP/1.1 torrential/{}\r\n\r\n",
+         USER-AGENT: UPnP/1.1 newsreel/{}\r\n\r\n",
         env!("CARGO_PKG_VERSION")
     )
 }
@@ -172,7 +172,7 @@ mod tests {
         let text = request(SocketAddr::V4(GROUP));
         assert!(text.starts_with(
             "M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\nMAN: \"ssdp:discover\"\r\nMX: 2\r\n\
-             ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\nUSER-AGENT: UPnP/1.1 torrential/"
+             ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\nUSER-AGENT: UPnP/1.1 newsreel/"
         ));
         assert!(text.ends_with("\r\n\r\n"));
     }

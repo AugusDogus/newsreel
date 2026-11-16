@@ -3,14 +3,14 @@
 
 use std::time::Duration;
 
+use newsreel_core::error::Details;
+use newsreel_core::protocol::TitlePage;
+use newsreel_core::title::title_name;
+use newsreel_core::units::{count, format_duration};
+use newsreel_core::{Error, Kind, Next, ResultId, TitleCard, VideoRef};
 use ratatui::buffer::Buffer;
 use ratatui::layout::Position;
 use ratatui::style::{Color, Style};
-use torrential_core::error::Details;
-use torrential_core::protocol::TitlePage;
-use torrential_core::title::title_name;
-use torrential_core::units::{count, format_duration};
-use torrential_core::{Error, Kind, Next, ResultId, TitleCard, VideoRef};
 
 use super::{Found, Load, Opened, Pick, Play, episodes};
 use crate::format::{age, char_width, width};
@@ -109,7 +109,7 @@ fn failed_lines(sheet: &mut Sheet, error: &Error, room: usize) {
 /// A release's ID as the lists show it: its first hex digits, after its `u`.
 fn short(release: &ResultId) -> String {
     let id = release.to_ref();
-    let shown = torrential_core::id::SHORT_ID + usize::from(id.starts_with('u'));
+    let shown = newsreel_core::id::SHORT_ID + usize::from(id.starts_with('u'));
     id.chars().take(shown).collect()
 }
 

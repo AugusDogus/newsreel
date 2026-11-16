@@ -1,0 +1,13 @@
+---
+source: crates/newsreel/tests/golden.rs
+expression: value
+---
+{
+  "status": "200 OK",
+  "type": "application/json",
+  "body": {
+    "devices": [],
+    "offer": null,
+    "unreachable": null
+  }
+}

@@ -36,7 +36,7 @@ ON = {"ReleaseGroupSpecification": "group", "ReleaseTitleSpecification": "title"
 
 
 def get(url):
-    request = urllib.request.Request(url, headers={"User-Agent": "torrential-trash-update"})
+    request = urllib.request.Request(url, headers={"User-Agent": "newsreel-trash-update"})
     with urllib.request.urlopen(request, timeout=30) as response:
         return response.read()
 

@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use torrential_core::{Category, Flag, TitleId};
+use newsreel_core::{Category, Flag, TitleId};
 
 /// One row an indexer answered.
 #[derive(Clone, PartialEq, Debug)]
@@ -19,7 +19,7 @@ pub(crate) struct Observation {
 
 impl Observation {
     pub fn new(nzb_url: String, raw_name: &str) -> Option<Observation> {
-        let name = torrential_core::text::sanitize(raw_name);
+        let name = newsreel_core::text::sanitize(raw_name);
         (!name.is_empty()).then(|| Observation {
             nzb_url,
             name,

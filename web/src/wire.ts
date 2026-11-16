@@ -254,7 +254,7 @@ export type Decoders = { h264: Decoding, hevc: Decoding, av1: Decoding, };
 
 export type Device = {
 /**
- * Eight hex digits, which `torrential devices remove` takes.
+ * Eight hex digits, which `newsreel devices remove` takes.
  */
 id: string,
 /**
@@ -271,7 +271,7 @@ added_at: number,
 seen_at: number,
 /**
  * The address its last request came from, such as `192.168.1.40` or `100.101.3.4`. `None`
- * for a device paired before torrential 0.7 that has not asked since.
+ * for a device paired before newsreel 0.7 that has not asked since.
  */
 seen_from: string | null, };
 
@@ -300,7 +300,7 @@ plays: Array<Container>,
  */
 decodes: Playback,
 /**
- * Whether torrential can set its volume.
+ * Whether newsreel can set its volume.
  */
 volume: boolean, };
 
@@ -332,7 +332,7 @@ subtitle: string | null,
  */
 position: number | null, duration: number | null,
 /**
- * From 0 to 100, for a TV whose volume torrential can set.
+ * From 0 to 100, for a TV whose volume newsreel can set.
  */
 volume: number | null,
 /**

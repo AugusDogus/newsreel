@@ -1,6 +1,6 @@
 //! The codes the CLI exits with, which scripts and agents read as its contract.
 
-use torrential_core::ErrorCode;
+use newsreel_core::ErrorCode;
 
 pub const SUCCESS: u8 = 0;
 pub const INTERNAL: u8 = 1;
@@ -15,7 +15,7 @@ pub const DOWNLOAD: u8 = 7;
 pub const PENDING: u8 = 8;
 pub const INTERRUPTED: u8 = 130;
 
-/// Every exit code and what it means, as `torrential schema` lists them.
+/// Every exit code and what it means, as `newsreel schema` lists them.
 pub const MEANINGS: [(u8, &str); 10] = [
     (SUCCESS, "success, including an empty search"),
     (INTERNAL, "internal error"),

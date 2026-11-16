@@ -1,13 +1,13 @@
 # Builds the Windows release zip and its .sha256 the way scripts/release.sh builds the others:
-#   scripts/release.ps1   writes dist/torrential-x86_64-pc-windows-msvc.zip and its .sha256
+#   scripts/release.ps1   writes dist/newsreel-x86_64-pc-windows-msvc.zip and its .sha256
 $ErrorActionPreference = 'Stop'
 Set-Location (Join-Path $PSScriptRoot '..')
 $target = 'x86_64-pc-windows-msvc'
-$asset = "torrential-$target.zip"
+$asset = "newsreel-$target.zip"
 
-cargo build --release --locked -p torrential
+cargo build --release --locked -p newsreel
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-$bin = 'target\release\torrential.exe'
+$bin = 'target\release\newsreel.exe'
 # The static CRT keeps the binary off the Visual C++ runtime, which a fresh Windows may lack.
 $imports = & dumpbin /dependents $bin | Out-String
 if ($imports -match '(?i)vcruntime|msvcp') {
@@ -15,7 +15,7 @@ if ($imports -match '(?i)vcruntime|msvcp') {
 }
 
 New-Item -ItemType Directory -Force -Path dist | Out-Null
-$stage = Join-Path ([IO.Path]::GetTempPath()) "torrential-release-$([guid]::NewGuid())"
+$stage = Join-Path ([IO.Path]::GetTempPath()) "newsreel-release-$([guid]::NewGuid())"
 New-Item -ItemType Directory -Path $stage | Out-Null
 Copy-Item $bin, LICENSE $stage
 Remove-Item -Force "dist\$asset" -ErrorAction SilentlyContinue

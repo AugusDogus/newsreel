@@ -1,14 +1,14 @@
 [package]
-name = "torrential-daemon"
-description = "The torrential engine and what the engine and the CLI share"
+name = "newsreel-daemon"
+description = "The newsreel engine and what the engine and the CLI share"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-torrential-core = { path = "../core" }
-torrential-search = { path = "../search" }
-torrential-usenet = { path = "../usenet" }
+newsreel-core = { path = "../core" }
+newsreel-search = { path = "../search" }
+newsreel-usenet = { path = "../usenet" }
 clap = { version = "4.6", features = ["derive"] }
 crc32fast = "1"
 dirs = "7"
@@ -61,10 +61,10 @@ windows = { version = "0.61", features = [
 windows-core = "0.61"
 
 [dev-dependencies]
-torrential-usenet = { path = "../usenet", features = ["fake"] }
+newsreel-usenet = { path = "../usenet", features = ["fake"] }
 insta = { version = "1.49", features = ["json"] }
 lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "xz", "encoder"] }
 tempfile = "3.27"
 tokio = { version = "1.53", features = ["test-util"] }
-torrential-core = { path = "../core", features = ["ts"] }
+newsreel-core = { path = "../core", features = ["ts"] }
 ts-rs = "12"

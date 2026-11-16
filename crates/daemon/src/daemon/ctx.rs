@@ -2,8 +2,8 @@
 
 use std::sync::Arc;
 
+use newsreel_core::{Error, ErrorCode, Preferences};
 use tokio::sync::{mpsc, oneshot};
-use torrential_core::{Error, ErrorCode, Preferences};
 
 use super::detector::Detector;
 use super::engine_port::EngineHandle;

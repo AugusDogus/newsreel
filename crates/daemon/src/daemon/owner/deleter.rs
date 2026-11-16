@@ -1,4 +1,4 @@
-//! The one place torrential takes away what a download wrote. A play's folder is deleted
+//! The one place newsreel takes away what a download wrote. A play's folder is deleted
 //! through the plays folder as the engine opened it when it started. The files of a download in
 //! a folder the person chose go to the Trash, and only while each is still the file it was when
 //! the person asked. Nothing here deletes by a path, so a link, or a folder put in place of
@@ -11,7 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use torrential_core::{DownloadId, Error, ErrorCode};
+use newsreel_core::{DownloadId, Error, ErrorCode};
 
 use super::super::book::{Identity, PlayName};
 use super::super::store::{Store, Tombstone};
@@ -63,11 +63,11 @@ struct Root {
 impl Root {
     /// Opens the plays folder at `path`, making it if it is not there. A link is refused.
     fn open(path: &Path) -> Result<Root, String> {
-        let unusable = |why: String| format!("torrential cannot use the plays folder {}: {why}", path.display());
+        let unusable = |why: String| format!("newsreel cannot use the plays folder {}: {why}", path.display());
         std::fs::create_dir_all(path).map_err(|e| unusable(e.to_string()))?;
         let folder = Folder::open_nofollow(path).map_err(|e| {
             if folder::is_link(&e) {
-                unusable("it is a link, and torrential deletes plays only in a folder of its own".into())
+                unusable("it is a link, and newsreel deletes plays only in a folder of its own".into())
             } else {
                 unusable(e.to_string())
             }
@@ -197,13 +197,13 @@ impl Deleter {
         let root = Root::open(plays);
         let stopped = Error::new(
             ErrorCode::PathConflict,
-            "the plays folder it was in was moved or replaced, so torrential stopped it",
+            "the plays folder it was in was moved or replaced, so newsreel stopped it",
         )
         .with_hint("resume it to go on downloading where it was, or remove it");
         match &root {
             Err(why) => {
                 log(why);
-                let unusable = Error::new(ErrorCode::PathConflict, format!("{why}, so torrential stopped it"))
+                let unusable = Error::new(ErrorCode::PathConflict, format!("{why}, so newsreel stopped it"))
                     .with_hint("make the plays folder a folder of its own again and resume it, or remove it");
                 store.stop_plays(&unusable)?;
             }
@@ -211,7 +211,7 @@ impl Deleter {
                 Some(identity) if identity == root.identity => {}
                 Some(_) => {
                     log(&format!(
-                        "the plays folder {} is not the one the engine used before, so torrential deletes none of \
+                        "the plays folder {} is not the one the engine used before, so newsreel deletes none of \
                          the plays it had there, and they stay, stopped, as downloads in a folder you chose",
                         plays.display()
                     ));
@@ -291,7 +291,7 @@ impl Deleter {
             return Ok(());
         }
         let message =
-            format!("{} is inside {}, the folder torrential keeps plays in", dir.display(), root.path.display());
+            format!("{} is inside {}, the folder newsreel keeps plays in", dir.display(), root.path.display());
         Err(Error::new(ErrorCode::PathConflict, message).with_hint("choose another folder with --dir"))
     }
 
@@ -372,7 +372,7 @@ impl Deleter {
             for (path, trashed) in &report.trashed {
                 let unchecked = match trashed {
                     Trashed::Moved => "",
-                    Trashed::Unchecked => ", which torrential cannot look in to check it took that file",
+                    Trashed::Unchecked => ", which newsreel cannot look in to check it took that file",
                 };
                 log(&format!("moved {} to the Trash{unchecked}", path.display()));
             }
@@ -436,7 +436,7 @@ impl Deleter {
                 };
                 match folder.identity() {
                     Ok(identity) if identity != *made => {
-                        return Outcome::Refused(kept("it is not the folder torrential made for the play".into()));
+                        return Outcome::Refused(kept("it is not the folder newsreel made for the play".into()));
                     }
                     Ok(identity) if in_use.folders.contains(&identity) => {
                         return Outcome::Again(kept("another download uses it".into()));
@@ -456,7 +456,7 @@ impl Deleter {
                     *bytes = measured;
                 }
                 let why = left.why.unwrap_or("it could not be deleted");
-                Outcome::Again(kept(format!("{why}, so torrential tries again")))
+                Outcome::Again(kept(format!("{why}, so newsreel tries again")))
             }
             What::Files { dir, files } => {
                 let (trash, pause, in_use) = (self.trash.clone(), self.trash_pause.clone(), in_use.clone());
@@ -832,7 +832,7 @@ mod tests {
                 std::process::Command::new("hdiutil").args(args).status().is_ok_and(|status| status.success())
             };
             std::fs::create_dir_all(point).unwrap();
-            let size = ["create", "-quiet", "-size", "1m", "-fs", "HFS+", "-volname", "torrential-test"];
+            let size = ["create", "-quiet", "-size", "1m", "-fs", "HFS+", "-volname", "newsreel-test"];
             let made = hdiutil(&[size.map(std::ffi::OsStr::new).as_slice(), &[image.as_os_str()]].concat());
             let attach = ["attach", "-quiet", "-nobrowse", "-mountpoint"].map(std::ffi::OsStr::new);
             (made && hdiutil(&[attach.as_slice(), &[point.as_os_str(), image.as_os_str()]].concat()))
@@ -863,7 +863,7 @@ mod tests {
         deleter
             .remove(store, &tomb(1), Some(Doom::Play { dir: folder.clone(), folder: made, bytes: 4 }), &reach(root))
             .unwrap();
-        let why = "a folder in it is on another disk, so torrential tries again";
+        let why = "a folder in it is on another disk, so newsreel tries again";
         assert_eq!(
             run(&mut deleter, store, root, InUse::default()),
             [Report { kept: vec![(folder.clone(), why.into())], ..Report::default() }]
@@ -970,7 +970,7 @@ mod tests {
         symlink(root.join("disk/plays"), root.join("data/plays")).unwrap();
         let mut deleter = Deleter::open(&root.join("data/plays"), trash(root), TrashPause::default(), store).unwrap();
         let why = format!(
-            "torrential cannot use the plays folder {}: it is a link, and torrential deletes plays only in a folder of its own",
+            "newsreel cannot use the plays folder {}: it is a link, and newsreel deletes plays only in a folder of its own",
             root.join("data/plays").display()
         );
         assert_eq!(deleter.make_play(id(2)).unwrap_err().message, format!("no play can start, for {why}"));
@@ -1054,7 +1054,7 @@ mod tests {
         };
 
         let stall = disk.stall(&dir, root.join("stall"));
-        let kept = (dir.join("Set/a.mkv"), format!("torrential is waiting for access to {}", dir.display()));
+        let kept = (dir.join("Set/a.mkv"), format!("newsreel is waiting for access to {}", dir.display()));
         assert_eq!(run(&mut deleter, store), [Report { kept: vec![kept], ..Report::default() }]);
         assert!(dir.join("Set/a.mkv").exists());
         drop(stall);
@@ -1100,7 +1100,7 @@ mod tests {
         let doom = Doom::Files { dir: dir.clone(), files: files(&["Set/a.mkv", "Set/b.srt"]) };
         deleter.remove(store, &tomb(1), Some(doom), &reach(root)).unwrap();
 
-        let why = "another program has it open, so torrential tries again once it lets go";
+        let why = "another program has it open, so newsreel tries again once it lets go";
         let first = Report {
             trashed: vec![(dir.join("Set/b.srt"), Trashed::Moved)],
             kept: vec![(dir.join("Set/a.mkv"), why.into())],
@@ -1127,7 +1127,7 @@ mod tests {
             .remove(store, &tomb(1), Some(Doom::Play { dir: folder.clone(), folder: made, bytes: 4 }), &reach(root))
             .unwrap();
 
-        let why = "another program has a file in it open, so torrential tries again";
+        let why = "another program has a file in it open, so newsreel tries again";
         let kept = Report { kept: vec![(folder.clone(), why.into())], ..Report::default() };
         assert_eq!(run(&mut deleter, store, root, InUse::default()), [kept]);
         assert_eq!(store.deletions().unwrap().len(), 1, "it stays on record for after a restart");

@@ -1,0 +1,165 @@
+---
+source: crates/newsreel/src/client/tests.rs
+expression: "both(&doc, &Response::Search { result })"
+---
+ID	GRABS	SIZE	QUALITY	AGE	SOURCE	FLAGS	NAME
+u9b5212	412	1.5 GiB	-	17d	geek+1	-	archlinux-2026.10.01-x86_64.iso
+u51e0c7	37	1.4 GiB	-	47d	hydra	-	archlinux-2026.09.01-x86_64.iso
+ud4d4d4	?	?	-	?	planet	-	Arch Linux 2026.10.01 x86_64 ISO + checksums
+u9b5213	3	2.0 GiB	-	3y	hydra	-	arch linux ISOgpj.exe
+# 4 of 14 results · 2 of 4 sources ok · dognzb: HTTP 503 · slowznab: timed out · 1.4s · 1 adult hidden: --adult · more: --limit 14
+# ranked for this Mac: arm64
+next: newsreel files u9b5212
+
+--- json
+{
+  "schema": 1,
+  "type": "search",
+  "result": {
+    "query": {
+      "text": "arch linux iso",
+      "sources": [],
+      "category": null,
+      "min_grabs": null,
+      "max_size": null,
+      "sort": "relevance",
+      "limit": 10,
+      "timeout_ms": 6000,
+      "adult": false,
+      "fresh": false,
+      "profile": {
+        "screen": {
+          "value": "1080p",
+          "source": "detected"
+        },
+        "playback": {
+          "value": "hevc-hdr",
+          "source": "detected"
+        },
+        "max_size": null,
+        "room": 429496729600,
+        "arch": "arm64",
+        "language": "en",
+        "detected": {
+          "os": "macos",
+          "display": {
+            "width": 3024,
+            "height": 1964,
+            "hdr": true
+          },
+          "arch": "arm64",
+          "language": "en"
+        },
+        "preferences": {
+          "screen": null,
+          "max_size": null,
+          "playback": null
+        }
+      }
+    },
+    "releases": [
+      {
+        "id": "u9b521219bc48550140a666f74a29048ed78e933b",
+        "name": "archlinux-2026.10.01-x86_64.iso",
+        "size": 1640497152,
+        "grabs": 412,
+        "published": 1790845923,
+        "category": null,
+        "quality": {
+          "resolution": null,
+          "codec": null,
+          "hdr": false
+        },
+        "flags": [],
+        "sources": [
+          "geek",
+          "hydra"
+        ],
+        "nzb_url": null
+      },
+      {
+        "id": "u51e0c70000000000000000000000000000000000",
+        "name": "archlinux-2026.09.01-x86_64.iso",
+        "size": 1503238553,
+        "grabs": 37,
+        "published": 1788253923,
+        "category": null,
+        "quality": {
+          "resolution": null,
+          "codec": null,
+          "hdr": false
+        },
+        "flags": [],
+        "sources": [
+          "hydra"
+        ],
+        "nzb_url": null
+      },
+      {
+        "id": "ud4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4",
+        "name": "Arch Linux 2026.10.01 x86_64 ISO + checksums",
+        "size": null,
+        "grabs": null,
+        "published": null,
+        "category": null,
+        "quality": {
+          "resolution": null,
+          "codec": null,
+          "hdr": false
+        },
+        "flags": [],
+        "sources": [
+          "planet"
+        ],
+        "nzb_url": null
+      },
+      {
+        "id": "u9b52130000000000000000000000000000000000",
+        "name": "arch\u001b[31m linux\tISO‮gpj.exe",
+        "size": 2147483648,
+        "grabs": 3,
+        "published": 1697706723,
+        "category": null,
+        "quality": {
+          "resolution": null,
+          "codec": null,
+          "hdr": false
+        },
+        "flags": [],
+        "sources": [
+          "hydra"
+        ],
+        "nzb_url": null
+      }
+    ],
+    "total": 14,
+    "hidden_adult": 1,
+    "sources": [
+      {
+        "source": "geek",
+        "outcome": "ok",
+        "results": 1,
+        "elapsed_ms": 300
+      },
+      {
+        "source": "hydra",
+        "outcome": "ok",
+        "results": 12,
+        "elapsed_ms": 300
+      },
+      {
+        "source": "dognzb",
+        "outcome": "http",
+        "status": 503,
+        "elapsed_ms": 300
+      },
+      {
+        "source": "slowznab",
+        "outcome": "timeout",
+        "elapsed_ms": 300
+      }
+    ],
+    "elapsed_ms": 1432
+  },
+  "next": "newsreel files u9b5212"
+}

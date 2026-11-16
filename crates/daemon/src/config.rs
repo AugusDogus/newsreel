@@ -1,14 +1,14 @@
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 
+use newsreel_core::indexer::{ApiKey, KeyFrom};
+use newsreel_core::units::{parse_size, size_text};
+use newsreel_core::{Error, ErrorCode, Playback, Preferences, Screen};
+use newsreel_search::catalog::CatalogConfig;
+use newsreel_search::subtitles::SubtitleConfig;
+use newsreel_search::{IndexerConfig, SearchConfig};
 use serde::{Deserialize, Serialize};
 use serde_saphyr::{Localizer, Location, SnippetMode, Spanned, UserMessageFormatter};
-use torrential_core::indexer::{ApiKey, KeyFrom};
-use torrential_core::units::{parse_size, size_text};
-use torrential_core::{Error, ErrorCode, Playback, Preferences, Screen};
-use torrential_search::catalog::CatalogConfig;
-use torrential_search::subtitles::SubtitleConfig;
-use torrential_search::{IndexerConfig, SearchConfig};
 
 use crate::env::{Env, hooks};
 use crate::fsutil::{Writes, write_atomic, write_private};
@@ -25,7 +25,7 @@ pub struct Config {
     pub player: Option<Choice>,
     pub subtitles: SubtitleConfig,
     /// NNTP servers, tried by priority.
-    pub usenet: Vec<torrential_usenet::Server>,
+    pub usenet: Vec<newsreel_usenet::Server>,
     pub catalog: CatalogConfig,
     pub ffmpeg: FfmpegConfig,
     pub plays_max: PlaysMax,
@@ -93,7 +93,7 @@ impl Default for FfmpegConfig {
     }
 }
 
-/// The most torrential's plays folder holds before the plays watched longest ago leave it.
+/// The most newsreel's plays folder holds before the plays watched longest ago leave it.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PlaysMax(pub u64);
 
@@ -778,7 +778,7 @@ fn parse(text: &str, env: &Env) -> Result<Config, Problem> {
                     format!("the {:?} usenet server takes its password from {var}, which is not set", s.host),
                 )
             })?;
-            Ok(torrential_usenet::Server {
+            Ok(newsreel_usenet::Server {
                 port: s.port.unwrap_or(if s.tls == Some(false) { 119 } else { 563 }),
                 tls: s.tls.unwrap_or(true),
                 username: s.username,
@@ -843,14 +843,14 @@ mod tests {
     fn load_files(files: &[(&str, &str)]) -> Result<Config, Error> {
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().display().to_string();
-        let env = Env::from_pairs([("HOME", HOME), ("TORRENTIAL_HOME", home.as_str())]);
+        let env = Env::from_pairs([("HOME", HOME), ("NEWSREEL_HOME", home.as_str())]);
         let paths = Paths::resolve(&env, 501, None).unwrap();
         std::fs::create_dir_all(&paths.config).unwrap();
         for (name, text) in files {
             std::fs::write(paths.config.join(name), text).unwrap();
         }
         // With / between a path's parts on every platform, so one message is expected everywhere.
-        let relative = |text: String| text.replace(&home, "$TORRENTIAL_HOME").replace('\\', "/");
+        let relative = |text: String| text.replace(&home, "$NEWSREEL_HOME").replace('\\', "/");
         Config::load(&paths, &env)
             .map(|config| Config { file: config.file.map(|f| relative(f.display().to_string()).into()), ..config })
             .map_err(|e| Error { message: relative(e.message), hint: e.hint.map(relative), ..e })
@@ -932,8 +932,8 @@ usenet:
         assert_eq!(
             [yaml, yml].map(|c| (c.file.unwrap().display().to_string(), c.search.disabled)),
             [
-                ("$TORRENTIAL_HOME/config/config.yaml".to_string(), vec!["nyaa".to_string()]),
-                ("$TORRENTIAL_HOME/config/config.yml".to_string(), vec!["nyaa".to_string()]),
+                ("$NEWSREEL_HOME/config/config.yaml".to_string(), vec!["nyaa".to_string()]),
+                ("$NEWSREEL_HOME/config/config.yml".to_string(), vec!["nyaa".to_string()]),
             ]
         );
         assert_eq!(neither, Config::default());
@@ -941,7 +941,7 @@ usenet:
             (both.code, both.message.as_str(), both.hint.as_deref()),
             (
                 ErrorCode::Usage,
-                "$TORRENTIAL_HOME/config/config.yaml and $TORRENTIAL_HOME/config/config.yml both exist, and only one can be \
+                "$NEWSREEL_HOME/config/config.yaml and $NEWSREEL_HOME/config/config.yml both exist, and only one can be \
                  used",
                 Some("move what you want to keep into one file and delete the other")
             )
@@ -958,8 +958,8 @@ usenet:
             (alone.code, alone.message.as_str(), alone.hint.as_deref()),
             (
                 ErrorCode::Usage,
-                "$TORRENTIAL_HOME/config/config.toml is not supported; the config file is config.yaml",
-                Some("write your settings as YAML in $TORRENTIAL_HOME/config/config.yaml, then delete config.toml")
+                "$NEWSREEL_HOME/config/config.toml is not supported; the config file is config.yaml",
+                Some("write your settings as YAML in $NEWSREEL_HOME/config/config.yaml, then delete config.toml")
             )
         );
         assert_eq!(beside.search.disabled, ["nyaa"]);
@@ -1013,7 +1013,7 @@ usenet:
         ];
         for (text, expected) in cases {
             let error = load(text).unwrap_err();
-            assert_eq!(error.message, format!("$TORRENTIAL_HOME/config/config.yaml {expected}"), "{text}");
+            assert_eq!(error.message, format!("$NEWSREEL_HOME/config/config.yaml {expected}"), "{text}");
         }
     }
 
@@ -1037,7 +1037,7 @@ usenet:
     impl Folder {
         fn new() -> Folder {
             let dir = tempfile::tempdir().unwrap();
-            let env = Env::from_pairs([("HOME", HOME), ("TORRENTIAL_HOME", dir.path().to_str().unwrap())]);
+            let env = Env::from_pairs([("HOME", HOME), ("NEWSREEL_HOME", dir.path().to_str().unwrap())]);
             let paths = Paths::resolve(&env, 501, None).unwrap();
             Folder { _dir: dir, paths }
         }
@@ -1052,7 +1052,7 @@ usenet:
         }
 
         fn save(&self, preferences: Preferences) -> bool {
-            let writes = Writes { sandboxed: false, rerun: "torrential setup".into() };
+            let writes = Writes { sandboxed: false, rerun: "newsreel setup".into() };
             save_preferences(&self.paths, &preferences, &writes).unwrap().1
         }
     }
@@ -1160,7 +1160,7 @@ usenet:
         );
         assert!(online("subtitles: {}\nupdates: auto\n"));
         let error = load("subtitles:\n  online: sometimes\n").unwrap_err();
-        assert!(error.message.starts_with("$TORRENTIAL_HOME/config/config.yaml line 2: "), "{}", error.message);
+        assert!(error.message.starts_with("$NEWSREEL_HOME/config/config.yaml line 2: "), "{}", error.message);
         let error = load("subtitles:\n  offline: true\n").unwrap_err();
         assert!(error.message.contains("unknown field `offline`"), "{}", error.message);
     }
@@ -1174,7 +1174,7 @@ usenet:
         );
         assert!(Config::default().ffmpeg.fetch);
         let error = load("ffmpeg:\n  fetch: never\n").unwrap_err();
-        assert!(error.message.starts_with("$TORRENTIAL_HOME/config/config.yaml line 2: "), "{}", error.message);
+        assert!(error.message.starts_with("$NEWSREEL_HOME/config/config.yaml line 2: "), "{}", error.message);
     }
 
     #[test]
@@ -1195,7 +1195,7 @@ usenet:
         let dir = tempfile::tempdir().unwrap();
         let home = dir.path().display().to_string();
         let test = "http://127.0.0.1:9/";
-        let env = Env::from_pairs([("TORRENTIAL_HOME", home.as_str()), (hooks::CATALOG_ENDPOINT, test)]);
+        let env = Env::from_pairs([("NEWSREEL_HOME", home.as_str()), (hooks::CATALOG_ENDPOINT, test)]);
         let paths = Paths::resolve(&env, 501, None).unwrap();
         assert_eq!(Config::load(&paths, &env).unwrap().catalog.endpoint, None, "only a test process reads it");
         let env = env.with(hooks::NETWORK, "loopback");
@@ -1212,7 +1212,7 @@ usenet:
         let error = load("sources: {}\nupdates: always\n").unwrap_err();
         assert_eq!(
             error.message,
-            "$TORRENTIAL_HOME/config/config.yaml line 2: unknown variant `always`, expected one of notify, auto, off"
+            "$NEWSREEL_HOME/config/config.yaml line 2: unknown variant `always`, expected one of notify, auto, off"
         );
     }
 
@@ -1220,7 +1220,7 @@ usenet:
     fn setup_writes_the_updates_line_and_keeps_the_rest() {
         let folder = Folder::new();
         folder.write("# indexers\nsources:\n  disabled: [nyaa]\n");
-        let writes = Writes { sandboxed: false, rerun: "torrential setup".into() };
+        let writes = Writes { sandboxed: false, rerun: "newsreel setup".into() };
         let save = |policy| save_updates(&folder.paths, policy, &writes).unwrap().1;
 
         assert!(save(Policy::Auto));
@@ -1235,7 +1235,7 @@ usenet:
     fn server_install_writes_the_server_line_and_uninstall_takes_it_out() {
         let folder = Folder::new();
         folder.write("# indexers\nsources:\n  disabled: [nyaa]\n");
-        let writes = Writes { sandboxed: false, rerun: "torrential server install".into() };
+        let writes = Writes { sandboxed: false, rerun: "newsreel server install".into() };
         let save = |on| save_server(&folder.paths, on, &writes).unwrap().1;
         let server = || Config::load(&folder.paths, &env()).unwrap().exposure.server;
 
@@ -1329,7 +1329,7 @@ usenet:
             let error = load(&text).unwrap_err();
             assert_eq!(
                 (error.code, error.message),
-                (ErrorCode::Usage, format!("$TORRENTIAL_HOME/config/config.yaml {expected}")),
+                (ErrorCode::Usage, format!("$NEWSREEL_HOME/config/config.yaml {expected}")),
                 "{text}"
             );
         }
@@ -1345,7 +1345,7 @@ usenet:
 
     impl Folder {
         fn save_indexers(&self, entries: Vec<IndexerEntry>, disabled: &[&str]) {
-            let writes = Writes { sandboxed: false, rerun: "torrential indexers add".into() };
+            let writes = Writes { sandboxed: false, rerun: "newsreel indexers add".into() };
             let disabled = disabled.iter().map(|d| d.to_string()).collect();
             save_indexers(&self.paths, &Indexers { entries, disabled }, &writes).unwrap();
         }

@@ -4,7 +4,7 @@
 use std::io;
 use std::path::{Path, PathBuf};
 
-use torrential_core::{Error, ErrorCode};
+use newsreel_core::{Error, ErrorCode};
 
 use crate::env::Env;
 
@@ -127,7 +127,7 @@ pub fn complaint(stderr: &str) -> String {
         (true, Some((_, rest))) => rest,
         _ => line,
     };
-    torrential_core::text::sanitize(line)
+    newsreel_core::text::sanitize(line)
 }
 
 #[cfg(test)]

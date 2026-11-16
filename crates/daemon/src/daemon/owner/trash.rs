@@ -1,5 +1,5 @@
 //! Moves a file the person chose the folder for to their Trash, so nothing of theirs that
-//! torrential takes away is gone for good.
+//! newsreel takes away is gone for good.
 
 use std::ffi::{OsStr, OsString};
 use std::io::{self, Write};
@@ -28,7 +28,7 @@ pub enum Trash {
 pub enum Trashed {
     /// The file is in the Trash.
     Moved,
-    /// The Trash says it took the file, but torrential cannot look in the Trash to check it took
+    /// The Trash says it took the file, but newsreel cannot look in the Trash to check it took
     /// that file and not another put in its place. macOS keeps a program without Full Disk Access
     /// out of ~/.Trash.
     Unchecked,
@@ -47,7 +47,7 @@ pub enum Stays {
 const NO_TRASH: &str = "there is no Trash on the disk it is on";
 const NO_SAFE_MOVE: &str = "the disk it is on cannot move it to the Trash in one step that never replaces another file";
 const REPLACED: &str = "it was replaced after you asked to delete it";
-const BUSY: &str = "another program has it open, so torrential tries again once it lets go";
+const BUSY: &str = "another program has it open, so newsreel tries again once it lets go";
 
 impl Trash {
     /// The person's Trash on this system. `data_home` is `$XDG_DATA_HOME`, or `~/.local/share`.
@@ -129,7 +129,7 @@ fn check_moved(into: &Folder, to: &OsStr, folder: &Folder, name: &OsStr, file: I
 }
 
 /// What became of the file `file` at `name` in `folder` once the Trash said it took it to `at`,
-/// if it said where. It is the file, or it goes back where it was. A Trash torrential cannot look
+/// if it said where. It is the file, or it goes back where it was. A Trash newsreel cannot look
 /// in, as macOS keeps ~/.Trash from a program without Full Disk Access, took it unchecked.
 #[cfg(any(target_os = "macos", test))]
 fn in_trash(at: Option<&Path>, folder: &Folder, name: &OsStr, file: Identity) -> Result<Trashed, String> {
@@ -315,7 +315,7 @@ fn escape(path: &Path) -> String {
 
 /// Now in local time, as YYYY-MM-DDThh:mm:ss.
 fn deletion_date() -> String {
-    let now = torrential_core::time::now() as libc::time_t;
+    let now = newsreel_core::time::now() as libc::time_t;
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     // Each only reads `now` and writes `tm`.
     #[cfg(unix)]
@@ -621,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn a_file_the_trash_says_it_took_is_trashed_even_where_torrential_cannot_look() {
+    fn a_file_the_trash_says_it_took_is_trashed_even_where_newsreel_cannot_look() {
         let tmp = tempfile::tempdir().unwrap();
         let (dir, trash) = (tmp.path().join("Downloads"), tmp.path().join("Trash"));
         std::fs::create_dir_all(&dir).unwrap();

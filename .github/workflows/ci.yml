@@ -67,20 +67,20 @@ jobs:
           kind: test
       - run: cargo test --workspace --locked --no-fail-fast
       - name: The pinned ffmpeg build fetches, runs, and has what conversions use
-        run: cargo test --locked -p torrential-daemon the_pinned_build_runs_here -- --ignored
+        run: cargo test --locked -p newsreel-daemon the_pinned_build_runs_here -- --ignored
       - name: The logon task starts the engine, and uninstalling it stops the engine
         shell: pwsh
         run: |
-          cargo build --locked -p torrential
-          $exe = (Resolve-Path target\debug\torrential.exe).Path
+          cargo build --locked -p newsreel
+          $exe = (Resolve-Path target\debug\newsreel.exe).Path
           function Engine { (& $exe engine status --json | ConvertFrom-Json).engine }
           & $exe engine install
           if ($LASTEXITCODE) { throw 'engine install failed' }
-          schtasks /Query /TN 'torrential engine' /V /FO LIST
+          schtasks /Query /TN 'newsreel engine' /V /FO LIST
           $deadline = (Get-Date).AddSeconds(60)
           while ((Engine) -ne 'running') {
             if ((Get-Date) -gt $deadline) {
-              Get-Content "$env:LOCALAPPDATA\torrential\state\engine.log" -ErrorAction SilentlyContinue
+              Get-Content "$env:LOCALAPPDATA\newsreel\state\engine.log" -ErrorAction SilentlyContinue
               throw 'the logon task did not start the engine within 60 s'
             }
             Start-Sleep 2
@@ -88,7 +88,7 @@ jobs:
           & $exe engine status
           & $exe engine uninstall
           if ($LASTEXITCODE) { throw 'engine uninstall failed' }
-          schtasks /Query /TN 'torrential engine' 2>$null
+          schtasks /Query /TN 'newsreel engine' 2>$null
           if (-not $LASTEXITCODE) { throw 'the task is still registered' }
           if ((Engine) -ne 'stopped') { throw 'the engine still runs after uninstall' }
           $global:LASTEXITCODE = 0

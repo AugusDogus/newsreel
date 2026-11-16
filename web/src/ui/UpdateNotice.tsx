@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { type Version, version } from "../api";
 import type { JobsView } from "../lib/jobs";
 
-const DISMISSED = "torrential:dismissed-notice";
+const DISMISSED = "newsreel:dismissed-notice";
 const EVERY = 30 * 60 * 1000;
 /** The engine's version when this page loaded. It outlives the notice, which unmounts while the engine is away. */
 let loaded: string | null = null;
@@ -24,7 +24,7 @@ function dismiss(line: string): void {
 }
 
 /**
- * One quiet line about versions: a newer torrential, or an update the engine installed. An engine
+ * One quiet line about versions: a newer newsreel, or an update the engine installed. An engine
  * that restarted into a new version under this page asks for a reload, since the page is the old one.
  */
 export function UpdateNotice({ link }: { link: JobsView["link"] }) {
@@ -50,7 +50,7 @@ export function UpdateNotice({ link }: { link: JobsView["link"] }) {
 
   if (!latest || !loaded) return null;
   const stale = latest.version !== loaded;
-  const line = stale ? `Updated torrential to ${latest.version}.` : latest.notice;
+  const line = stale ? `Updated newsreel to ${latest.version}.` : latest.notice;
   if (!line || (!stale && line === hidden)) return null;
   const close = () => {
     dismiss(line);
