@@ -423,8 +423,9 @@ fn a_killed_engine_resumes_without_downloading_verified_pieces_again() {
     home.kill_engine();
     let fetched = server.bodies();
 
-    // The next engine carries the download on by itself.
-    assert_eq!(state(&home.job(&release.id())), "downloading");
+    // The next engine carries the download on by itself, once it has read back what it journaled.
+    let job = home.until(&release.id(), "the engine has started", |j| state(j) != "checking");
+    assert_eq!(state(&job), "downloading");
     assert_eq!(home.ok(&["resume", &release.short()])["changes"][0]["result"], "already_running");
     let wait = home.run(&["wait", &release.short()]);
     assert_eq!(wait.code, 0, "{}{}", wait.stdout, wait.stderr);
@@ -456,7 +457,7 @@ fn a_killed_engine_trusts_its_last_periodic_save_instead_of_checking_the_files()
         }
     }
 
-    let job = home.job(&release.id());
+    let job = home.until(&release.id(), "the engine has started", |j| state(j) != "checking");
     assert_eq!((state(&job), verified(&job)), ("downloading", saved), "the save outlived the engine");
     let files = home.ok(&["files", &release.short()]);
     let in_engine: u64 =
