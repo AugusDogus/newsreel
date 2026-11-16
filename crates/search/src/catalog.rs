@@ -13,10 +13,10 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use newsreel_core::title::normalized;
+use newsreel_core::{ArtKind, Error, ErrorCode, Kind, TitleCard, TitleDetails, TitleId};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use tokio::time::Instant;
-use torrential_core::title::normalized;
-use torrential_core::{ArtKind, Error, ErrorCode, Kind, TitleCard, TitleDetails, TitleId};
 use url::{Host, Origin, Url};
 
 use self::cinemeta::Described;

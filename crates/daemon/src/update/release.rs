@@ -9,8 +9,8 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tokio::process::Child;
 
-use torrential_core::protocol::{Request, Response, WIRE_VERSION};
-use torrential_core::{Error, ErrorCode};
+use newsreel_core::protocol::{Request, Response, WIRE_VERSION};
+use newsreel_core::{Error, ErrorCode};
 
 use crate::env::{Env, hooks};
 use crate::fsutil::{Writes, sha256};
@@ -46,8 +46,8 @@ impl Releases {
 
     pub fn required(env: &Env) -> Result<Releases, Error> {
         Releases::from_env(env).ok_or_else(|| {
-            Error::new(ErrorCode::NetworkUnavailable, "this build of torrential has no release server to update from")
-                .with_hint("build a newer one from source with git pull and cargo install --path crates/torrential")
+            Error::new(ErrorCode::NetworkUnavailable, "this build of newsreel has no release server to update from")
+                .with_hint("build a newer one from source with git pull and cargo install --path crates/newsreel")
         })
     }
 
@@ -63,7 +63,7 @@ impl Releases {
                 ErrorCode::FetchFailed,
                 format!("{url} returned {} without a release version", response.status()),
             )
-            .with_hint("run torrential update again later")),
+            .with_hint("run newsreel update again later")),
         }
     }
 
@@ -75,7 +75,7 @@ impl Releases {
         let mut response = client.get(&url).send().await.map_err(|e| unreachable(&url, &e))?;
         if !response.status().is_success() {
             return Err(Error::new(ErrorCode::FetchFailed, format!("{url} returned {}", response.status()))
-                .with_hint("run torrential update again later"));
+                .with_hint("run newsreel update again later"));
         }
         let mut body = Vec::new();
         while let Some(chunk) = response.chunk().await.map_err(|e| unreachable(&url, &e))? {
@@ -90,7 +90,7 @@ impl Releases {
 
 fn client(builder: reqwest::ClientBuilder) -> Result<reqwest::Client, Error> {
     builder
-        .user_agent(concat!("torrential/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("newsreel/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| Error::internal(format!("cannot build an HTTP client: {e}")))
 }
@@ -101,7 +101,7 @@ fn unreachable(url: &str, e: &reqwest::Error) -> Error {
         cause = source;
     }
     Error::new(ErrorCode::NetworkUnavailable, format!("cannot reach {url}: {cause}"))
-        .with_hint("check the network connection, then run torrential update again")
+        .with_hint("check the network connection, then run newsreel update again")
 }
 
 pub fn runtime() -> Result<tokio::runtime::Runtime, Error> {
@@ -153,7 +153,7 @@ pub async fn install(releases: &Releases, paths: &Paths, env: &Env, now: i64) ->
 /// What `put_release` found or did.
 pub(crate) enum Put {
     Installed,
-    /// This release or a newer one is installed already, by another torrential that runs from the
+    /// This release or a newer one is installed already, by another newsreel that runs from the
     /// same executable, such as the engine of another home.
     Current(Version),
     /// `wanted` said no before the download or before the binary went in.
@@ -165,7 +165,7 @@ pub(crate) enum Put {
 /// Downloads release `version` for `target` and puts its binary in place of `exe`, once the new
 /// binary says it is the release and runs as an engine. It asks `wanted` right before the download
 /// and right before the binary goes in, and holds the lock on the folder of `exe` throughout, so
-/// torrentials that share the executable install one release at a time.
+/// newsreels that share the executable install one release at a time.
 pub(crate) async fn put_release(
     releases: &Releases,
     env: &Env,
@@ -178,7 +178,7 @@ pub(crate) async fn put_release(
     if let Some(installed) = version_of(exe).await.filter(|installed| *installed >= version) {
         return Ok(Put::Current(installed));
     }
-    let writes = Writes::new(env, "torrential update".into());
+    let writes = Writes::new(env, "newsreel update".into());
     let partial = Partial::create(exe, &writes)?;
     if !wanted() {
         return Ok(Put::NotWanted);
@@ -230,16 +230,16 @@ fn lockable(dir: &Path) -> std::io::Result<std::fs::File> {
 /// What stands for the folder `dir` in a lock: a file in it, as Windows locks only files.
 #[cfg(windows)]
 fn lockable(dir: &Path) -> std::io::Result<std::fs::File> {
-    OpenOptions::new().write(true).create(true).truncate(false).open(dir.join("torrential.update.lock"))
+    OpenOptions::new().write(true).create(true).truncate(false).open(dir.join("newsreel.update.lock"))
 }
 
-/// Where this torrential is installed and which release asset fits this machine, or why it cannot
+/// Where this newsreel is installed and which release asset fits this machine, or why it cannot
 /// update itself.
 pub(crate) fn installed(env: &Env) -> Result<(PathBuf, &'static str), Error> {
     let Some(target) = target(std::env::consts::OS, std::env::consts::ARCH) else {
         return Err(Error::new(
             ErrorCode::NotFound,
-            format!("there is no prebuilt torrential for {} {}", std::env::consts::OS, std::env::consts::ARCH),
+            format!("there is no prebuilt newsreel for {} {}", std::env::consts::OS, std::env::consts::ARCH),
         )
         .with_hint("build it from source: https://github.com/nexxeln/torrential#install"));
     };
@@ -247,9 +247,9 @@ pub(crate) fn installed(env: &Env) -> Result<(PathBuf, &'static str), Error> {
     if exe.starts_with("/nix/store") {
         return Err(Error::new(
             ErrorCode::StorageError,
-            format!("torrential is installed at {}, which is managed by Nix", exe.display()),
+            format!("newsreel is installed at {}, which is managed by Nix", exe.display()),
         )
-        .with_hint("update it with Nix, for example nix profile upgrade torrential"));
+        .with_hint("update it with Nix, for example nix profile upgrade newsreel"));
     }
     Ok((exe, target))
 }
@@ -264,20 +264,20 @@ async fn fetch(releases: &Releases, version: Version, target: &str) -> Result<Ve
     unpack(archive, &asset, &packed)
 }
 
-/// Runs `binary --version` and accepts it only when it says it is torrential `version`. A binary
+/// Runs `binary --version` and accepts it only when it says it is newsreel `version`. A binary
 /// for another system, a damaged one, or one from another release fails here, before it replaces
 /// anything.
 async fn confirm(binary: &Path, version: Version) -> Result<(), Error> {
     match says(binary).await {
-        Ok(said) if said == format!("torrential {version}") => Ok(()),
+        Ok(said) if said == format!("newsreel {version}") => Ok(()),
         Ok(said) => Err(refused(version, format!("says it is {said}"))),
         Err(why) => Err(refused(version, why)),
     }
 }
 
-/// The torrential version `binary --version` says it is.
+/// The newsreel version `binary --version` says it is.
 async fn version_of(binary: &Path) -> Option<Version> {
-    Version::parse(says(binary).await.ok()?.strip_prefix("torrential ")?)
+    Version::parse(says(binary).await.ok()?.strip_prefix("newsreel ")?)
 }
 
 /// What `binary --version` prints, or why it prints nothing.
@@ -310,18 +310,18 @@ async fn exited(child: &mut Child, within: Duration) -> Option<ExitStatus> {
 /// answers a status request and then stops cleanly. A release that answers `--version` but fails as
 /// an engine fails here, before it replaces anything.
 async fn trial(binary: &Path, version: Version, env: &Env) -> Result<(), Error> {
-    let home = Scratch(std::env::temp_dir().join(format!("torrential-trial.{}", std::process::id())));
+    let home = Scratch(std::env::temp_dir().join(format!("newsreel-trial.{}", std::process::id())));
     let _ = std::fs::remove_dir_all(&home.0);
     let unprepared =
         |e: std::io::Error| Error::new(ErrorCode::StorageError, format!("cannot prepare {}: {e}", home.0.display()));
     private_folder(&home.0.join("config")).map_err(unprepared)?;
     std::fs::write(home.0.join("config/config.yaml"), "updates: off\n").map_err(unprepared)?;
-    let paths = Paths::from_process(&env.clone().with("TORRENTIAL_HOME", &home.0.display().to_string()))?;
+    let paths = Paths::from_process(&env.clone().with("NEWSREEL_HOME", &home.0.display().to_string()))?;
     // Killed if the trial drops before it exits, as it does when the engine stops mid-update.
     let mut engine = tokio::process::Command::new(binary)
         .args(["daemon", "run", "--http-port", "0"])
         .env("HOME", &home.0)
-        .env("TORRENTIAL_HOME", &home.0)
+        .env("NEWSREEL_HOME", &home.0)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -361,7 +361,7 @@ async fn serves(engine: &mut Child, paths: &Paths, env: &Env) -> Result<(), Stri
     });
     match tokio::time::timeout(2 * TRIAL_WITHIN, answered).await {
         Ok(Ok(Ok(Response::Jobs { .. }))) => Ok(()),
-        // A release with another protocol refuses this torrential's requests, which shows it runs.
+        // A release with another protocol refuses this newsreel's requests, which shows it runs.
         Ok(Ok(Ok(Response::Error { error }))) if error.code == ErrorCode::DaemonVersion => Ok(()),
         _ => Err("starts an engine that does not answer".into()),
     }
@@ -379,7 +379,7 @@ impl Drop for Scratch {
 fn refused(version: Version, why: String) -> Error {
     Error::new(
         ErrorCode::VerificationFailed,
-        format!("the binary of torrential {version} {why}, so the installed torrential is unchanged"),
+        format!("the binary of newsreel {version} {why}, so the installed newsreel is unchanged"),
     )
     .with_hint(format!("report it at {ISSUES}"))
 }
@@ -391,9 +391,9 @@ fn verify(asset: &str, tarball: &[u8], sums: &[u8]) -> Result<(), Error> {
     }
     Err(Error::new(
         ErrorCode::VerificationFailed,
-        format!("{asset} does not match its published checksum, so the installed torrential is unchanged"),
+        format!("{asset} does not match its published checksum, so the installed newsreel is unchanged"),
     )
-    .with_hint(format!("run torrential update again later; if it fails again, report it at {ISSUES}")))
+    .with_hint(format!("run newsreel update again later; if it fails again, report it at {ISSUES}")))
 }
 
 /// The binary in the release asset `asset`, packed as `archive`.
@@ -424,7 +424,7 @@ fn unpack(archive: Archive, asset: &str, packed: &[u8]) -> Result<Vec<u8>, Error
             }
         }
     }
-    Err(Error::new(ErrorCode::FetchFailed, format!("{asset} contains no torrential binary")))
+    Err(Error::new(ErrorCode::FetchFailed, format!("{asset} contains no newsreel binary")))
 }
 
 struct Partial {
@@ -434,7 +434,7 @@ struct Partial {
 impl Partial {
     fn create(exe: &Path, writes: &Writes) -> Result<Partial, Error> {
         let dir = exe.parent().unwrap_or(Path::new("/"));
-        let path = dir.join(format!(".torrential.{}.update{}", std::process::id(), std::env::consts::EXE_SUFFIX));
+        let path = dir.join(format!(".newsreel.{}.update{}", std::process::id(), std::env::consts::EXE_SUFFIX));
         let mut options = OpenOptions::new();
         options.write(true).create(true).truncate(true);
         #[cfg(unix)]
@@ -443,7 +443,7 @@ impl Partial {
             let error = writes.error(dir, e);
             match error.code {
                 ErrorCode::StorageError => error.with_hint(format!(
-                    "reinstall torrential in a folder you can write, such as ~/.local/bin, or run torrential update \
+                    "reinstall newsreel in a folder you can write, such as ~/.local/bin, or run newsreel update \
                      as a user who can write {}",
                     dir.display()
                 )),
@@ -485,8 +485,8 @@ impl Partial {
     }
 }
 
-/// Moves the binary `exe` aside to `torrential.old`, or to `torrential.<pid>.old` while an earlier
-/// one still runs from `torrential.old`.
+/// Moves the binary `exe` aside to `newsreel.old`, or to `newsreel.<pid>.old` while an earlier
+/// one still runs from `newsreel.old`.
 #[cfg(windows)]
 fn set_aside(exe: &Path) -> std::io::Result<()> {
     let old = exe.with_extension("old");
@@ -561,20 +561,19 @@ mod tests {
         };
         let said = |path: &Path| runtime().unwrap().block_on(confirm(path, version("0.1.1"))).map_err(|e| e.message);
 
-        assert_eq!(said(&script("right", "#!/bin/sh\necho torrential 0.1.1\n")), Ok(()));
+        assert_eq!(said(&script("right", "#!/bin/sh\necho newsreel 0.1.1\n")), Ok(()));
         assert_eq!(
-            said(&script("older", "#!/bin/sh\necho torrential 0.1.0\n")),
-            Err("the binary of torrential 0.1.1 says it is torrential 0.1.0, so the installed torrential is unchanged"
-                .into())
+            said(&script("older", "#!/bin/sh\necho newsreel 0.1.0\n")),
+            Err("the binary of newsreel 0.1.1 says it is newsreel 0.1.0, so the installed newsreel is unchanged".into())
         );
         let garbage = said(&script("garbage", "\u{7f}ELF garbage")).unwrap_err();
-        assert!(garbage.starts_with("the binary of torrential 0.1.1 does not run here ("), "{garbage}");
+        assert!(garbage.starts_with("the binary of newsreel 0.1.1 does not run here ("), "{garbage}");
     }
 
     #[test]
     fn the_binary_comes_out_of_a_tarball_or_a_zip() {
         let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
-        for (name, text) in [("LICENSE", "MIT"), ("torrential", "unix binary")] {
+        for (name, text) in [("LICENSE", "MIT"), ("newsreel", "unix binary")] {
             let mut header = tar::Header::new_gnu();
             header.set_size(text.len() as u64);
             header.set_mode(0o755);
@@ -583,7 +582,7 @@ mod tests {
         }
         let tarball = tar.into_inner().unwrap().finish().unwrap();
         let mut zip = zip::ZipWriter::new(std::io::Cursor::new(Vec::new()));
-        for (name, text) in [("LICENSE", "MIT"), ("torrential.exe", "windows binary")] {
+        for (name, text) in [("LICENSE", "MIT"), ("newsreel.exe", "windows binary")] {
             zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
             zip.write_all(text.as_bytes()).unwrap();
         }
@@ -599,17 +598,17 @@ mod tests {
     #[test]
     fn a_running_binary_moves_aside_for_the_new_one_and_goes_once_it_stops() {
         let dir = tempfile::tempdir().unwrap();
-        let exe = dir.path().join("torrential.exe");
+        let exe = dir.path().join("newsreel.exe");
         // Any program will do, as long as it runs from the file being replaced.
         std::fs::copy(r"C:\Windows\System32\PING.EXE", &exe).unwrap();
         let mut running =
             std::process::Command::new(&exe).args(["-n", "30", "127.0.0.1"]).stdout(Stdio::null()).spawn().unwrap();
-        let writes = Writes { sandboxed: false, rerun: "torrential update".into() };
+        let writes = Writes { sandboxed: false, rerun: "newsreel update".into() };
         let partial = Partial::create(&exe, &writes).unwrap();
         partial.write(b"new binary", &exe, &writes).unwrap();
         partial.place(&exe, &writes).unwrap();
         assert_eq!(std::fs::read(&exe).unwrap(), b"new binary");
-        let old = dir.path().join("torrential.old");
+        let old = dir.path().join("newsreel.old");
         assert!(old.exists(), "the running binary waits beside it");
         remove_set_aside(&exe);
         assert!(old.exists(), "it stays while it runs");

@@ -1,11 +1,11 @@
 use crossterm::event::KeyCode;
+use newsreel_core::protocol::{GetOutcome, GetReply};
+use newsreel_core::{Preferences, Profile};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use ratatui::buffer::Buffer;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier};
-use torrential_core::protocol::{GetOutcome, GetReply};
-use torrential_core::{Preferences, Profile};
 
 use super::*;
 use crate::theme::{self, ColorMode};
@@ -74,7 +74,7 @@ fn ranking_screens() {
     snapshots("ranking", ranking);
 }
 
-// Its screens show paths like ~/Downloads/torrential/film, which Windows joins with a backslash.
+// Its screens show paths like ~/Downloads/newsreel/film, which Windows joins with a backslash.
 #[cfg(unix)]
 #[test]
 fn idle_screens() {
@@ -91,14 +91,14 @@ fn file_tree_screens() {
     snapshots("file_tree", file_tree);
 }
 
-// Its screens show paths like ~/Downloads/torrential/film, which Windows joins with a backslash.
+// Its screens show paths like ~/Downloads/newsreel/film, which Windows joins with a backslash.
 #[cfg(unix)]
 #[test]
 fn download_screens() {
     snapshots("download", download);
 }
 
-// Its screens show paths like ~/Downloads/torrential/film, which Windows joins with a backslash.
+// Its screens show paths like ~/Downloads/newsreel/film, which Windows joins with a backslash.
 #[cfg(unix)]
 #[test]
 fn download_files_screens() {
@@ -423,7 +423,7 @@ fn a_search_before_detection_says_so_without_cutting_the_words() {
 #[test]
 fn a_search_with_overrides_names_them_or_only_the_machine() {
     let with = |preferences| Profile { detected: Some(mac()), preferences, ..Profile::default() };
-    let tv = || with(Preferences { screen: Some(torrential_core::Screen::Tv4k), ..Preferences::default() });
+    let tv = || with(Preferences { screen: Some(newsreel_core::Screen::Tv4k), ..Preferences::default() });
     assert_eq!(
         heads_row(&searched_for((160, 45), tv())),
         "    results │ ranked for this Mac: 2160p screen, arm64, English · overrides: screen tv-4k        size  grabs   age"
@@ -436,7 +436,7 @@ fn a_search_with_overrides_names_them_or_only_the_machine() {
         heads_row(&searched_for((80, 24), tv())),
         "    results │ ranked for this Mac · overrides: screen tv-4k  size  grabs   age"
     );
-    let h264 = with(Preferences { playback: Some(torrential_core::Playback::H264), ..Preferences::default() });
+    let h264 = with(Preferences { playback: Some(newsreel_core::Playback::H264), ..Preferences::default() });
     assert_eq!(
         heads_row(&searched_for((80, 24), h264)),
         "    results │ ranked for this Mac                            size  grabs   age",
@@ -513,9 +513,9 @@ fn before_any_search_the_panel_shows_the_machine_detected_at_start() {
 #[test]
 fn the_panel_opens_on_the_saved_overrides_and_fits_60_columns() {
     let five = Preferences {
-        screen: Some(torrential_core::Screen::Laptop),
+        screen: Some(newsreel_core::Screen::Laptop),
         max_size: Some(5_000_000_000),
-        playback: Some(torrential_core::Playback::H264),
+        playback: Some(newsreel_core::Playback::H264),
     };
     let mut state = searched_for((60, 16), Profile { detected: Some(mac()), preferences: five, ..Profile::default() });
     press(&mut state, "S");
@@ -667,7 +667,7 @@ fn the_margin_labels_each_group_once() {
     let margins: Vec<String> =
         (0..30).map(|y| line(&buf, y).chars().take(11).collect::<String>().trim().to_string()).collect();
     let labels: Vec<&str> = margins.iter().map(String::as_str).filter(|m| !m.is_empty()).collect();
-    assert_eq!(labels, ["torrential", "search", "downloading", "error", "paused", "done", "results"]);
+    assert_eq!(labels, ["newsreel", "search", "downloading", "error", "paused", "done", "results"]);
     let (x, y) = find(&buf, "error │");
     assert_eq!((x, buf[(x, y)].fg), (6, theme::ERROR));
 }
@@ -690,7 +690,7 @@ fn remove_asks_in_the_margin_and_says_the_files_stay() {
     let (x, y) = find(&buf, "remove?");
     assert_eq!((x, buf[(x, y)].fg), (4, theme::ERROR));
     assert!(line(&buf, y).contains("● stackexchange"), "{}", line(&buf, y));
-    assert!(line(&buf, y + 1).contains("Files are kept in ~/Downloads/torrential."), "{}", line(&buf, y + 1));
+    assert!(line(&buf, y + 1).contains("Files are kept in ~/Downloads/newsreel."), "{}", line(&buf, y + 1));
     assert!(line(&buf, y + 1).ends_with("enter remove   esc cancel"));
     assert_eq!(line(&buf, 29), "", "the footer does not repeat the keys");
 }
@@ -698,7 +698,7 @@ fn remove_asks_in_the_margin_and_says_the_files_stay() {
 #[test]
 fn a_result_in_downloads_offers_the_way_there() {
     let mut state = searched((100, 30));
-    let job = torrential_core::Job { id: id("4c1e9a"), ..jobs()[0].clone() };
+    let job = newsreel_core::Job { id: id("4c1e9a"), ..jobs()[0].clone() };
     let reply = GetReply { outcome: GetOutcome::Started, job, plan: None, previous_selection: None };
     state.update(Msg::Started { release: result_id("4c1e9a"), result: Ok(Box::new(reply)) });
     state.toast = None;
@@ -748,11 +748,11 @@ fn low_disk_space_is_said_in_words() {
 fn an_unreachable_engine_says_so_with_its_hint() {
     let mut state = app((100, 30));
     let error = Error::new(ErrorCode::DaemonUnavailable, "the engine did not start within 10s")
-        .with_hint("see ~/.local/state/torrential/engine.log");
+        .with_hint("see ~/.local/state/newsreel/engine.log");
     state.update(Msg::WatchLost(error));
     let screen = shot(&state);
     assert!(screen.contains("engine unreachable"), "{screen}");
     assert!(screen.contains("engine │ Cannot reach the engine."), "{screen}");
-    assert!(screen.contains("see ~/.local/state/torrential/engine.log"), "{screen}");
+    assert!(screen.contains("see ~/.local/state/newsreel/engine.log"), "{screen}");
     assert!(screen.contains("Cannot reach the engine: the engine did not start within 10s"), "{screen}");
 }

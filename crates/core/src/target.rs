@@ -90,8 +90,8 @@ impl Target {
 /// `get` take a title.
 pub fn not_a_release(video: &VideoRef, taker: &str) -> Error {
     Error::new(ErrorCode::Usage, format!("{taker} takes a release, not a title such as {video}"))
-        .with_hint(format!("run torrential sources {video} to list its releases, and pass the ID of one"))
-        .with_next(format!("torrential sources {video}"))
+        .with_hint(format!("run newsreel sources {video} to list its releases, and pass the ID of one"))
+        .with_next(format!("newsreel sources {video}"))
 }
 
 fn invalid_ref(input: &str, why: &str) -> Error {
@@ -101,7 +101,7 @@ fn invalid_ref(input: &str, why: &str) -> Error {
         format!("{input:?} is not a release reference: {why}")
     };
     Error::new(ErrorCode::InvalidRef, message)
-        .with_hint("pass an ID from `torrential search`, an .nzb file, or an NZB URL")
+        .with_hint("pass an ID from `newsreel search`, an .nzb file, or an NZB URL")
 }
 
 #[cfg(test)]
@@ -133,7 +133,7 @@ mod tests {
 
     #[test]
     fn a_file_named_like_an_id_does_not_hide_the_id() {
-        let cwd = std::env::temp_dir().join(format!("torrential-id-{}", std::process::id()));
+        let cwd = std::env::temp_dir().join(format!("newsreel-id-{}", std::process::id()));
         std::fs::create_dir_all(&cwd).unwrap();
         std::fs::write(cwd.join("9b5212"), b"").unwrap();
         std::fs::write(cwd.join("film"), b"").unwrap();

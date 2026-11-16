@@ -12,8 +12,8 @@ use std::collections::BTreeMap;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
-use torrential_core::protocol::{Request, Response, TitleRequest};
-use torrential_core::{Cast, CastAction, CastRequest, CastState, Error, ErrorCode, Target, TvList, VideoRef};
+use newsreel_core::protocol::{Request, Response, TitleRequest};
+use newsreel_core::{Cast, CastAction, CastRequest, CastState, Error, ErrorCode, Target, TvList, VideoRef};
 
 use super::super::cast::Find;
 use super::super::fake;
@@ -773,7 +773,7 @@ async fn a_cast_holds_off_an_update_while_it_finds_its_source_and_none_starts_wh
     assert_eq!(stopped.message, "the cast stopped before it started");
     assert_eq!(
         (refused.code, refused.message.as_str()),
-        (ErrorCode::DaemonUnavailable, "torrential is updating, try again in a few seconds")
+        (ErrorCode::DaemonUnavailable, "newsreel is updating, try again in a few seconds")
     );
 }
 
@@ -1094,7 +1094,7 @@ async fn a_title_cast_never_hands_the_tv_a_source_it_cannot_decode_once_the_rest
         (
             ErrorCode::Usage,
             "Fake TV cannot decode the video of this source",
-            Some("let torrential choose a source, or play it on this Mac")
+            Some("let newsreel choose a source, or play it on this Mac")
         )
     );
     assert_eq!(tv.actions(), ["GetProtocolInfo"]);
@@ -1133,7 +1133,7 @@ async fn a_cast_never_gives_the_tv_an_address_where_another_program_answers() {
         (
             ErrorCode::NetworkUnavailable,
             format!(
-                "no phone or TV can reach this Mac yet, because torrential cannot listen on the home network on port {port} (address in use) and keeps trying"
+                "no phone or TV can reach this Mac yet, because newsreel cannot listen on the home network on port {port} (address in use) and keeps trying"
             )
         )
     );

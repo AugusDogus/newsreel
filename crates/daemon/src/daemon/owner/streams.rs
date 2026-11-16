@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use torrential_core::{DownloadId, Error, Slice};
+use newsreel_core::{DownloadId, Error, Slice};
 
 use super::super::book::{Intent, JobEntry, Observed, Phase};
 use super::super::engine_port::EngineHandle;

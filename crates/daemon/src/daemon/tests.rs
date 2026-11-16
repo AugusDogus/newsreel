@@ -2,15 +2,13 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use serde::de::DeserializeOwned;
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
-use torrential_core::protocol::{
+use newsreel_core::protocol::{
     Change, FilesReply, Frame, GetOutcome, GetReply, GetRequest, PlayReply, PlayRequest, Request, Response, Stream,
     TitleStep, WIRE_VERSION, decode_frame, frame_len,
 };
-use torrential_core::{
-    Display, DownloadId, Error, ErrorCode, Job, JobStatus, Preferences, ResultId, Selection, Target,
-};
+use newsreel_core::{Display, DownloadId, Error, ErrorCode, Job, JobStatus, Preferences, ResultId, Selection, Target};
+use serde::de::DeserializeOwned;
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
 use super::admission::GIB;
 use super::engine_port::{Engine, EngineEvent, EnginePort};
@@ -31,7 +29,7 @@ use crate::ffmpeg::Tools;
 use crate::ffmpeg::fetch::{Fetch, Ffmpeg};
 
 const ROOMY: Space = Space { device: 1, total: 1000 * GIB, free: 500 * GIB };
-/// Where the engine writes the token of this user's torrential.
+/// Where the engine writes the token of this user's newsreel.
 const TOKEN_FILE: &str = "engine-token";
 
 /// The frames of the engine's answer to a request from the command line.
@@ -131,7 +129,7 @@ impl Harness {
         Self::with_catalog(fake::isos())
     }
 
-    fn with_catalog(catalog: Vec<torrential_core::Release>) -> Self {
+    fn with_catalog(catalog: Vec<newsreel_core::Release>) -> Self {
         Self::with_search(fake::Search::new(catalog))
     }
 
@@ -204,10 +202,10 @@ impl Harness {
             search: outside.search.clone().unwrap_or_else(|| Arc::new(search.clone())),
             disk: Box::new(disk.clone()),
             machine: super::detector::Detector::detected(
-                torrential_core::Machine {
-                    os: torrential_core::Os::Linux,
+                newsreel_core::Machine {
+                    os: newsreel_core::Os::Linux,
                     display: outside.display,
-                    arch: Some(torrential_core::Arch::X86_64),
+                    arch: Some(newsreel_core::Arch::X86_64),
                     language: None,
                 },
                 dir.path().join("downloads"),
@@ -249,7 +247,7 @@ impl Harness {
         server::handle(&self.running.ctx, request).await
     }
 
-    /// The token the engine wrote for this user's torrential.
+    /// The token the engine wrote for this user's newsreel.
     fn token(&self) -> String {
         crate::wire::Access::read(&self.dir.path().join(TOKEN_FILE)).unwrap().expect("a token file").token
     }
@@ -532,7 +530,7 @@ async fn the_engine_answers_while_a_download_folder_keeps_a_get_waiting() {
     match waiting.await.unwrap() {
         Response::Error { error } => assert_eq!(
             (error.code, error.message),
-            (ErrorCode::StorageError, format!("torrential is waiting for access to {}", h.downloads().display()))
+            (ErrorCode::StorageError, format!("newsreel is waiting for access to {}", h.downloads().display()))
         ),
         other => panic!("unexpected {other:?}"),
     }
@@ -658,14 +656,14 @@ async fn an_ambiguous_prefix_lists_the_candidates() {
     catalog.push(fake::release("e3a1c4aaaa000000000000000000000000000000", "Ubuntu 24.04.5 desktop (repack)", GIB, 3));
     let h = Harness::with_catalog(catalog);
     let Response::Search { result } =
-        h.ask(Request::Search { query: torrential_core::SearchQuery::new("ubuntu"), stream: false }).await
+        h.ask(Request::Search { query: newsreel_core::SearchQuery::new("ubuntu"), stream: false }).await
     else {
         panic!("expected results")
     };
     assert_eq!(result.releases.len(), 2);
     let err = h.get(Target::Prefix("ue3a1".into()), &[]).await.unwrap_err();
     assert_eq!(err.code, ErrorCode::AmbiguousRef);
-    let Some(torrential_core::error::Details::Candidates(candidates)) = err.details else {
+    let Some(newsreel_core::error::Details::Candidates(candidates)) = err.details else {
         panic!("expected candidates")
     };
     let ids: Vec<&str> = candidates.iter().map(|c| c.id.as_str()).collect();
@@ -686,16 +684,14 @@ async fn disk_size_and_conflicting_directories_refuse_a_download() {
     h.disk.set_free(69 * GIB);
     let err = h.get_with(raised.clone()).await.unwrap_err();
     assert_eq!(err.code, ErrorCode::DiskFull);
-    assert_eq!(err.details, Some(torrential_core::error::Details::Space { required: 70 * GIB, available: 69 * GIB }));
+    assert_eq!(err.details, Some(newsreel_core::error::Details::Space { required: 70 * GIB, available: 69 * GIB }));
     h.disk.set_free(500 * GIB);
     h.disk.directory(h.downloads().join("big").join("b.bin"));
     let err = h.get_with(raised.clone()).await.unwrap_err();
     assert_eq!(err.code, ErrorCode::PathConflict);
     assert_eq!(
         err.details,
-        Some(torrential_core::error::Details::Paths(vec![
-            h.downloads().join("big").join("b.bin").display().to_string()
-        ]))
+        Some(newsreel_core::error::Details::Paths(vec![h.downloads().join("big").join("b.bin").display().to_string()]))
     );
     assert!(h.status().await.is_empty());
     let only_a = GetRequest { files: vec!["a.bin".into()], ..raised };
@@ -737,7 +733,7 @@ async fn a_symbolic_link_refuses_a_download_or_stops_it_before_it_starts() {
         (
             ErrorCode::PathConflict,
             format!(
-                "{} is a symbolic link, and torrential writes only inside {}",
+                "{} is a symbolic link, and newsreel writes only inside {}",
                 h.downloads().join("film").display(),
                 h.downloads().display()
             ),
@@ -761,11 +757,11 @@ async fn a_symbolic_link_refuses_a_download_or_stops_it_before_it_starts() {
         (
             ErrorCode::PathConflict,
             format!(
-                "{} is a symbolic link, and torrential writes only inside {}",
+                "{} is a symbolic link, and newsreel writes only inside {}",
                 h.downloads().join("set").join("docs").display(),
                 h.downloads().display()
             ),
-            Some("remove the link, then run torrential resume 303030")
+            Some("remove the link, then run newsreel resume 303030")
         )
     );
 }
@@ -788,7 +784,7 @@ async fn a_download_cannot_take_files_another_download_claims_whatever_their_cas
         (
             ErrorCode::PathConflict,
             format!("1 file under {} is already a file of download 333333 (Pack)", pack.display()),
-            Some("choose another folder with --dir, or remove 333333 with torrential rm 333333")
+            Some("choose another folder with --dir, or remove 333333 with newsreel rm 333333")
         )
     );
 
@@ -806,7 +802,7 @@ async fn a_download_cannot_take_files_another_download_claims_whatever_their_cas
                 h.downloads().join("pack").display()
             )
             .as_str(),
-            Some("remove 333333 with torrential rm 333333, then run torrential resume 323232")
+            Some("remove 333333 with newsreel rm 333333, then run newsreel resume 323232")
         )
     );
 }
@@ -815,7 +811,7 @@ fn request(h: &Harness, target: Target) -> GetRequest {
     GetRequest { target, dir: Some(h.downloads()), files: Vec::new(), max_size: None, dry_run: false }
 }
 
-/// An engine whose config.yaml caps downloads at 2 GiB, as `torrential setup` saves it.
+/// An engine whose config.yaml caps downloads at 2 GiB, as `newsreel setup` saves it.
 fn capped() -> Harness {
     let preferences = Preferences { max_size: Some(2 * GIB), ..Preferences::default() };
     Harness::with_outside(fake::Search::new(fake::isos()), Outside { preferences, ..Outside::default() })
@@ -838,7 +834,7 @@ async fn a_cap_from_setup_refuses_a_release_over_it_until_it_fits() {
         (over.code, over.message.as_str(), over.hint.as_deref()),
         (
             ErrorCode::TooLarge,
-            "the selection is 3.0 GiB, over the 2 GiB cap from torrential setup",
+            "the selection is 3.0 GiB, over the 2 GiB cap from newsreel setup",
             Some("add --max-size 3GiB to allow it, or pick fewer files with --files")
         )
     );
@@ -1081,7 +1077,7 @@ async fn a_download_whose_missing_pieces_have_no_source_stops_and_resume_looks_a
         (
             ErrorCode::NoSource,
             "no server has sent the remaining 2 pieces (4.0 MiB) for 1s",
-            Some("run torrential resume 222222 to try again; the 1.0 GiB already verified is kept")
+            Some("run newsreel resume 222222 to try again; the 1.0 GiB already verified is kept")
         )
     );
     let verify = || h.changes(Request::Verify { reference: prefix(&film), repair: false });
@@ -1183,7 +1179,7 @@ async fn a_download_that_gets_nothing_from_servers_that_have_its_pieces_keeps_wa
 async fn a_search_result_is_fetched_from_its_nzb_link_and_then_names_its_download() {
     let iso = release(27, "debian.iso", &[("debian.iso", GIB)]);
     let url = "https://indexer.example/api?t=get&id=debian";
-    let row = torrential_core::Release {
+    let row = newsreel_core::Release {
         id: ResultId::from_bytes([0xab; 20]),
         name: "debian.iso".into(),
         nzb_url: Some(url.into()),
@@ -1192,7 +1188,7 @@ async fn a_search_result_is_fetched_from_its_nzb_link_and_then_names_its_downloa
     let h = Harness::with_catalog(vec![row]);
     h.search.serve_nzb(url, iso.bytes());
     let Response::Search { result } =
-        h.ask(Request::Search { query: torrential_core::SearchQuery::new("debian"), stream: false }).await
+        h.ask(Request::Search { query: newsreel_core::SearchQuery::new("debian"), stream: false }).await
     else {
         panic!("expected results")
     };
@@ -1213,7 +1209,7 @@ async fn a_search_result_is_fetched_from_its_nzb_link_and_then_names_its_downloa
 async fn a_full_id_of_a_search_result_fetches_its_nzb_as_a_prefix_does() {
     let bunny = release(40, "BigBuckBunny_124", &[("BigBuckBunny_124.mp4", GIB), ("BigBuckBunny_124.ogv", GIB)]);
     let url = "https://indexer.example/api?t=get&id=bunny";
-    let row = torrential_core::Release {
+    let row = newsreel_core::Release {
         id: ResultId::from_bytes([0xcd; 20]),
         name: "Big Buck Bunny".into(),
         nzb_url: Some(url.into()),
@@ -1222,7 +1218,7 @@ async fn a_full_id_of_a_search_result_fetches_its_nzb_as_a_prefix_does() {
     let h = Harness::with_catalog(vec![row]);
     h.search.serve_nzb(url, bunny.bytes());
     let Response::Search { result } =
-        h.ask(Request::Search { query: torrential_core::SearchQuery::new("bunny"), stream: false }).await
+        h.ask(Request::Search { query: newsreel_core::SearchQuery::new("bunny"), stream: false }).await
     else {
         panic!("expected results")
     };
@@ -1244,7 +1240,7 @@ async fn a_slow_search_does_not_delay_a_pause() {
     h.search.set_delay(Duration::from_secs(3));
     let ctx = h.running.ctx.clone();
     let search = tokio::spawn(async move {
-        server::handle(&ctx, Request::Search { query: torrential_core::SearchQuery::new("arch"), stream: false }).await
+        server::handle(&ctx, Request::Search { query: newsreel_core::SearchQuery::new("arch"), stream: false }).await
     });
     tokio::time::sleep(Duration::from_millis(50)).await;
     let started = Instant::now();
@@ -1256,18 +1252,18 @@ async fn a_slow_search_does_not_delay_a_pause() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_streaming_search_sends_results_as_sources_answer() {
-    let listed = |hex: &str, name: &str, source: &str| torrential_core::Release {
+    let listed = |hex: &str, name: &str, source: &str| newsreel_core::Release {
         sources: vec![source.into()],
         ..fake::release(&hex.repeat(20), name, GIB, 1)
     };
     let catalog = vec![listed("aa", "dead \u{1b}[31mred", "slow"), listed("bb", "dead fast", "quick")];
     let script = vec![
         fake::Source::answers("quick", 0),
-        fake::Source::fails("broken", 20, torrential_core::SourceOutcome::Http { status: 503 }),
+        fake::Source::fails("broken", 20, newsreel_core::SourceOutcome::Http { status: 503 }),
         fake::Source::answers("slow", 60),
     ];
     let h = Harness::with_search(fake::Search::scripted(catalog, script, Default::default()));
-    let search = Request::Search { query: torrential_core::SearchQuery::new("dead"), stream: true };
+    let search = Request::Search { query: newsreel_core::SearchQuery::new("dead"), stream: true };
     let mut answer = h.post(&search).await;
     let mut frames = Vec::new();
     loop {
@@ -1304,14 +1300,14 @@ async fn watching_every_download_includes_ones_started_later() {
     let before = release(30, "before.iso", &[("before.iso", GIB)]);
     h.get(h.nzb_file(&before), &[]).await.unwrap();
     let mut answer = h.post(&Request::Watch { refs: Vec::new() }).await;
-    let first: torrential_core::protocol::Event = next(&mut answer).await.unwrap();
-    assert!(matches!(first, torrential_core::protocol::Event::Snapshot { ref jobs } if jobs.len() == 1));
+    let first: newsreel_core::protocol::Event = next(&mut answer).await.unwrap();
+    assert!(matches!(first, newsreel_core::protocol::Event::Snapshot { ref jobs } if jobs.len() == 1));
     let later = release(31, "later.iso", &[("later.iso", GIB)]);
     h.get(h.nzb_file(&later), &[]).await.unwrap();
     let seen = tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             match next(&mut answer).await.unwrap() {
-                torrential_core::protocol::Event::Job { job } if job.id == later.id => return job.name,
+                newsreel_core::protocol::Event::Job { job } if job.id == later.id => return job.name,
                 _ => continue,
             }
         }
@@ -1376,7 +1372,7 @@ async fn every_pause_returns_once_writes_stop_or_fails_when_they_do_not() {
         (
             ErrorCode::JobConflict,
             "writes to 3c3c3c did not stop within 1s",
-            Some("run torrential pause 3c3c3c again; it returns once writes stop")
+            Some("run newsreel pause 3c3c3c again; it returns once writes stop")
         )
     );
     gate.open();
@@ -1386,7 +1382,7 @@ async fn every_pause_returns_once_writes_stop_or_fails_when_they_do_not() {
 
 /// A release posted to a loopback NNTP server, and the Usenet engine to download it.
 struct Seeder {
-    server: torrential_usenet::fake::FakeServer,
+    server: newsreel_usenet::fake::FakeServer,
     nzb: Vec<u8>,
 }
 
@@ -1396,14 +1392,14 @@ impl Seeder {
     fn start(files: &[(&str, u8)]) -> Self {
         let data: Vec<(&str, Vec<u8>)> = files.iter().map(|(name, byte)| (*name, vec![*byte; Self::SIZE])).collect();
         let files: Vec<(&str, &[u8])> = data.iter().map(|(name, bytes)| (*name, bytes.as_slice())).collect();
-        let posting = torrential_usenet::fake::Posting::new("set", &files, 4096);
-        let server = torrential_usenet::fake::FakeServer::start();
+        let posting = newsreel_usenet::fake::Posting::new("set", &files, 4096);
+        let server = newsreel_usenet::fake::FakeServer::start();
         server.add(&posting);
         Self { server, nzb: posting.nzb }
     }
 
-    fn pool(&self) -> torrential_usenet::Pool {
-        torrential_usenet::Pool::new(vec![self.server.config(4, 0)])
+    fn pool(&self) -> newsreel_usenet::Pool {
+        newsreel_usenet::Pool::new(vec![self.server.config(4, 0)])
     }
 
     fn engine(&self, gate: &Gate) -> impl FnOnce(&std::path::Path) -> Box<dyn Engine> {
@@ -1547,8 +1543,8 @@ async fn a_player_that_asks_while_an_update_installs_hears_to_try_again() {
         refused,
         (
             503,
-            "content-length: 50\ncontent-type: text/plain; charset=utf-8\nretry-after: 5\n".into(),
-            b"torrential is updating, try again in a few seconds".to_vec()
+            "content-length: 48\ncontent-type: text/plain; charset=utf-8\nretry-after: 5\n".into(),
+            b"newsreel is updating, try again in a few seconds".to_vec()
         )
     );
     assert_eq!(status, 200);

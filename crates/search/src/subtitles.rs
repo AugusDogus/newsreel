@@ -11,11 +11,11 @@ use std::future::Future;
 use std::pin::Pin;
 use std::time::Duration;
 
+use newsreel_core::catalog::Episode;
+use newsreel_core::cut::Cut;
+use newsreel_core::title::Title;
+use newsreel_core::{Error, ErrorCode};
 use tokio::time::Instant;
-use torrential_core::catalog::Episode;
-use torrential_core::cut::Cut;
-use torrential_core::title::Title;
-use torrential_core::{Error, ErrorCode};
 use url::Url;
 
 use crate::http::{BROWSER, FetchError, Http, endpoint};
@@ -50,7 +50,7 @@ impl Default for SubtitleConfig {
 /// A video file to find subtitles for.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub struct Video {
-    /// What the names say the video is, most likely first, as [`torrential_core::title::read`] gives.
+    /// What the names say the video is, most likely first, as [`newsreel_core::title::read`] gives.
     pub titles: Vec<Title>,
     pub file_name: String,
     /// Known once both ends of the file have downloaded.

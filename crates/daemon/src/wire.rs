@@ -1,4 +1,4 @@
-//! How torrential reaches its engine. Each request is a POST to the engine's HTTP port with the
+//! How newsreel reaches its engine. Each request is a POST to the engine's HTTP port with the
 //! token the engine wrote in its state folder, and the engine answers in frames: the updates the
 //! request streams, then its reply. The request is HTTP/1.0, so the frames follow the head as they
 //! are, and the answer ends when the engine closes the connection.
@@ -8,15 +8,15 @@ use std::net::{Ipv4Addr, SocketAddr, TcpStream};
 use std::path::Path;
 use std::time::Duration;
 
+use newsreel_core::protocol::{Request, Response, read_frame};
 use serde::{Deserialize, Serialize};
-use torrential_core::protocol::{Request, Response, read_frame};
 
 /// Where requests go on the engine's HTTP port.
 pub const PATH: &str = "/engine";
 /// The type of an answer made of frames.
-pub const FRAMES: &str = "application/x-torrential-frames";
+pub const FRAMES: &str = "application/x-newsreel-frames";
 
-/// What the engine writes in its state folder for this user's torrential: where it listens, and
+/// What the engine writes in its state folder for this user's newsreel: where it listens, and
 /// the token that lets a request in.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Access {
@@ -61,7 +61,7 @@ impl Access {
     }
 }
 
-/// Who sends a request: the torrential release, and the protocol it speaks.
+/// Who sends a request: the newsreel release, and the protocol it speaks.
 #[derive(Clone, Copy, Debug)]
 pub struct Client<'a> {
     pub version: &'a str,

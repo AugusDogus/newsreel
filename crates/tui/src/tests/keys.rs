@@ -1,9 +1,9 @@
 use crossterm::event::KeyCode;
-use torrential_core::protocol::{Change, ChangeResult, GetOutcome, GetReply};
+use newsreel_core::protocol::{Change, ChangeResult, GetOutcome, GetReply};
 
 use super::*;
 use crate::state::{Files, Focus, Upgrade};
-use torrential_core::protocol::JobAction;
+use newsreel_core::protocol::JobAction;
 
 #[test]
 fn opens_on_the_downloads_when_there_are_some() {
@@ -149,7 +149,7 @@ fn shift_d_without_a_file_list_fetches_one_and_downloads_the_safe_files() {
 fn a_started_download_shows_at_once_and_keeps_the_cursor_on_the_result() {
     let mut state = searched((100, 30));
     let started = jobs()[0].clone();
-    let job = torrential_core::Job { id: id("4c1e9a"), name: "night_of_the_living_dead".into(), ..started };
+    let job = newsreel_core::Job { id: id("4c1e9a"), name: "night_of_the_living_dead".into(), ..started };
     let reply = GetReply { outcome: GetOutcome::Started, job, plan: None, previous_selection: None };
     state.update(Msg::Started { release: result_id("4c1e9a"), result: Ok(Box::new(reply)) });
     assert_eq!(state.downloads.len(), 6);
@@ -309,13 +309,13 @@ fn remove_asks_first_and_keeps_files() {
     let effects = state.update(key(KeyCode::Enter));
     assert_eq!(effects, [Effect::Job { id: stackexchange, action: JobAction::Remove }]);
     state.update(Msg::Changed { id: stackexchange, action: JobAction::Remove, result: Ok(Vec::new()) });
-    assert_eq!(state.toast.as_ref().unwrap().text, "Removed from the list. Files are kept in ~/Downloads/torrential.");
+    assert_eq!(state.toast.as_ref().unwrap().text, "Removed from the list. Files are kept in ~/Downloads/newsreel.");
     assert_eq!((state.downloads.len(), cursor_name(&state)), (4, "big_buck_bunny_1080p_h264.mov".into()));
 }
 
 #[test]
 fn remove_says_what_the_engine_did_with_the_files() {
-    use torrential_core::protocol::{ChangeResult, Kept};
+    use newsreel_core::protocol::{ChangeResult, Kept};
     let mut state = with_downloads((100, 30));
     let removed = |id: DownloadId, deleted: &[&str], kept: Option<Kept>| Change {
         deleted: deleted.iter().map(Into::into).collect(),
@@ -327,7 +327,7 @@ fn remove_says_what_the_engine_did_with_the_files() {
     state.update(Msg::Changed { id: play, action: JobAction::Remove, result });
     assert_eq!(state.toast.as_ref().unwrap().text, "Removed from the list, and its files were deleted.");
     let left = id("6f2c81");
-    let kept = Kept { path: "/plays/6f2c81".into(), reason: "it holds files torrential did not write".into() };
+    let kept = Kept { path: "/plays/6f2c81".into(), reason: "it holds files newsreel did not write".into() };
     state.update(Msg::Changed {
         id: left,
         action: JobAction::Remove,
@@ -335,7 +335,7 @@ fn remove_says_what_the_engine_did_with_the_files() {
     });
     assert_eq!(
         state.toast.as_ref().unwrap().text,
-        "Removed from the list. /plays/6f2c81 stays: it holds files torrential did not write"
+        "Removed from the list. /plays/6f2c81 stays: it holds files newsreel did not write"
     );
 }
 
@@ -454,7 +454,7 @@ fn a_second_file_list_keeps_the_picks() {
 #[test]
 fn a_started_toast_names_the_download_after_the_results_change() {
     let mut state = searched((100, 30));
-    let job = torrential_core::Job { id: id("4c1e9a"), name: "night_of_the_living_dead".into(), ..jobs()[0].clone() };
+    let job = newsreel_core::Job { id: id("4c1e9a"), name: "night_of_the_living_dead".into(), ..jobs()[0].clone() };
     press(&mut state, "/x");
     state.update(key(KeyCode::Enter));
     let reply = GetReply { outcome: GetOutcome::Started, job, plan: None, previous_selection: None };

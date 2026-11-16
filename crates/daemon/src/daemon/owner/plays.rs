@@ -1,14 +1,14 @@
-//! torrential's own folder for plays. Each play downloads into a folder of its own inside it.
+//! newsreel's own folder for plays. Each play downloads into a folder of its own inside it.
 //! Plays no one streams stop downloading, the plays watched longest ago leave once the folder is
-//! over its limit, and torrential deletes only inside it, unless the person asks.
+//! over its limit, and newsreel deletes only inside it, unless the person asks.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 
+use newsreel_core::protocol::{Change, ChangeResult, Kept};
+use newsreel_core::{DownloadId, Error};
 use tokio::sync::oneshot;
-use torrential_core::protocol::{Change, ChangeResult, Kept};
-use torrential_core::{DownloadId, Error};
 
 use super::super::admission;
 use super::super::book::{Home, Identity, Intent, JobEntry, Observed, Play};
@@ -304,14 +304,14 @@ impl Owner {
     fn in_use(&mut self) -> Result<InUse, String> {
         let dirs: Vec<PathBuf> = self.jobs.values().map(|job| job.record.dir.clone()).collect();
         if let Some(dir) = dirs.iter().filter(|dir| !self.reach.reach(dir)).last() {
-            return Err(format!("torrential is waiting for access to {}, where another download is", dir.display()));
+            return Err(format!("newsreel is waiting for access to {}, where another download is", dir.display()));
         }
         let mut in_use = InUse::default();
         let listed = self.jobs.values().map(Self::writes);
         for (dir, targets) in listed.chain(self.tending.letting_go.values().cloned()) {
             in_use
                 .add(&dir, &targets)
-                .map_err(|e| format!("torrential cannot tell whether another download uses it: {e}"))?;
+                .map_err(|e| format!("newsreel cannot tell whether another download uses it: {e}"))?;
         }
         Ok(in_use)
     }
@@ -337,7 +337,7 @@ impl Owner {
             })
             .map(JobEntry::id)
             .collect();
-        let after = torrential_core::units::elapsed(idle_after);
+        let after = newsreel_core::units::elapsed(idle_after);
         for id in idle {
             log(&format!("{} paused, for no one has streamed it for {after}", self.named(id)));
             self.pause(vec![id], oneshot::channel().0);
@@ -418,7 +418,7 @@ impl Owner {
             return;
         }
         self.tending.refused = None;
-        let max = torrential_core::units::format_size(self.config.plays.max);
+        let max = newsreel_core::units::format_size(self.config.plays.max);
         for id in &leaving {
             log(&format!("{} is leaving the plays folder to keep it under {max}", self.named(*id)));
         }

@@ -1,8 +1,8 @@
 //! A release's files as the daemon reads them from its manifest: checked to keep every path
 //! inside its folder.
 
-use torrential_core::text::sanitize;
-use torrential_core::{DownloadId, Error, ErrorCode, ReleaseFile};
+use newsreel_core::text::sanitize;
+use newsreel_core::{DownloadId, Error, ErrorCode, ReleaseFile};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Layout {

@@ -27,9 +27,9 @@ use std::time::Duration;
 
 use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt};
+use newsreel_core::{Error, ErrorCode, Profile, Release, SearchQuery, SearchResult, text};
 use serde::{Deserialize, Serialize};
 use tokio::time::{Instant, timeout_at};
-use torrential_core::{Error, ErrorCode, Profile, Release, SearchQuery, SearchResult, text};
 use url::Url;
 
 use crate::assemble::{Answer, Linked, Run, assemble, merged, vet};
@@ -140,7 +140,7 @@ impl Search {
         };
         if texts.iter().any(Terms::is_empty) {
             return Err(
-                Error::new(ErrorCode::Usage, "a search needs at least one word").with_hint("torrential search <words>")
+                Error::new(ErrorCode::Usage, "a search needs at least one word").with_hint("newsreel search <words>")
             );
         }
         // The first query's words weigh relevance, since it names the title most fully.
@@ -222,18 +222,18 @@ impl Search {
                 ErrorCode::Usage,
                 format!("this result's NZB link needs an API key for the {name} indexer, which {why}"),
             )
-            .with_hint(format!("{hint} and run torrential engine stop, or search again"))
+            .with_hint(format!("{hint} and run newsreel engine stop, or search again"))
         };
         let Some(source) = self.inner.sources.iter().find(|s| s.meta.name == *name) else {
             return Err(if self.inner.disabled.contains(name) {
-                needs_key("is disabled", format!("remove {name} from sources.disabled in the torrential config"))
+                needs_key("is disabled", format!("remove {name} from sources.disabled in the newsreel config"))
             } else {
-                needs_key("is not configured", format!("add {name} back to sources.newznab in the torrential config"))
+                needs_key("is not configured", format!("add {name} back to sources.newznab in the newsreel config"))
             });
         };
         let url = source
             .link(&saved)
-            .ok_or_else(|| needs_key("has none", format!("set api_key_env for {name} in the torrential config")))?;
+            .ok_or_else(|| needs_key("has none", format!("set api_key_env for {name} in the newsreel config")))?;
         Ok(Some(url))
     }
 
@@ -264,7 +264,7 @@ impl Search {
             let Some(source) = all.iter().find(|s| s.meta.name.eq_ignore_ascii_case(name.trim())) else {
                 if let Some(off) = self.inner.disabled.iter().find(|d| d.eq_ignore_ascii_case(name.trim())) {
                     return Err(Error::new(ErrorCode::Usage, format!("source {off:?} is disabled"))
-                        .with_hint("remove it from sources.disabled in the torrential config"));
+                        .with_hint("remove it from sources.disabled in the newsreel config"));
                 }
                 let known: Vec<&str> = all.iter().map(|s| s.meta.name.as_str()).collect();
                 return Err(Error::new(ErrorCode::Usage, format!("unknown source {name:?}"))

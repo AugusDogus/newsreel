@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 
-use torrential_core::filetype::{self, FileType};
-use torrential_core::text::sanitize;
-use torrential_core::{Error, FileRisk, Selection};
+use newsreel_core::filetype::{self, FileType};
+use newsreel_core::text::sanitize;
+use newsreel_core::{Error, FileRisk, Selection};
 
 use super::layout::{Layout, LayoutFile};
 use crate::selection::{compile, some_match};
@@ -59,7 +59,7 @@ pub fn risks(layout: &Layout) -> Vec<Option<FileRisk>> {
 mod tests {
     use super::*;
     use crate::daemon::fake;
-    use torrential_core::{DownloadId, ErrorCode};
+    use newsreel_core::{DownloadId, ErrorCode};
 
     fn film() -> Layout {
         fake::Posting {
@@ -104,7 +104,7 @@ mod tests {
         let err = wanted(&film(), &Selection::Patterns(vec!["*.mkv".into()])).unwrap_err();
         assert_eq!(err.code, ErrorCode::NoSelection);
         assert_eq!(err.message, "no file in night_of_the_living_dead_dvd matches \"*.mkv\"");
-        assert_eq!(err.hint.as_deref(), Some("run torrential files 6b6b6b to see the paths"));
+        assert_eq!(err.hint.as_deref(), Some("run newsreel files 6b6b6b to see the paths"));
         assert_eq!(compile(&["[".into()]).unwrap_err().code, ErrorCode::Usage);
     }
 

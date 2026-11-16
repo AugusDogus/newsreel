@@ -84,7 +84,7 @@ export function heard(attempt: Attempt, message: PlayMessage): Attempt {
 const CUT_OFF: ApiError = {
   code: ENGINE_UNREACHABLE,
   message: "The engine stopped answering before a source played.",
-  hint: "Make sure torrential web is still running, then try again.",
+  hint: "Make sure newsreel web is still running, then try again.",
 };
 
 /**

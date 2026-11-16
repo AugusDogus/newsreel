@@ -1,9 +1,9 @@
 //! Play on TV for the web app: the TVs on the home network, starting a cast, and the remote
 //! control. A paired phone may use all of it.
 
+use newsreel_core::{Cast, CastAction, CastRequest, Error, ErrorCode, Target, VideoRef};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use torrential_core::{Cast, CastAction, CastRequest, Error, ErrorCode, Target, VideoRef};
 
 use super::super::ctx::Ctx;
 

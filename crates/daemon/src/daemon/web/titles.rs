@@ -3,15 +3,15 @@
 
 use std::io;
 
-use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use tokio::sync::mpsc;
-use torrential_core::catalog::Episode;
-use torrential_core::time::now;
-use torrential_core::{
+use newsreel_core::catalog::Episode;
+use newsreel_core::time::now;
+use newsreel_core::{
     ArtKind, AttemptEvent, Decoders, Decoding, DownloadId, Error, ErrorCode, Playback, Player, Plays, Release,
     ResultId, TitleCard, TitleId, VideoRef, Viewer, Watched,
 };
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
+use tokio::sync::mpsc;
 
 use super::super::ctx::Ctx;
 use super::super::devices::Asker;
@@ -175,7 +175,7 @@ fn listed_for(request: &Request, asker: &Asker) -> Result<Player, Error> {
 /// Who a web play or source listing ranks for. Every browser decodes what it reports. A browser
 /// on this Mac shows this Mac's display, so a paired device's screen counts, and this one's only
 /// on a machine without a display. A tab opened before browsers reported their screen reports
-/// only what it decodes. A request that reports neither ranks as `torrential play` does.
+/// only what it decodes. A request that reports neither ranks as `newsreel play` does.
 fn player(viewer: Option<Viewer>, playback: Option<Playback>, asker: &Asker) -> Player {
     match (viewer, playback) {
         (Some(viewer), _) if *asker != Asker::Local => Player::Device(viewer),

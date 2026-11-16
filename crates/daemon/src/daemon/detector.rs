@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 
-use torrential_core::{Machine, Player, Preferences, Profile};
+use newsreel_core::{Machine, Player, Preferences, Profile};
 
 use crate::disk::{Disk, reserve};
 use crate::env::Env;

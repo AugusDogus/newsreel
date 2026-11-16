@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use tokio::sync::mpsc;
-use torrential_core::{
+use newsreel_core::{
     DownloadId, Error, ErrorCode, HexPrefix, Profile, Release, ResultId, SearchQuery, SearchResult, SourceOutcome,
     SourceReport,
 };
+use tokio::sync::mpsc;
 
 use crate::daemon::BoxFuture;
 use crate::daemon::search_port::{Progress, RankFor, SavedLink, SearchPort};

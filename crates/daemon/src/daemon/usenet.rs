@@ -9,9 +9,9 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
-use torrential_core::{DownloadId, Error, ErrorCode, PieceMap, Slice};
-use torrential_usenet::manifest::Piece;
-use torrential_usenet::{Manifest, Nzb, Pool, ResolveError, article};
+use newsreel_core::{DownloadId, Error, ErrorCode, PieceMap, Slice};
+use newsreel_usenet::manifest::Piece;
+use newsreel_usenet::{Manifest, Nzb, Pool, ResolveError, article};
 
 use super::BoxFuture;
 use super::engine_port::{self, Activity, AddDownload, EngineEvent, EnginePort, Missing, Stats};
@@ -43,7 +43,7 @@ fn download_id(manifest: &Manifest) -> Result<DownloadId, Error> {
             ErrorCode::InvalidRelease,
             format!("the manifest names its NZB by {:?}, not 40 hex characters", manifest.nzb_sha1),
         )
-        .with_hint("read the NZB again with torrential get <nzb file or URL>")
+        .with_hint("read the NZB again with newsreel get <nzb file or URL>")
     })
 }
 
@@ -235,7 +235,7 @@ impl Job {
         let piece = &file.pieces[p];
         let unreadable = |e: std::io::Error| {
             Error::new(ErrorCode::StorageError, format!("cannot read {}: {e}", file.path.display()))
-                .with_hint("check the file's permissions, then run torrential verify again")
+                .with_hint("check the file's permissions, then run newsreel verify again")
         };
         let opened = match File::open(&file.path) {
             Ok(opened) => opened,
@@ -788,9 +788,9 @@ impl NzbPort for Resolver {
             let started = Instant::now();
             let nzb = Nzb::parse(&nzb).map_err(|e| {
                 Error::new(ErrorCode::InvalidRelease, e.to_string())
-                    .with_hint("pass an .nzb file or URL, or an ID from torrential search")
+                    .with_hint("pass an .nzb file or URL, or an ID from newsreel search")
             })?;
-            let manifest = torrential_usenet::resolve(&nzb, &self.pool).await.map_err(resolve_error)?;
+            let manifest = newsreel_usenet::resolve(&nzb, &self.pool).await.map_err(resolve_error)?;
             log(&format!(
                 "resolved {} in {:.1}s: {} files",
                 manifest.title,
@@ -809,7 +809,7 @@ fn resolve_error(e: ResolveError) -> Error {
             Error::new(ErrorCode::NoSource, e.to_string()).with_hint(search_again)
         }
         ResolveError::Article { .. } => Error::new(ErrorCode::NetworkUnavailable, e.to_string())
-            .with_hint("check the usenet servers in the torrential config and the network connection"),
+            .with_hint("check the usenet servers in the newsreel config and the network connection"),
         ResolveError::Compressed { .. } => Error::new(ErrorCode::InvalidRelease, e.to_string())
             .with_hint(format!("streaming needs stored (uncompressed) archives; {search_again}")),
         _ => Error::new(ErrorCode::InvalidRelease, e.to_string()).with_hint(search_again),
@@ -818,7 +818,7 @@ fn resolve_error(e: ResolveError) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use torrential_usenet::manifest::{self, OutputFile as ManifestFile, Packing};
+    use newsreel_usenet::manifest::{self, OutputFile as ManifestFile, Packing};
 
     use super::*;
 

@@ -4,8 +4,8 @@ use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
+use newsreel_core::{Arch, Display, Error, ErrorCode, Language, Machine, Os};
 use serde::Deserialize;
-use torrential_core::{Arch, Display, Error, ErrorCode, Language, Machine, Os};
 
 use crate::env::{Env, hooks};
 

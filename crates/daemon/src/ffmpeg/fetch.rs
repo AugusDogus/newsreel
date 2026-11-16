@@ -8,11 +8,11 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use newsreel_core::{Error, ErrorCode};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncWriteExt;
 use tokio::sync::watch;
-use torrential_core::{Error, ErrorCode};
 
 use super::{INSTALL, Programs, Tools, complaint};
 use crate::env::Env;
@@ -50,7 +50,7 @@ pub enum Packing {
     Zip,
 }
 
-/// One for each platform torrential releases for, by `std::env::consts` names. The sizes and hashes
+/// One for each platform newsreel releases for, by `std::env::consts` names. The sizes and hashes
 /// are the ones each release publishes for its files.
 const PINS: [Pin; 4] = [
     Pin {
@@ -151,7 +151,7 @@ pub enum Fetch {
     Build(Build),
     /// config.yaml turns fetching off. A build fetched before still runs.
     Off(Build),
-    /// torrential has no build that runs on this machine.
+    /// newsreel has no build that runs on this machine.
     Unavailable,
 }
 
@@ -182,16 +182,16 @@ impl Fetch {
     fn missing(&self) -> Error {
         let (message, hint) = match self {
             Fetch::Build(_) => (
-                "torrential has not fetched ffmpeg yet, and this needs it",
+                "newsreel has not fetched ffmpeg yet, and this needs it",
                 format!("play the file in the web app once, which fetches it, or {INSTALL}"),
             ),
             Fetch::Off(_) => (
                 "ffmpeg is not installed, and config.yaml turns off fetching it",
-                format!("{INSTALL}, then try again; torrential doctor shows what it found"),
+                format!("{INSTALL}, then try again; newsreel doctor shows what it found"),
             ),
             Fetch::Unavailable => (
                 "ffmpeg is not installed, and this needs it",
-                format!("{INSTALL}, then try again; torrential doctor shows what it found"),
+                format!("{INSTALL}, then try again; newsreel doctor shows what it found"),
             ),
         };
         Error::new(ErrorCode::NotFound, message).with_hint(hint)
@@ -476,7 +476,7 @@ async fn download(build: &Build, to: &Path, report: &watch::Sender<Stage>) -> Re
             .with_hint(format!("check the network connection and try again, or {INSTALL}"))
     };
     let client = reqwest::Client::builder()
-        .user_agent(concat!("torrential/", env!("CARGO_PKG_VERSION")))
+        .user_agent(concat!("newsreel/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(10))
         .read_timeout(Duration::from_secs(30))
         .build()
@@ -509,7 +509,7 @@ async fn download(build: &Build, to: &Path, report: &watch::Sender<Stage>) -> Re
 }
 
 fn tampered() -> Error {
-    Error::new(ErrorCode::VerificationFailed, "the ffmpeg download is not the build torrential pins, so it was deleted")
+    Error::new(ErrorCode::VerificationFailed, "the ffmpeg download is not the build newsreel pins, so it was deleted")
         .with_hint(format!("try again later, or {INSTALL}"))
 }
 
@@ -572,11 +572,8 @@ async fn runs(program: &Path) -> Result<(), Error> {
         Err(_) => format!("it did not answer within {} s", RUN_WITHIN.as_secs()),
     };
     let name = program.file_name().map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-    Err(Error::new(
-        ErrorCode::FetchFailed,
-        format!("the {name} torrential fetched does not run on this machine: {why}"),
-    )
-    .with_hint(format!("{INSTALL}, then try again")))
+    Err(Error::new(ErrorCode::FetchFailed, format!("the {name} newsreel fetched does not run on this machine: {why}"))
+        .with_hint(format!("{INSTALL}, then try again")))
 }
 
 /// The folder a fetch fills before its files are checked. Dropping it deletes it, and `root` with
@@ -641,7 +638,7 @@ fn private(folder: &Path) -> Result<(), Error> {
     } else {
         return Ok(());
     };
-    Err(Error::new(ErrorCode::StorageError, format!("torrential will not keep ffmpeg in {}: {why}", folder.display()))
+    Err(Error::new(ErrorCode::StorageError, format!("newsreel will not keep ffmpeg in {}: {why}", folder.display()))
         .with_hint(hint))
 }
 
@@ -866,11 +863,11 @@ mod tests {
             let path = path.display().to_string();
             std::process::Command::new("/usr/bin/xattr").args(args).arg(path).output().unwrap().status.success()
         };
-        assert!(xattr(&["-w", "com.apple.quarantine", "0083;00000000;torrential;"], &marked));
-        assert!(xattr(&["-w", "org.torrential.kept", "yes"], &marked));
+        assert!(xattr(&["-w", "com.apple.quarantine", "0083;00000000;newsreel;"], &marked));
+        assert!(xattr(&["-w", "org.newsreel.kept", "yes"], &marked));
         unquarantine(&marked).unwrap();
         unquarantine(&plain).unwrap();
         assert!(!xattr(&["-p", "com.apple.quarantine"], &marked), "the mark is gone");
-        assert!(xattr(&["-p", "org.torrential.kept"], &marked), "other attributes stay");
+        assert!(xattr(&["-p", "org.newsreel.kept"], &marked), "other attributes stay");
     }
 }

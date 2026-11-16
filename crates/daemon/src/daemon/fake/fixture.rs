@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use torrential_core::{Category, DownloadId, Error, ErrorCode, Flag, Release, ResultId, Selection, SourceOutcome};
+use newsreel_core::{Category, DownloadId, Error, ErrorCode, Flag, Release, ResultId, Selection, SourceOutcome};
 
 use super::{Network, Posting, Search, Source, land};
 use crate::daemon::admission::Cap;
@@ -405,7 +405,7 @@ mod tests {
     use super::super::parse;
     use super::*;
     use crate::daemon::book::{JobEntry, Observed};
-    use torrential_core::{PieceMap, Slice};
+    use newsreel_core::{PieceMap, Slice};
 
     fn filled(map: PieceMap) -> f64 {
         let wanted: Vec<u8> = map

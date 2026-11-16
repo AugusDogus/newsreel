@@ -129,7 +129,7 @@ pub struct Tv {
     pub plays: Containers,
     /// The newest video codec it says it decodes, which picks the sources a title cast tries.
     pub decodes: Playback,
-    /// Whether torrential can set its volume.
+    /// Whether newsreel can set its volume.
     pub volume: bool,
 }
 
@@ -171,7 +171,7 @@ pub struct Cast {
     /// Seconds, as the TV last said.
     pub position: Option<f64>,
     pub duration: Option<f64>,
-    /// From 0 to 100, for a TV whose volume torrential can set.
+    /// From 0 to 100, for a TV whose volume newsreel can set.
     pub volume: Option<u8>,
     /// Unix seconds.
     pub started_at: i64,

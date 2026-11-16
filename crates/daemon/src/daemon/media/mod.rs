@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 
-use torrential_core::{DownloadId, Error, ErrorCode};
+use newsreel_core::{DownloadId, Error, ErrorCode};
 
 use super::ctx::Ctx;
 use super::http;

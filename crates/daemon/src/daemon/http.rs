@@ -1,5 +1,5 @@
 //! The engine's HTTP server. It serves downloads to video players, the web app with its API, and
-//! the requests of this user's torrential at `wire::PATH`. It listens on 127.0.0.1, and on the home
+//! the requests of this user's newsreel at `wire::PATH`. It listens on 127.0.0.1, and on the home
 //! network too while a phone or TV is paired. A request for bytes that have not arrived asks the
 //! engine for their pieces first and waits for them, so a player can start and seek while the rest
 //! of the file downloads.
@@ -11,12 +11,12 @@ use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
+use newsreel_core::filetype::FileType;
+use newsreel_core::{DownloadId, ErrorCode};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{oneshot, watch};
-use torrential_core::filetype::FileType;
-use torrential_core::{DownloadId, ErrorCode};
 
 use super::cast::{Dlna, HELLO};
 use super::ctx::Ctx;
@@ -51,7 +51,7 @@ const MAX_BODY: usize = 64 * 1024;
 /// The most of a refused body the engine reads, and for how long, before it closes the connection.
 const LINGER_MOST: usize = 1 << 20;
 const LINGER: Duration = Duration::from_secs(1);
-const MAX_FRAME: usize = torrential_core::protocol::MAX_FRAME;
+const MAX_FRAME: usize = newsreel_core::protocol::MAX_FRAME;
 /// Smaller chunks of a streamed answer go out in one write with their framing.
 const ONE_WRITE: usize = 8 * 1024;
 
@@ -339,7 +339,7 @@ pub struct Request {
     from: Sender,
     /// The device token in the request's cookie.
     pub cookie: Option<String>,
-    /// The token in an `Authorization: Bearer` header, which this user's torrential sends.
+    /// The token in an `Authorization: Bearer` header, which this user's newsreel sends.
     bearer: Option<String>,
     /// The User-Agent, lowercased.
     pub agent: Option<String>,
@@ -392,10 +392,9 @@ impl Connection<'_> {
                 }
                 Some(Head::Request(mut request)) => {
                     let (ctx, peer) = (self.ctx, self.peer);
-                    let ask_now = |request: &Request| {
-                        ask(peer, request, ctx.http_port, &ctx.devices, torrential_core::time::now())
-                    };
-                    // This user's torrential may name every file of a large release.
+                    let ask_now =
+                        |request: &Request| ask(peer, request, ctx.http_port, &ctx.devices, newsreel_core::time::now());
+                    // This user's newsreel may name every file of a large release.
                     let most =
                         if request.path == wire::PATH && ask_now(&request).is_ok() { MAX_FRAME } else { MAX_BODY };
                     if request.length > most {
@@ -529,9 +528,7 @@ impl Connection<'_> {
             }
             Refusal::Elsewhere(address) => (
                 "403 Forbidden",
-                format!(
-                    "torrential answers only at its own address, so open http://{address} on this device instead.\n"
-                ),
+                format!("newsreel answers only at its own address, so open http://{address} on this device instead.\n"),
             ),
             Refusal::CastEnded => ("404 Not Found", "This cast has ended, so press Play on TV again.\n".to_string()),
             Refusal::Moved(location) => {

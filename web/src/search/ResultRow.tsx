@@ -18,7 +18,7 @@ const FLAGS: Record<Flag, { label: string; tone: "good" | "bad" | "plain"; title
 
 /** The command that downloads a release the player cannot show. */
 export function getCommand(release: Release): string {
-  return `torrential get ${release.id.slice(0, SHORT_ID)}`;
+  return `newsreel get ${release.id.slice(0, SHORT_ID)}`;
 }
 
 interface Props {

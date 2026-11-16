@@ -1,0 +1,236 @@
+---
+source: crates/newsreel/tests/golden.rs
+expression: value
+---
+{
+  "status": "200 OK",
+  "type": "application/x-ndjson",
+  "body": {
+    "type": "done",
+    "result": {
+      "query": {
+        "text": "night of the living dead",
+        "sources": [],
+        "category": null,
+        "min_grabs": null,
+        "max_size": null,
+        "sort": "relevance",
+        "limit": 50,
+        "timeout_ms": 6000,
+        "adult": false,
+        "fresh": false,
+        "profile": {
+          "screen": {
+            "value": "1080p",
+            "source": "detected"
+          },
+          "playback": {
+            "value": "hevc-hdr",
+            "source": "detected"
+          },
+          "max_size": null,
+          "room": 562939216003072,
+          "arch": "arm64",
+          "language": "en",
+          "detected": {
+            "os": "macos",
+            "display": {
+              "width": 3024,
+              "height": 1964,
+              "hdr": true
+            },
+            "arch": "arm64",
+            "language": "en"
+          },
+          "preferences": {
+            "screen": null,
+            "max_size": null,
+            "playback": null
+          }
+        }
+      },
+      "releases": [
+        {
+          "id": "u4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+          "name": "Night of the Living Dead (1968)",
+          "size": 1432408064,
+          "grabs": 1204,
+          "published": "[redacted]",
+          "category": "video",
+          "quality": {
+            "resolution": null,
+            "codec": null,
+            "hdr": false
+          },
+          "flags": [],
+          "sources": [
+            "geek"
+          ],
+          "nzb_url": "fake://4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
+        },
+        {
+          "id": "ub7f20d5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+          "name": "Night of the Living Dead (1968) [DVD]",
+          "size": 3640912101,
+          "grabs": 860,
+          "published": "[redacted]",
+          "category": "video",
+          "quality": {
+            "resolution": null,
+            "codec": null,
+            "hdr": false
+          },
+          "flags": [],
+          "sources": [
+            "geek"
+          ],
+          "nzb_url": "fake://b7f20d5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
+        },
+        {
+          "id": "ue3a9155d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+          "name": "Night.of.the.Living.Dead.1968.1080p.BluRay.x264",
+          "size": 8375251149,
+          "grabs": 214,
+          "published": "[redacted]",
+          "category": "video",
+          "quality": {
+            "resolution": "1080p",
+            "codec": "h264",
+            "hdr": false
+          },
+          "flags": [],
+          "sources": [
+            "hydra"
+          ],
+          "nzb_url": "fake://e3a9155d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
+        },
+        {
+          "id": "u09cd475d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+          "name": "Night of the Living Dead 4K Restoration",
+          "size": 22872331878,
+          "grabs": 88,
+          "published": "[redacted]",
+          "category": "video",
+          "quality": {
+            "resolution": "2160p",
+            "codec": null,
+            "hdr": false
+          },
+          "flags": [],
+          "sources": [
+            "hydra"
+          ],
+          "nzb_url": "fake://09cd475d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
+        },
+        {
+          "id": "uf61b2e5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+          "name": "Night.of.the.Living.Dead.2025.CAM.x264",
+          "size": 1522322636,
+          "grabs": 41,
+          "published": "[redacted]",
+          "category": "video",
+          "quality": {
+            "resolution": null,
+            "codec": "h264",
+            "hdr": false
+          },
+          "flags": [
+            "cam"
+          ],
+          "sources": [
+            "planet"
+          ],
+          "nzb_url": "fake://f61b2e5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
+        },
+        {
+          "id": "u7a0c3f5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+          "name": "Night of the Living Dead (1968) colorized",
+          "size": 769703833,
+          "grabs": 377,
+          "published": "[redacted]",
+          "category": "video",
+          "quality": {
+            "resolution": null,
+            "codec": null,
+            "hdr": false
+          },
+          "flags": [],
+          "sources": [
+            "geek"
+          ],
+          "nzb_url": "fake://7a0c3f5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
+        },
+        {
+          "id": "uc48e015d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+          "name": "Night of the Living Dead, original score FLAC",
+          "size": 186646118,
+          "grabs": 12,
+          "published": "[redacted]",
+          "category": "audio",
+          "quality": {
+            "resolution": null,
+            "codec": null,
+            "hdr": false
+          },
+          "flags": [],
+          "sources": [
+            "hydra"
+          ],
+          "nzb_url": "fake://c48e015d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
+        },
+        {
+          "id": "u2d9b6a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+          "name": "Night of the Living Dead 1968 720p WEB",
+          "size": 2254911385,
+          "grabs": 0,
+          "published": "[redacted]",
+          "category": "video",
+          "quality": {
+            "resolution": "720p",
+            "codec": null,
+            "hdr": false
+          },
+          "flags": [],
+          "sources": [
+            "planet"
+          ],
+          "nzb_url": "fake://2d9b6a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
+        }
+      ],
+      "total": 8,
+      "hidden_adult": 0,
+      "sources": [
+        {
+          "source": "hydra",
+          "outcome": "ok",
+          "results": 3,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "geek",
+          "outcome": "ok",
+          "results": 3,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "dognzb",
+          "outcome": "http",
+          "status": 503,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "planet",
+          "outcome": "ok",
+          "results": 2,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "slowznab",
+          "outcome": "timeout",
+          "elapsed_ms": "[redacted]"
+        }
+      ],
+      "elapsed_ms": "[redacted]"
+    }
+  }
+}

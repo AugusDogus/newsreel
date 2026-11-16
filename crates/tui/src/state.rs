@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use torrential_core::protocol::JobAction;
-use torrential_core::units::format_limit;
-use torrential_core::{
+use newsreel_core::protocol::JobAction;
+use newsreel_core::units::format_limit;
+use newsreel_core::{
     DownloadId, Error, Job, JobStatus, Machine, Playback, Preferences, Release, ReleaseFile, ResultId, Screen,
     SourceReport,
 };

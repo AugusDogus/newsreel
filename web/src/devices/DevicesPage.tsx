@@ -92,7 +92,7 @@ export function DevicesPage() {
   };
 
   useEffect(() => {
-    document.title = "Devices · torrential";
+    document.title = "Devices · newsreel";
     void apply(devices());
     const clock = setInterval(() => setNow(Date.now() / 1000), 1000);
     const poll = setInterval(() => void apply(devices()), POLL_MS);
@@ -171,7 +171,7 @@ export function DevicesPage() {
                 ))}
               </ul>
             ) : (
-              <p className="pt-2 text-base text-pencil sm:text-sm">No phone or TV yet. Only this Mac can reach torrential.</p>
+              <p className="pt-2 text-base text-pencil sm:text-sm">No phone or TV yet. Only this Mac can reach newsreel.</p>
             )}
           </section>
         )}

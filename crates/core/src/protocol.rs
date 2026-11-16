@@ -132,7 +132,7 @@ pub enum Request {
     },
     /// The films and episodes to go on with, and the saved titles.
     Home,
-    /// Follows the player `torrential play` opened for `video` through the player's socket, and
+    /// Follows the player `newsreel play` opened for `video` through the player's socket, and
     /// keeps where it is in the watch history as a browser tab or a TV keeps theirs.
     Follow {
         video: VideoRef,
@@ -639,7 +639,7 @@ mod tests {
         (8, &["tvs", "cast", "cast_control"]),
         // `get` and `play` stopped carrying the max size: the engine reads config.yaml itself.
         (9, &[]),
-        // The engine follows the player `torrential play` opens, to keep its place.
+        // The engine follows the player `newsreel play` opens, to keep its place.
         (10, &["follow"]),
         // Each request is a POST to the engine's HTTP port, which says the client's version.
         (11, &[]),
@@ -667,7 +667,7 @@ mod tests {
     }
 
     #[test]
-    fn a_stop_from_torrential_0_4_and_one_for_it_read_both_ways() {
+    fn a_stop_from_newsreel_0_4_and_one_for_it_read_both_ways() {
         #[derive(Debug, PartialEq, Deserialize)]
         #[serde(rename_all = "snake_case", tag = "op")]
         enum Before05 {

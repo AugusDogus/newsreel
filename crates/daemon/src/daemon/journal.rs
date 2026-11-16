@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, SystemTime};
 
-use torrential_core::DownloadId;
+use newsreel_core::DownloadId;
 
 /// File index, piece index, CRC32, each little-endian.
 const RECORD: usize = 12;

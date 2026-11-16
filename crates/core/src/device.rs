@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Device {
-    /// Eight hex digits, which `torrential devices remove` takes.
+    /// Eight hex digits, which `newsreel devices remove` takes.
     pub id: String,
     /// What the browser said it is, such as "iPhone" or "LG TV".
     pub name: String,

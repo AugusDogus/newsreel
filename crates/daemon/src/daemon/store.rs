@@ -1,8 +1,8 @@
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use newsreel_core::{DownloadId, Error, PieceMap, Release, ResultId, Selection, TitleLink};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-use torrential_core::{DownloadId, Error, PieceMap, Release, ResultId, Selection, TitleLink};
 
 use super::admission::Cap;
 use super::book::{Home, Identity, Intent, JobRecord, Linked, Play, PlayName};
@@ -28,7 +28,7 @@ pub struct Recorded {
     pub key: i64,
     pub job: DownloadId,
     pub play: PlayName,
-    /// The folder torrential made for the play, the only one this deletes.
+    /// The folder newsreel made for the play, the only one this deletes.
     pub folder: Identity,
     /// The most it takes up on disk.
     pub bytes: u64,
@@ -638,7 +638,7 @@ mod tests {
 
     use super::*;
     use crate::daemon::db;
-    use torrential_core::ErrorCode;
+    use newsreel_core::ErrorCode;
 
     fn open(path: &Path) -> Store {
         Store::open(&db::connect(path).unwrap()).unwrap()

@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
+use newsreel_core::{Error, ErrorCode};
 use tokio::sync::watch;
-use torrential_core::{Error, ErrorCode};
 
 #[derive(Clone, Copy, Default)]
 struct Admission {
@@ -37,7 +37,7 @@ impl Playing {
             admitted
         });
         if !admitted {
-            return Err(Error::new(ErrorCode::DaemonUnavailable, "torrential is updating, try again in a few seconds"));
+            return Err(Error::new(ErrorCode::DaemonUnavailable, "newsreel is updating, try again in a few seconds"));
         }
         Ok(Open(self.clone()))
     }
@@ -92,7 +92,7 @@ impl Drop for Closed {
 mod tests {
     use std::time::Duration;
 
-    use torrential_core::ErrorCode;
+    use newsreel_core::ErrorCode;
 
     use super::*;
 
@@ -134,7 +134,7 @@ mod tests {
 
         assert_eq!(
             refused,
-            Some((ErrorCode::DaemonUnavailable, "torrential is updating, try again in a few seconds".to_string()))
+            Some((ErrorCode::DaemonUnavailable, "newsreel is updating, try again in a few seconds".to_string()))
         );
         assert!(playing.open().is_ok(), "an update that gave up lets streams start again");
     }

@@ -6,10 +6,10 @@
 
 use std::collections::BTreeSet;
 
-use torrential_core::title::{Span, Wanted, normalized};
-use torrential_core::{Category, Language, Machine, Os, Preferences, Profile, Screen, SearchQuery, VideoRef};
-use torrential_search::catalog::{Catalog, CatalogConfig};
-use torrential_search::{IndexerConfig, ResultCache, Search, SearchConfig};
+use newsreel_core::title::{Span, Wanted, normalized};
+use newsreel_core::{Category, Language, Machine, Os, Preferences, Profile, Screen, SearchQuery, VideoRef};
+use newsreel_search::catalog::{Catalog, CatalogConfig};
+use newsreel_search::{IndexerConfig, ResultCache, Search, SearchConfig};
 
 const MOST: u16 = 200;
 const WITHIN_MS: u32 = 12_000;

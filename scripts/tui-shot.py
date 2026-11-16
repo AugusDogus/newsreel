@@ -2,7 +2,7 @@
 """Run a terminal program in a fixed-size tmux pane, send it keys, and save the
 screen as HTML with its colors, so a TUI can be checked and reviewed as an image.
 
-    scripts/tui-shot.py --size 100x30 --keys '/ arch Enter' --out shot.html -- target/debug/torrential
+    scripts/tui-shot.py --size 100x30 --keys '/ arch Enter' --out shot.html -- target/debug/newsreel
 
 Keys are space-separated tmux key names (Enter, Escape, Tab, Up, C-p, Space) or
 literal text. `sleep:0.5` pauses between keys. The page is captured after --settle
@@ -154,7 +154,7 @@ def main():
     ap.add_argument("--frames", type=int, default=1)
     ap.add_argument("--interval", type=float, default=1.0)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--title", default="torrential")
+    ap.add_argument("--title", default="newsreel")
     ap.add_argument("--env", action="append", default=[], help="KEY=VALUE for the program")
     ap.add_argument("command", nargs=argparse.REMAINDER)
     args = ap.parse_args()

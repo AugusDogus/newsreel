@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use torrential_core::{DownloadId, Error, Job, JobStatus, PieceMap, Place, Progress, Selection, TitleLink};
+use newsreel_core::{DownloadId, Error, Job, JobStatus, PieceMap, Place, Progress, Selection, TitleLink};
 
 use super::admission::Cap;
 use super::engine_port::Stats;
@@ -85,11 +85,11 @@ pub struct JobRecord {
 pub enum Home {
     /// The downloads folder or a folder the person chose. Its files go only when the person asks.
     Folder,
-    /// A folder of its own inside torrential's plays folder.
+    /// A folder of its own inside newsreel's plays folder.
     Plays(Play),
 }
 
-/// A download in torrential's plays folder.
+/// A download in newsreel's plays folder.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Play {
     /// When someone last pressed play on it or streamed it.
@@ -97,7 +97,7 @@ pub struct Play {
     /// The person asked for it by hand with `get`, so it never leaves the plays folder or stops
     /// by itself.
     pub by_hand: bool,
-    /// The folder torrential made for it, which is the only one deleted for it.
+    /// The folder newsreel made for it, which is the only one deleted for it.
     pub folder: Identity,
 }
 
@@ -221,7 +221,7 @@ impl JobEntry {
             .then(|| size.saturating_sub(verified).div_ceil(s.down_rate));
         Job {
             id: self.record.id,
-            name: torrential_core::text::sanitize(&self.record.name),
+            name: newsreel_core::text::sanitize(&self.record.name),
             dir: self.record.dir.clone(),
             path: self.path(),
             status,
@@ -306,7 +306,7 @@ mod tests {
     use super::*;
     use crate::daemon::engine_port::Missing;
     use crate::daemon::layout::LayoutFile;
-    use torrential_core::ErrorCode;
+    use newsreel_core::ErrorCode;
 
     fn entry(n: u8, added_at: i64, intent: Intent, observed: Observed) -> JobEntry {
         let id = DownloadId::from_bytes([n; 20]);

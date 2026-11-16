@@ -1,7 +1,7 @@
+use newsreel_core::{Error, HexPrefix, Profile, Release, ResultId, SearchQuery, SearchResult};
+use newsreel_search::Search;
+pub use newsreel_search::{Progress, SavedLink};
 use tokio::sync::mpsc;
-use torrential_core::{Error, HexPrefix, Profile, Release, ResultId, SearchQuery, SearchResult};
-use torrential_search::Search;
-pub use torrential_search::{Progress, SavedLink};
 
 use super::BoxFuture;
 

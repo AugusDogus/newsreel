@@ -2,8 +2,8 @@
 
 use std::sync::{Arc, Mutex};
 
-use torrential_core::Error;
-use torrential_search::subtitles::{Found, Online, Subtitle, Video};
+use newsreel_core::Error;
+use newsreel_search::subtitles::{Found, Online, Subtitle, Video};
 
 use super::BoxFuture;
 

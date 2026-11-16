@@ -37,7 +37,7 @@ pub enum Place {
     /// The downloads folder or a folder the person chose. Its files stay until the person deletes them.
     #[default]
     Folder,
-    /// A folder of its own inside torrential's plays folder, which torrential empties as it fills.
+    /// A folder of its own inside newsreel's plays folder, which newsreel empties as it fills.
     Plays,
 }
 

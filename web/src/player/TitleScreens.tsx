@@ -166,7 +166,7 @@ export function TitleFailed({ naming, backdrop, kind, error, tried, sources, unp
             </Button>
             {unpinned ? (
               <Link href={unpinned} replace className={buttonClass({})}>
-                Let torrential choose
+                Let newsreel choose
               </Link>
             ) : (
               <Link href={sources} className={buttonClass({})}>

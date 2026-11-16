@@ -4,11 +4,11 @@
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::{Duration, Instant};
 
+use newsreel_core::protocol::{Request, Response, WIRE_VERSION};
+use newsreel_core::{DeviceList, ErrorCode};
 use serde_json::Value;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use torrential_core::protocol::{Request, Response, WIRE_VERSION};
-use torrential_core::{DeviceList, ErrorCode};
 
 use super::super::http;
 use super::super::names::Names;
@@ -166,7 +166,7 @@ async fn a_phone_reaches_nothing_until_it_pairs_and_nothing_once_it_is_removed()
     let mut idle = TcpStream::connect((ip, h.running.ctx.http_port)).await.unwrap();
     let page = phone.get("/pair").await;
     assert_eq!(page.status, 200);
-    assert!(page.text().contains("Enter the code that Add a device shows in torrential on the Mac."));
+    assert!(page.text().contains("Enter the code that Add a device shows in newsreel on the Mac."));
 
     let wrong = format!("{:06}", (offer.code.parse::<u32>().unwrap() + 1) % 1_000_000);
     assert_eq!(phone.pair(&wrong).await.status, 400);
@@ -184,7 +184,7 @@ async fn a_phone_reaches_nothing_until_it_pairs_and_nothing_once_it_is_removed()
     let bytes = phone.send("GET", &file, &["Range: bytes=0-99"], "").await;
     assert_eq!((bytes.status, bytes.body.len()), (206, 100));
     let mac_only =
-        (403, "local_only".to_string(), "only the Mac running torrential can add or remove devices".to_string());
+        (403, "local_only".to_string(), "only the Mac running newsreel can add or remove devices".to_string());
     assert_eq!(phone.get("/api/devices").await.error(), mac_only);
     assert_eq!(phone.send("POST", "/api/devices/add", &[], "{}").await.error(), mac_only);
     assert_eq!(phone.get("/pair").await.header("location"), Some("/"));
@@ -242,7 +242,7 @@ async fn a_request_from_the_network_must_name_this_mac_and_come_from_its_own_pag
     let by_name = Browser { host: format!("{name}:{port}"), ..Browser::on(ip, &h) };
     assert_eq!(by_name.get("/pair").await.status, 200, "the .local name");
     let elsewhere =
-        format!("torrential answers only at its own address, so open http://{name}:{port} on this device instead.\n");
+        format!("newsreel answers only at its own address, so open http://{name}:{port} on this device instead.\n");
     for host in
         [format!("rebound.example:{port}"), format!("{ip}:{}", port + 1), ip.to_string(), format!("127.0.0.1:{port}")]
     {
@@ -516,7 +516,7 @@ async fn the_engine_keeps_trying_the_home_network_while_another_program_holds_it
     let squatter = squatter(ip, port);
     devices(&h, Request::AddDevice).await;
     let why = format!(
-        "no phone or TV can reach this Mac yet, because torrential cannot listen on the home network on port {port} (address in use) and keeps trying"
+        "no phone or TV can reach this Mac yet, because newsreel cannot listen on the home network on port {port} (address in use) and keeps trying"
     );
     unreachable(&h, Some(&why)).await;
     let me = mac_again(port).get("/api/me").await;

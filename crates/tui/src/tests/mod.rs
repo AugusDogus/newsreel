@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use torrential_core::protocol::{Event, FileListSource, FilesReply};
-use torrential_core::{
+use newsreel_core::protocol::{Event, FileListSource, FilesReply};
+use newsreel_core::{
     Arch, Category, Display, DownloadId, Error, ErrorCode, Flag, Job, JobStatus, Language, Machine, Os, Profile,
     Progress, Release, ReleaseFile, ResultId, SearchQuery, SearchResult, Selection, SourceOutcome, SourceReport,
 };
@@ -29,7 +29,7 @@ pub fn result_id(short: &str) -> ResultId {
 }
 
 fn job(short: &str, name: &str, status: JobStatus, size: u64, done: u64, rate: u64, days_ago: i64) -> Job {
-    let dir = PathBuf::from("/Users/ada/Downloads/torrential");
+    let dir = PathBuf::from("/Users/ada/Downloads/newsreel");
     let eta = (rate > 0).then(|| (size - done).div_ceil(rate));
     Job {
         id: id(short),
@@ -48,7 +48,7 @@ fn job(short: &str, name: &str, status: JobStatus, size: u64, done: u64, rate: u
         selection: Selection::All,
         added_at: CLOCK - days_ago * 86_400,
         title: None,
-        place: torrential_core::Place::Folder,
+        place: newsreel_core::Place::Folder,
     }
 }
 
@@ -173,7 +173,7 @@ fn file(path: &str, size: u64, verified: u64, risky: bool) -> ReleaseFile {
         size,
         selected: true,
         verified,
-        risk: risky.then_some(torrential_core::FileRisk::Executable),
+        risk: risky.then_some(newsreel_core::FileRisk::Executable),
     }
 }
 
@@ -233,7 +233,7 @@ pub fn app(size: (u16, u16)) -> State {
     State { page: Page::Downloads, ..titles_app(size) }
 }
 
-/// The screen as bare `torrential` opens, before the engine answers.
+/// The screen as bare `newsreel` opens, before the engine answers.
 pub fn titles_app(size: (u16, u16)) -> State {
     State::new(Instant::now(), CLOCK, size, Some(PathBuf::from("/Users/ada")))
 }

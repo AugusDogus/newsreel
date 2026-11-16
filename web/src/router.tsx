@@ -15,7 +15,7 @@ export type Route =
   | { page: "devices" }
   | { page: "missing" };
 
-const CHANGED = "torrential:navigate";
+const CHANGED = "newsreel:navigate";
 
 /** A path segment as typed. A malformed escape stays as it is, and names no page. */
 function decoded(segment: string): string {

@@ -1,6 +1,6 @@
 #!/bin/sh
 # Build the release tarball for this machine, or run the tests the same way.
-#   scripts/release.sh        build dist/torrential-<target>.tar.gz and its .sha256
+#   scripts/release.sh        build dist/newsreel-<target>.tar.gz and its .sha256
 #   scripts/release.sh test   run cargo test --workspace with the same toolchain
 set -eu
 cd "$(dirname "$0")/.."
@@ -29,8 +29,8 @@ case "$target" in
     if [ "$mode" = test ]; then
       exec nix --extra-experimental-features 'nix-command flakes' develop -c cargo test --workspace --locked
     fi
-    nix --extra-experimental-features 'nix-command flakes' develop -c cargo build --release --locked -p torrential
-    bin=target/release/torrential
+    nix --extra-experimental-features 'nix-command flakes' develop -c cargo build --release --locked -p newsreel
+    bin=target/release/newsreel
     if otool -L "$bin" | tail -n +2 | grep -Ev '^[[:space:]]+(/usr/lib/|/System/)'; then
       echo "$bin links a library outside /usr/lib and /System" >&2
       exit 1
@@ -45,7 +45,7 @@ case "$target" in
     if [ "$mode" = test ]; then
       cargo="cargo test --workspace --locked"
     else
-      cargo="cargo build --release --locked -p torrential"
+      cargo="cargo build --release --locked -p newsreel"
     fi
     # The Alpine image has no bun, so the web app is built here and handed to the build inside.
     if ! command -v bun >/dev/null 2>&1; then
@@ -55,7 +55,7 @@ case "$target" in
     (cd web && bun install --frozen-lockfile && bun run build --outDir ../target/linux/web --emptyOutDir)
     # A UTF-8 LANG, as on the host, so libtorrent in the tests keeps names outside ASCII as they are.
     docker run --rm --init -v "$PWD:/src" -w /src -e OWNER="$(id -u):$(id -g)" -e CARGO="$cargo" -e LANG=C.UTF-8 \
-      -e TORRENTIAL_WEB_DIST=/src/target/linux/web \
+      -e NEWSREEL_WEB_DIST=/src/target/linux/web \
       -e RUSTUP_HOME=/src/target/linux/rustup -e CARGO_HOME=/src/target/linux/cargo alpine:3.24 sh -euc '
       apk add --no-cache build-base linux-headers curl file >/dev/null
       [ -x "$CARGO_HOME/bin/cargo" ] || curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --no-modify-path >/dev/null 2>&1
@@ -66,7 +66,7 @@ case "$target" in
       exit $status
     '
     [ "$mode" = test ] && exit 0
-    bin=target/linux/release/torrential
+    bin=target/linux/release/newsreel
     if ! file "$bin" | grep -q 'static'; then
       file "$bin" >&2
       echo "$bin is not statically linked" >&2
@@ -76,10 +76,10 @@ case "$target" in
 esac
 
 mkdir -p dist
-asset=torrential-$target.tar.gz
+asset=newsreel-$target.tar.gz
 stage=$(mktemp -d)
 cp "$bin" LICENSE "$stage/"
-tar -czf "dist/$asset" -C "$stage" torrential LICENSE
+tar -czf "dist/$asset" -C "$stage" newsreel LICENSE
 rm -rf "$stage"
 
 cd dist

@@ -1,4 +1,4 @@
-//! Follows a player that `torrential play` opened, through the JSON socket mpv and IINA open,
+//! Follows a player that `newsreel play` opened, through the JSON socket mpv and IINA open,
 //! and keeps where it is in the watch history as a browser tab or a TV keeps theirs.
 
 use std::path::{Path, PathBuf};
@@ -6,16 +6,16 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
+use newsreel_core::time::now;
+use newsreel_core::watching::SAVE_EVERY;
+use newsreel_core::{ResultId, VideoRef, Watched};
 use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncWrite, AsyncWriteExt, BufReader};
-use torrential_core::time::now;
-use torrential_core::watching::SAVE_EVERY;
-use torrential_core::{ResultId, VideoRef, Watched};
 
 use super::watching::{Screen, Watching};
 use crate::log::log;
 
-/// How long a player may take to open its socket once `torrential play` starts it.
+/// How long a player may take to open its socket once `newsreel play` starts it.
 const OPEN_WITHIN: Duration = Duration::from_secs(30);
 /// How often to look for the socket meanwhile.
 const LOOK_EVERY: Duration = Duration::from_millis(100);

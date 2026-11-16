@@ -3,9 +3,9 @@ mod rss;
 
 use std::sync::Arc;
 
+use newsreel_core::{Error, ErrorCode, SourceOutcome, TitleId, text};
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
-use torrential_core::{Error, ErrorCode, SourceOutcome, TitleId, text};
 use url::Url;
 
 use crate::http::{FetchError, Http};
@@ -152,7 +152,7 @@ pub(crate) fn registry(config: &SearchConfig) -> Result<Vec<Arc<Source>>, Error>
 }
 
 fn config_error(message: String) -> Error {
-    Error::new(ErrorCode::Usage, message).with_hint("fix the sources section of the torrential config")
+    Error::new(ErrorCode::Usage, message).with_hint("fix the sources section of the newsreel config")
 }
 
 #[cfg(test)]

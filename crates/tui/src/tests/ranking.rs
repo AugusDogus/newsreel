@@ -1,5 +1,5 @@
 use crossterm::event::KeyCode;
-use torrential_core::{Playback, Preferences, Screen};
+use newsreel_core::{Playback, Preferences, Screen};
 
 use crate::state::Edit;
 
@@ -188,10 +188,10 @@ fn a_save_while_a_search_runs_starts_it_again() {
 #[test]
 fn a_failed_save_says_why_and_searches_nothing() {
     let mut state = searched((100, 30));
-    let error = Error::new(ErrorCode::StorageError, "cannot write /Users/ada/.config/torrential/config.yaml");
+    let error = Error::new(ErrorCode::StorageError, "cannot write /Users/ada/.config/newsreel/config.yaml");
     let tried = Edit { from: Preferences::default(), to: TV_4K };
     assert_eq!(state.update(Msg::Saved { edit: tried, result: Err(error) }), []);
-    assert_eq!(state.toast.unwrap().text, "Save failed: cannot write /Users/ada/.config/torrential/config.yaml");
+    assert_eq!(state.toast.unwrap().text, "Save failed: cannot write /Users/ada/.config/newsreel/config.yaml");
     assert_eq!(state.preferences, Some(Preferences::default()));
 }
 

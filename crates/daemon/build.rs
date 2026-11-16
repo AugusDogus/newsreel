@@ -1,4 +1,4 @@
-//! Embeds the web app in the binary. `TORRENTIAL_WEB_DIST` names a built copy of it; without that,
+//! Embeds the web app in the binary. `NEWSREEL_WEB_DIST` names a built copy of it; without that,
 //! this builds `web/` with bun.
 
 use std::fmt::Write as _;
@@ -8,9 +8,9 @@ use std::process::Command;
 const SOURCES: [&str; 6] = ["src", "index.html", "package.json", "bun.lock", "vite.config.ts", "tsconfig.json"];
 
 fn main() {
-    println!("cargo:rerun-if-env-changed=TORRENTIAL_WEB_DIST");
+    println!("cargo:rerun-if-env-changed=NEWSREEL_WEB_DIST");
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("cargo sets OUT_DIR"));
-    let dist = match std::env::var_os("TORRENTIAL_WEB_DIST").filter(|dir| !dir.is_empty()) {
+    let dist = match std::env::var_os("NEWSREEL_WEB_DIST").filter(|dir| !dir.is_empty()) {
         Some(dir) => {
             let dir = PathBuf::from(dir);
             println!("cargo:rerun-if-changed={}", dir.display());
@@ -41,7 +41,7 @@ fn build(dist: &Path) -> PathBuf {
         let status = Command::new("bun").args(args).current_dir(&web).status().unwrap_or_else(|e| {
             panic!(
                 "cannot run bun to build the web app: {e}. Run cargo inside `nix develop`, or set \
-                 TORRENTIAL_WEB_DIST to a built copy of web/"
+                 NEWSREEL_WEB_DIST to a built copy of web/"
             )
         });
         assert!(status.success(), "`bun {}` failed in {}", args.join(" "), web.display());

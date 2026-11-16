@@ -1,0 +1,109 @@
+---
+source: crates/newsreel/tests/golden.rs
+expression: value
+---
+{
+  "code": 0,
+  "stdout": {
+    "schema": 1,
+    "type": "search",
+    "result": {
+      "query": {
+        "text": "ubuntu",
+        "sources": [],
+        "category": null,
+        "min_grabs": null,
+        "max_size": null,
+        "sort": "relevance",
+        "limit": 3,
+        "timeout_ms": 6000,
+        "adult": false,
+        "fresh": false,
+        "profile": {
+          "screen": {
+            "value": "1080p",
+            "source": "detected"
+          },
+          "playback": {
+            "value": "hevc-hdr",
+            "source": "detected"
+          },
+          "max_size": null,
+          "room": 562939216003072,
+          "arch": "arm64",
+          "language": "en",
+          "detected": {
+            "os": "macos",
+            "display": {
+              "width": 3024,
+              "height": 1964,
+              "hdr": true
+            },
+            "arch": "arm64",
+            "language": "en"
+          },
+          "preferences": {
+            "screen": null,
+            "max_size": null,
+            "playback": null
+          }
+        }
+      },
+      "releases": [
+        {
+          "id": "ue3a1f06d2b1c8a4f5e6d7c8b9a0f1e2d3c4b5a69",
+          "name": "ubuntu-24.04.5-desktop-amd64.iso",
+          "size": 6345887744,
+          "grabs": 1873,
+          "published": null,
+          "category": "software",
+          "quality": {
+            "resolution": null,
+            "codec": null,
+            "hdr": false
+          },
+          "flags": [],
+          "sources": [
+            "geek"
+          ],
+          "nzb_url": "fake://e3a1f06d2b1c8a4f5e6d7c8b9a0f1e2d3c4b5a69"
+        }
+      ],
+      "total": 1,
+      "hidden_adult": 0,
+      "sources": [
+        {
+          "source": "hydra",
+          "outcome": "ok",
+          "results": 0,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "geek",
+          "outcome": "ok",
+          "results": 1,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "dognzb",
+          "outcome": "http",
+          "status": 503,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "planet",
+          "outcome": "ok",
+          "results": 0,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "slowznab",
+          "outcome": "timeout",
+          "elapsed_ms": "[redacted]"
+        }
+      ],
+      "elapsed_ms": "[redacted]"
+    },
+    "next": "newsreel files ue3a1f0"
+  }
+}

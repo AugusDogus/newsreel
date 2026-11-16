@@ -1,8 +1,8 @@
 //! What is inside a video file, as ffprobe reports it and as the web player needs it.
 
+use newsreel_core::filetype::{self, FileType, Kind};
+use newsreel_core::{Error, ErrorCode};
 use serde::{Deserialize, Serialize};
-use torrential_core::filetype::{self, FileType, Kind};
-use torrential_core::{Error, ErrorCode};
 
 use crate::ffmpeg::fetch::Readiness;
 

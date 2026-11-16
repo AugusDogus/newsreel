@@ -198,7 +198,7 @@ export function Home({ query }: { query: string }) {
   const search = useSearchText(query, (words) => navigate(homePath(words), { replace: true }));
 
   useEffect(() => {
-    document.title = query ? `${query} · torrential` : "torrential";
+    document.title = query ? `${query} · newsreel` : "newsreel";
   }, [query]);
 
   const keyDown = (event: KeyboardEvent<HTMLInputElement>) => {

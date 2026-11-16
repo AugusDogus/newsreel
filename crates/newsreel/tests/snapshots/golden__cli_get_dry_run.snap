@@ -1,0 +1,43 @@
+---
+source: crates/newsreel/tests/golden.rs
+expression: value
+---
+{
+  "code": 0,
+  "stdout": {
+    "schema": 1,
+    "type": "get",
+    "reply": {
+      "outcome": "planned",
+      "job": {
+        "id": "4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
+        "name": "night_of_the_living_dead",
+        "dir": "[home]/Downloads/newsreel",
+        "path": "[home]/Downloads/newsreel/night_of_the_living_dead",
+        "state": "queued",
+        "progress": {
+          "size": 1432408064,
+          "verified": 0,
+          "down_rate": 0,
+          "connections": 0,
+          "eta": null
+        },
+        "selection": {
+          "kind": "all"
+        },
+        "added_at": "[redacted]",
+        "place": "folder"
+      },
+      "plan": {
+        "selected_files": 5,
+        "total_files": 5,
+        "selected_size": 1432408064,
+        "destination": "[home]/Downloads/newsreel/night_of_the_living_dead",
+        "free_space": 562949953421312,
+        "conflicts": [],
+        "max_size": 53687091200
+      }
+    },
+    "next": "newsreel get 4c1e9a"
+  }
+}

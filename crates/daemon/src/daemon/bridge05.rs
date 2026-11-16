@@ -1,9 +1,9 @@
-//! The Unix socket that torrential 0.5 reached its engine through, kept only so a 0.5 torrential
+//! The Unix socket that newsreel 0.5 reached its engine through, kept only so a 0.5 newsreel
 //! can update itself to this release. It is deleted in 0.7.
 //!
 //! Before 0.5 installs a release, it starts the release's engine in a scratch home, asks it at this
 //! socket for a hello and a status, and then asks it to stop. This engine refuses every request as
-//! one from an older torrential, which 0.5 takes as an engine that runs, and stops when asked. The
+//! one from an older newsreel, which 0.5 takes as an engine that runs, and stops when asked. The
 //! other way, a command from this release asks a 0.5 engine that the update left running to make
 //! way, as a newer 0.5 client did.
 // Remove in 0.7
@@ -13,12 +13,12 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use newsreel_core::protocol::{decode_frame, encode_frame, frame_len, read_frame};
+use newsreel_core::{Error, ErrorCode};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::oneshot;
-use torrential_core::protocol::{decode_frame, encode_frame, frame_len, read_frame};
-use torrential_core::{Error, ErrorCode};
 
 use super::ctx::OwnerHandle;
 use super::owner::Command;
@@ -63,7 +63,7 @@ fn socket(paths: &Paths) -> PathBuf {
     paths.runtime.join("engine.sock")
 }
 
-/// Answers 0.5 torrentials at their socket until the engine stops. An engine that cannot listen
+/// Answers 0.5 newsreels at their socket until the engine stops. An engine that cannot listen
 /// there runs anyway, and logs why.
 pub(crate) async fn answer(paths: Paths, owner: OwnerHandle, version: String) {
     let path = socket(&paths);
@@ -71,14 +71,14 @@ pub(crate) async fn answer(paths: Paths, owner: OwnerHandle, version: String) {
     let listener = match UnixListener::bind(&path) {
         Ok(listener) => Bound { listener, path },
         Err(e) => {
-            log(&format!("cannot listen on {} for torrential 0.5: {e}", path.display()));
+            log(&format!("cannot listen on {} for newsreel 0.5: {e}", path.display()));
             return;
         }
     };
     let _ = std::fs::set_permissions(&listener.path, std::fs::Permissions::from_mode(0o600));
     let refusal = Error::new(
         ErrorCode::DaemonVersion,
-        format!("the engine runs the newer torrential {version}, so restart this torrential"),
+        format!("the engine runs the newer newsreel {version}, so restart this newsreel"),
     );
     let uid = paths::uid();
     while let Ok((stream, _)) = listener.listener.accept().await {
@@ -159,9 +159,9 @@ fn ask(
 mod tests {
     use super::*;
 
-    /// The frames torrential 0.5.2 sends and expects, byte for byte.
+    /// The frames newsreel 0.5.2 sends and expects, byte for byte.
     #[test]
-    fn frames_match_what_torrential_0_5_sends_and_reads() {
+    fn frames_match_what_newsreel_0_5_sends_and_reads() {
         let frame = |json: &str| [&(json.len() as u32).to_be_bytes()[..], json.as_bytes()].concat();
         let decoded = |json: &str| decode_frame::<Request>(json.as_bytes()).unwrap();
         let refusal = Response::Error { error: Error::new(ErrorCode::DaemonVersion, "newer") };

@@ -2,8 +2,8 @@
 //! links usually carry the user's API key, and fetching one counts as a grab, so a search
 //! only reads the feed.
 
+use newsreel_core::{Category, Flag, TitleId};
 use sha1::{Digest, Sha1};
-use torrential_core::{Category, Flag, TitleId};
 use url::{Url, form_urlencoded};
 
 use super::{Ask, Ctx, Failure, SavedLink, rss};

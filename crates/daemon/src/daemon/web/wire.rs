@@ -2,8 +2,8 @@
 
 use std::path::Path;
 
-use torrential_core::PieceMap;
-use torrential_core::watching::{FINISHED_SHARE, FINISHED_WITHIN, SAVE_EVERY, WORTH_SAVING};
+use newsreel_core::PieceMap;
+use newsreel_core::watching::{FINISHED_SHARE, FINISHED_WITHIN, SAVE_EVERY, WORTH_SAVING};
 use ts_rs::{Config, TS};
 
 use super::cast::Start;
@@ -23,7 +23,7 @@ const HEADER: &str = "// The engine's JSON, as the Rust types that write it desc
 
 /// The web app's wire types: core's, then the engine's own, each declared once.
 fn declarations(cfg: &Config) -> Vec<String> {
-    let mut all = torrential_core::ts::declarations(cfg);
+    let mut all = newsreel_core::ts::declarations(cfg);
     all.extend([
         Served::decl(cfg),
         Playing::decl(cfg),
@@ -58,7 +58,7 @@ fn declarations(cfg: &Config) -> Vec<String> {
 /// Numbers the web app and the engine must agree on: each name, what it is, and its value.
 fn constants() -> [(&'static str, &'static str, String); 12] {
     [
-        ("SHORT_ID", "Hex digits every screen shows of an ID.", torrential_core::id::SHORT_ID.to_string()),
+        ("SHORT_ID", "Hex digits every screen shows of an ID.", newsreel_core::id::SHORT_ID.to_string()),
         ("SLICES", "Equal runs of a release's pieces in `Progress.piece_map`.", PieceMap::SLICES.to_string()),
         ("PIECE_RUNS", "Equal runs of a file's bytes in `GET /api/pieces`.", PIECE_RUNS.to_string()),
         ("SEARCH_LIMIT", "Results `POST /api/search` answers when it names no limit.", super::SEARCH_LIMIT.to_string()),

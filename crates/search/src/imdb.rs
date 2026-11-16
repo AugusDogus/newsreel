@@ -3,11 +3,11 @@
 //! Each reads IMDb's kinds of title its own way: the catalog lists films and series as cards, and
 //! subtitles also take a video or a TV short as a film.
 
+use newsreel_core::title::{Title, normalized, year_slack};
+use newsreel_core::{Kind, TitleCard};
 use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use tokio::time::Instant;
-use torrential_core::title::{Title, normalized, year_slack};
-use torrential_core::{Kind, TitleCard};
 use url::Url;
 
 use crate::catalog::Listed;
@@ -153,7 +153,7 @@ fn pick(title: &Title, suggestions: &[Suggestion]) -> Option<Matched> {
 
 #[cfg(test)]
 mod tests {
-    use torrential_core::catalog::Episode;
+    use newsreel_core::catalog::Episode;
 
     use super::*;
 

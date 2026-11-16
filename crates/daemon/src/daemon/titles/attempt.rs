@@ -8,15 +8,15 @@ use std::time::{Duration, Instant};
 use crate::playback::stream::{self, Playable};
 use futures_util::StreamExt;
 use futures_util::stream::FuturesUnordered;
-use tokio::sync::oneshot;
-use torrential_core::catalog::Episode;
-use torrential_core::filetype;
-use torrential_core::text::sanitize;
-use torrential_core::title::Span;
-use torrential_core::{
+use newsreel_core::catalog::Episode;
+use newsreel_core::filetype;
+use newsreel_core::text::sanitize;
+use newsreel_core::title::Span;
+use newsreel_core::{
     AttemptEvent, Check, DownloadId, Error, ErrorCode, HexPrefix, Job, JobStatus, Opens, Player, Plays, Quality,
     Release, ResultId, Skip, SourceReport, TitleLink, Tried, VideoRef,
 };
+use tokio::sync::oneshot;
 
 use super::super::BoxFuture;
 use super::super::ctx::{Ctx, OwnerHandle};
@@ -105,7 +105,7 @@ fn ended(report: &mut impl FnMut(AttemptEvent), outcome: Outcome) -> Outcome {
 /// play and gives up the source under test.
 pub async fn run(ctx: &Ctx, ask: PlayTitle, mut report: impl FnMut(AttemptEvent) + Send) -> Outcome {
     let end = Instant::now() + ctx.titles.timing.budget;
-    let title = match ctx.titles.resolve(&ask.video, torrential_core::time::now()).await {
+    let title = match ctx.titles.resolve(&ask.video, newsreel_core::time::now()).await {
         Ok(title) => title,
         Err(error) => return ended(&mut report, Outcome::Failed { error, tried: Vec::new() }),
     };
@@ -555,7 +555,7 @@ fn failure(name: &str, tried: &[Tried], pinned: bool, replacing: bool) -> Error 
         return error.clone();
     }
     let (message, hint) = match (pinned, replacing) {
-        (true, _) => (format!("this source of {name} does not play now"), "let torrential choose a source"),
+        (true, _) => (format!("this source of {name} does not play now"), "let newsreel choose a source"),
         (false, true) => {
             (format!("no other source of {name} plays now"), "keep waiting on this one, or try again later")
         }

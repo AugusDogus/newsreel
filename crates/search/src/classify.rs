@@ -1,4 +1,4 @@
-use torrential_core::{Category, name};
+use newsreel_core::{Category, name};
 
 use crate::terms::Terms;
 

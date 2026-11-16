@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use torrential_core::{Error, ErrorCode};
+use newsreel_core::{Error, ErrorCode};
 
 use crate::env::Env;
 
@@ -9,7 +9,7 @@ pub struct Paths {
     pub config: PathBuf,
     pub state: PathBuf,
     pub cache: PathBuf,
-    /// What torrential keeps for the person, such as the plays it is downloading.
+    /// What newsreel keeps for the person, such as the plays it is downloading.
     pub data: PathBuf,
     pub runtime: PathBuf,
     pub downloads: PathBuf,
@@ -33,13 +33,13 @@ impl Paths {
 
     pub fn resolve(env: &Env, uid: u32, os_downloads: Option<PathBuf>) -> Result<Self, Error> {
         let home = env.home().map(Path::to_path_buf);
-        let torrential_home = env.var("TORRENTIAL_HOME").map(PathBuf::from);
+        let newsreel_home = env.var("NEWSREEL_HOME").map(PathBuf::from);
         let downloads = os_downloads
             .or_else(|| home.as_ref().map(|h| h.join("Downloads")))
-            .map(|d| d.join("torrential"))
-            .or_else(|| torrential_home.as_ref().map(|r| r.join("downloads")))
+            .map(|d| d.join("newsreel"))
+            .or_else(|| newsreel_home.as_ref().map(|r| r.join("downloads")))
             .ok_or_else(no_home)?;
-        let paths = if let Some(root) = torrential_home {
+        let paths = if let Some(root) = newsreel_home {
             Self {
                 config: root.join("config"),
                 state: root.join("state"),
@@ -50,7 +50,7 @@ impl Paths {
             }
         } else if cfg!(windows) {
             // Windows keeps an app's own files under the person's local app data folder.
-            let root = env.var("LOCALAPPDATA").map(PathBuf::from).ok_or_else(no_home)?.join("torrential");
+            let root = env.var("LOCALAPPDATA").map(PathBuf::from).ok_or_else(no_home)?.join("newsreel");
             Self {
                 config: root.join("config"),
                 state: root.join("state"),
@@ -62,7 +62,7 @@ impl Paths {
         } else {
             let home = home.ok_or_else(no_home)?;
             let xdg = |var: &str, fallback: &str| {
-                env.var(var).map_or_else(|| home.join(fallback), PathBuf::from).join("torrential")
+                env.var(var).map_or_else(|| home.join(fallback), PathBuf::from).join("newsreel")
             };
             Self {
                 config: xdg("XDG_CONFIG_HOME", ".config"),
@@ -70,8 +70,8 @@ impl Paths {
                 cache: xdg("XDG_CACHE_HOME", ".cache"),
                 data: xdg("XDG_DATA_HOME", ".local/share"),
                 runtime: env.var("XDG_RUNTIME_DIR").map_or_else(
-                    || PathBuf::from(format!("/tmp/torrential-{uid}")),
-                    |d| PathBuf::from(d).join("torrential"),
+                    || PathBuf::from(format!("/tmp/newsreel-{uid}")),
+                    |d| PathBuf::from(d).join("newsreel"),
                 ),
                 downloads,
             }
@@ -86,7 +86,7 @@ impl Paths {
         let n = PLAYERS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let name = format!("player-{}-{n}", std::process::id());
         if cfg!(windows) {
-            PathBuf::from(format!(r"\\.\pipe\torrential-{name}"))
+            PathBuf::from(format!(r"\\.\pipe\newsreel-{name}"))
         } else {
             self.runtime.join(format!("{name}.sock"))
         }
@@ -109,7 +109,7 @@ impl Paths {
         self.state.join("state.db")
     }
 
-    /// torrential's own folder for plays. Each play downloads into a folder of its own inside it,
+    /// newsreel's own folder for plays. Each play downloads into a folder of its own inside it,
     /// and nothing else writes there.
     pub fn plays(&self) -> PathBuf {
         self.data.join("plays")
@@ -137,7 +137,7 @@ impl Paths {
         self.state.join("login-service-added")
     }
 
-    /// Left by `torrential engine uninstall`, so the engine never adds the login service again.
+    /// Left by `newsreel engine uninstall`, so the engine never adds the login service again.
     pub fn login_service_declined(&self) -> PathBuf {
         self.state.join("no-login-service")
     }
@@ -147,7 +147,7 @@ impl Paths {
         self.state.join("http-port")
     }
 
-    /// Holds the port the engine serves on now and the token that lets this user's torrential in,
+    /// Holds the port the engine serves on now and the token that lets this user's newsreel in,
     /// which only this user can read. It stays while the engine restarts for an update.
     pub fn engine_token(&self) -> PathBuf {
         self.state.join("engine-token")
@@ -175,8 +175,8 @@ pub fn uid() -> u32 {
 }
 
 fn no_home() -> Error {
-    Error::new(ErrorCode::StateCorrupt, "HOME is not set, so torrential has no default location for its files")
-        .with_hint("set HOME, or set TORRENTIAL_HOME to a directory for torrential's files")
+    Error::new(ErrorCode::StateCorrupt, "HOME is not set, so newsreel has no default location for its files")
+        .with_hint("set HOME, or set NEWSREEL_HOME to a directory for newsreel's files")
 }
 
 /// The filesystem type of `path` when it is a network filesystem, where SQLite's locking
@@ -234,7 +234,7 @@ pub fn check_state_filesystem(state: &Path) -> Result<(), Error> {
             ErrorCode::StateCorrupt,
             format!("the state directory {} is on a network filesystem ({kind})", state.display()),
         )
-        .with_hint("set TORRENTIAL_HOME to a directory on a local disk")),
+        .with_hint("set NEWSREEL_HOME to a directory on a local disk")),
         Err(e) => Err(Error::new(ErrorCode::StateCorrupt, format!("cannot inspect {}: {e}", state.display()))),
     }
 }
@@ -248,25 +248,25 @@ mod tests {
     }
 
     #[test]
-    fn torrential_home_holds_everything_but_downloads() {
-        let p = resolve(&[("HOME", "/Users/ada"), ("TORRENTIAL_HOME", "/tmp/th")]).unwrap();
+    fn newsreel_home_holds_everything_but_downloads() {
+        let p = resolve(&[("HOME", "/Users/ada"), ("NEWSREEL_HOME", "/tmp/th")]).unwrap();
         assert_eq!(p.state, Path::new("/tmp/th/state"));
         assert_eq!(p.engine_token(), Path::new("/tmp/th/state/engine-token"));
         assert_eq!(p.runtime, Path::new("/tmp/th/run"));
-        assert_eq!(p.downloads, Path::new("/Users/ada/Downloads/torrential"));
+        assert_eq!(p.downloads, Path::new("/Users/ada/Downloads/newsreel"));
         assert_eq!(p.plays(), Path::new("/tmp/th/data/plays"));
     }
 
     #[cfg(unix)]
     #[test]
-    fn xdg_directories_apply_without_torrential_home() {
+    fn xdg_directories_apply_without_newsreel_home() {
         let p = resolve(&[("HOME", "/Users/ada"), ("XDG_STATE_HOME", "/var/st")]).unwrap();
-        assert_eq!(p.state, Path::new("/var/st/torrential"));
-        assert_eq!(p.config, Path::new("/Users/ada/.config/torrential"));
-        assert_eq!(p.plays(), Path::new("/Users/ada/.local/share/torrential/plays"));
-        assert_eq!(p.runtime, Path::new("/tmp/torrential-501"));
+        assert_eq!(p.state, Path::new("/var/st/newsreel"));
+        assert_eq!(p.config, Path::new("/Users/ada/.config/newsreel"));
+        assert_eq!(p.plays(), Path::new("/Users/ada/.local/share/newsreel/plays"));
+        assert_eq!(p.runtime, Path::new("/tmp/newsreel-501"));
         let p = resolve(&[("HOME", "/home/ada"), ("XDG_RUNTIME_DIR", "/run/user/501")]).unwrap();
-        assert_eq!(p.runtime, Path::new("/run/user/501/torrential"));
+        assert_eq!(p.runtime, Path::new("/run/user/501/newsreel"));
     }
 
     #[cfg(windows)]
@@ -274,12 +274,12 @@ mod tests {
     fn windows_keeps_everything_but_downloads_under_local_app_data() {
         let local = r"C:\Users\ada\AppData\Local";
         let p = resolve(&[("USERPROFILE", r"C:\Users\ada"), ("LOCALAPPDATA", local)]).unwrap();
-        let root = Path::new(local).join("torrential");
+        let root = Path::new(local).join("newsreel");
         assert_eq!(
             [&p.config, &p.state, &p.cache, &p.data, &p.runtime],
             [&root.join("config"), &root.join("state"), &root.join("cache"), &root.join("data"), &root.join("run")]
         );
         assert_eq!(p.engine_token(), root.join(r"state\engine-token"));
-        assert_eq!(p.downloads, Path::new(r"/Users/ada/Downloads/torrential"));
+        assert_eq!(p.downloads, Path::new(r"/Users/ada/Downloads/newsreel"));
     }
 }

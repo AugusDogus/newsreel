@@ -4,8 +4,8 @@ use std::sync::{Arc, mpsc};
 use std::time::Duration;
 
 use crate::log::log;
+use newsreel_core::{DownloadId, Error, PieceMap, Slice};
 use tokio::sync::{mpsc as tokio_mpsc, oneshot};
-use torrential_core::{DownloadId, Error, PieceMap, Slice};
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct AddDownload {

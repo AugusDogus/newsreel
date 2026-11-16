@@ -2,11 +2,11 @@
 
 use std::collections::{BTreeMap, HashMap};
 
+use newsreel_core::catalog::Episode;
+use newsreel_core::catalog::{Countries, Country};
+use newsreel_core::{Art, ArtKind, EpisodeInfo, Kind, Season, TitleCard, TitleDetails, TitleId};
 use serde::Deserialize;
 use serde_json::Value;
-use torrential_core::catalog::Episode;
-use torrential_core::catalog::{Countries, Country};
-use torrential_core::{Art, ArtKind, EpisodeInfo, Kind, Season, TitleCard, TitleDetails, TitleId};
 use url::Url;
 
 use super::Listed;

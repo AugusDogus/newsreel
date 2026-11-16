@@ -14,13 +14,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::playback::media::RUNTIME_BYTES;
+use newsreel_core::{ArtKind, Display, Error, Playback, Preferences, Screen, Target, TitleCard, TitleDetails, TitleId};
+use newsreel_search::catalog::Picture;
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use torrential_core::{
-    ArtKind, Display, Error, Playback, Preferences, Screen, Target, TitleCard, TitleDetails, TitleId,
-};
-use torrential_search::catalog::Picture;
 
 use super::super::BoxFuture;
 use super::super::admission::GIB;
@@ -42,7 +40,7 @@ enum On {
 
 impl On {
     async fn pair(h: &Harness) -> Self {
-        use torrential_core::protocol::{Request, Response};
+        use newsreel_core::protocol::{Request, Response};
         let ip = super::devices::lan();
         let Response::Devices { list } = h.ask(Request::AddDevice).await else {
             panic!("adding a device answers the devices")
@@ -282,7 +280,7 @@ async fn a_get_starts_no_work_since_a_browser_without_fetch_metadata_sends_one_f
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_search_sends_a_line_each_time_a_source_answers() {
-    let listed = |hex: &str, name: &str, source: &str| torrential_core::Release {
+    let listed = |hex: &str, name: &str, source: &str| newsreel_core::Release {
         sources: vec![source.into()],
         ..fake::release(&hex.repeat(20), name, GIB, 1)
     };
@@ -695,7 +693,7 @@ async fn the_first_file_to_convert_fetches_ffmpeg_once_for_everyone_who_asks() {
     let (_, media) = get(&h, &media_path).await;
     assert_eq!(json!([media["container"], media["ffmpeg"]]), json!(["matroska", "fetch"]));
     let early = get(&h, &stream).await;
-    assert_eq!(error(&early), (404, "not_found", "torrential has not fetched ffmpeg yet, and this needs it"));
+    assert_eq!(error(&early), (404, "not_found", "newsreel has not fetched ffmpeg yet, and this needs it"));
 
     let mut first = Page::open(&h).await;
     first.send("POST", "/api/ffmpeg", &FETCH, "{}").await;
@@ -810,7 +808,7 @@ async fn a_download_that_is_not_the_pinned_build_leaves_nothing_behind() {
                     "type": "error",
                     "error": {
                         "code": "verification_failed",
-                        "message": "the ffmpeg download is not the build torrential pins, so it was deleted",
+                        "message": "the ffmpeg download is not the build newsreel pins, so it was deleted",
                         "hint": format!("try again later, or {INSTALL}"),
                     },
                 })
@@ -880,7 +878,8 @@ async fn a_build_that_does_not_run_here_is_fetched_once_for_each_engine_run() {
         fake::Search::new(fake::isos()),
         Outside { fetch: Fetch::Build(build(url, &archive)), ..Outside::default() },
     );
-    let message = "the ffmpeg torrential fetched does not run on this machine: error while loading shared libraries: libmvec.so.1";
+    let message =
+        "the ffmpeg newsreel fetched does not run on this machine: error while loading shared libraries: libmvec.so.1";
     let refused = json!({
         "type": "error",
         "error": { "code": "fetch_failed", "message": message, "hint": format!("{INSTALL}, then try again") },
@@ -912,7 +911,7 @@ async fn ffmpeg_is_not_fetched_into_a_folder_other_users_can_change() {
             "type": "error",
             "error": {
                 "code": "storage_error",
-                "message": format!("torrential will not keep ffmpeg in {}: {why}", folder.display()),
+                "message": format!("newsreel will not keep ffmpeg in {}: {why}", folder.display()),
                 "hint": hint,
             },
         })
@@ -1111,8 +1110,8 @@ async fn a_matroska_film_plays_from_any_second_with_its_own_timestamps() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_video_without_subtitles_gets_them_from_online_sources() {
-    use torrential_core::title::Title;
-    use torrential_search::subtitles::FileHash;
+    use newsreel_core::title::Title;
+    use newsreel_search::subtitles::FileHash;
     let h = Harness::new();
     let size = 300_000;
     let film = release(68, "Sintel (2010) [1080p]", &[("Sintel.2010.1080p.mkv", size), ("poster.jpg", 9_000)]);
@@ -1308,7 +1307,7 @@ impl Page {
     }
 }
 
-async fn gone_from_the_engine(h: &Harness, ids: &[torrential_core::DownloadId]) -> bool {
+async fn gone_from_the_engine(h: &Harness, ids: &[newsreel_core::DownloadId]) -> bool {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         let mut held = Vec::new();
@@ -1400,15 +1399,15 @@ async fn a_title_plays_from_the_first_of_its_sources_that_starts_and_cleans_up_t
 async fn a_title_play_whose_download_goes_before_its_video_is_served_fails_with_the_sources_it_tried() {
     use super::super::owner::plays::Destination;
     use super::super::titles::attempt::{self, PlayTitle};
-    use torrential_core::Player;
-    use torrential_core::protocol::Request;
+    use newsreel_core::Player;
+    use newsreel_core::protocol::Request;
     let (h, night) = titles::night();
     let ask = PlayTitle {
         video: "tt0063350".parse().unwrap(),
         pin: None,
         replace: None,
         player: Player::External,
-        plays: torrential_core::Plays::BROWSER,
+        plays: newsreel_core::Plays::BROWSER,
         to: Destination::Plays,
     };
     let outcome = attempt::run(&h.running.ctx, ask, |_| {}).await;
@@ -1442,7 +1441,7 @@ async fn closing_the_connection_while_a_source_sends_nothing_pauses_its_download
 
 #[tokio::test(flavor = "multi_thread")]
 async fn where_a_person_stopped_shows_on_every_connection_and_decides_what_comes_next() {
-    use torrential_core::protocol::{Request, Response};
+    use newsreel_core::protocol::{Request, Response};
     let h = Harness::new();
     let watch = |video: &str, position: f64, duration: f64| json!({ "video": video, "position": position, "duration": duration });
     let (status, saved) = post(&h, "/api/watched", watch("tt9999901:1:1", 2630.0, 2640.0)).await;
@@ -1557,8 +1556,8 @@ impl CatalogPort for Unanswered {
 #[tokio::test(flavor = "multi_thread")]
 async fn home_answers_at_once_from_the_details_kept_here_when_the_catalog_never_does() {
     use super::super::owner::{Command, Shelving};
-    use torrential_core::protocol::{Request, Response};
-    use torrential_core::{Kind, Watched};
+    use newsreel_core::protocol::{Request, Response};
+    use newsreel_core::{Kind, Watched};
     let h = Harness::with_titles(std::sync::Arc::new(Unanswered(Default::default())));
     let shelf = &h.running.ctx.titles.shelf;
     let watched = |video: &str, position, at| Watched {
@@ -1743,7 +1742,7 @@ async fn titles_their_pictures_and_their_sources_come_from_the_catalog_and_the_s
 
 #[tokio::test(flavor = "multi_thread")]
 async fn without_ffmpeg_the_browser_passes_over_a_matroska_film_that_a_media_player_plays() {
-    use torrential_core::protocol::{Request, Response, TitleRequest};
+    use newsreel_core::protocol::{Request, Response, TitleRequest};
     let film = release(0xb1, "Night.of.the.Living.Dead.1968.1080p.BluRay.x264", &[("Night.1968.1080p.mkv", 2 * GIB)]);
     let catalog = vec![titles::listed(&film, "hydra", None)];
     let script = vec![fake::Source::answers("hydra", 0)];
@@ -1825,7 +1824,7 @@ async fn tried_by_play(h: &Harness, video: &str) -> Vec<String> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_play_tries_a_titles_sources_in_the_order_listed_and_the_list_then_puts_those_that_failed_last_with_why() {
-    use torrential_core::protocol::{Request, Response};
+    use newsreel_core::protocol::{Request, Response};
     let (h, night) = titles::night();
     let name = |n: usize| night[n].name.clone();
     let fresh: Vec<(String, Value)> = (0..4).map(|n| (name(n), Value::Null)).collect();
@@ -1850,7 +1849,7 @@ async fn a_play_tries_a_titles_sources_in_the_order_listed_and_the_list_then_put
 
 #[tokio::test(flavor = "multi_thread")]
 async fn the_web_app_and_the_socket_read_the_same_title_page() {
-    use torrential_core::protocol::{Request, Response};
+    use newsreel_core::protocol::{Request, Response};
     let h = Harness::new();
     post(&h, "/api/watched", json!({ "video": "tt0063350", "position": 60.0, "duration": 5760.0 })).await;
     let (status, page) = get(&h, "/api/title?id=tt0063350").await;
@@ -1887,7 +1886,7 @@ async fn the_web_app_and_the_socket_read_the_same_title_page() {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn with_title_lookups_off_title_search_says_so_and_release_search_still_works() {
-    use torrential_search::catalog::CatalogConfig;
+    use newsreel_search::catalog::CatalogConfig;
     let off = CatalogConfig { online: false, endpoint: None, imdb_endpoint: None, cache_dir: None };
     let catalog = std::sync::Arc::new(super::super::titles::catalog_port::Live::new(&off).unwrap());
     let h = Harness::with_titles(catalog);
@@ -2101,11 +2100,11 @@ async fn a_phone_and_a_tv_on_the_home_network_each_get_the_copy_for_their_screen
     let hd = release(0xc2, "Night of the Living Dead 1968 1080p BluRay x264", &[("Night.mp4", MIB)]);
     let sd = release(0xc3, "Night Of The Living Dead 1968 720p BRRip x264", &[("Night.mp4", MIB)]);
     let url = indexer(&[(&uhd, 12 * GIB, 50), (&hd, 4 * GIB, 232), (&sd, 1700 * MIB, 22)]).await;
-    let config = torrential_search::SearchConfig {
-        indexers: vec![torrential_search::IndexerConfig { name: "home".into(), url, api_key: None }],
+    let config = newsreel_search::SearchConfig {
+        indexers: vec![newsreel_search::IndexerConfig { name: "home".into(), url, api_key: None }],
         disabled: Vec::new(),
     };
-    let search = torrential_search::Search::new(&config, torrential_search::ResultCache::new()).unwrap();
+    let search = newsreel_search::Search::new(&config, newsreel_search::ResultCache::new()).unwrap();
     let search: Arc<dyn SearchPort> = Arc::new(search);
     let phone_screen = Preferences { screen: Some(Screen::Phone), playback: Some(Playback::H264), max_size: None };
     let outside = Outside { preferences: phone_screen, search: Some(search), ..Outside::default() };

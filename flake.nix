@@ -1,5 +1,5 @@
 {
-  description = "torrential development shell";
+  description = "newsreel development shell";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
 

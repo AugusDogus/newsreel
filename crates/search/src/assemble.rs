@@ -1,13 +1,13 @@
 use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
-use sha1::{Digest, Sha1};
-use torrential_core::error::Details;
-use torrential_core::title::{Namesakes, Wanted};
-use torrential_core::{
+use newsreel_core::error::Details;
+use newsreel_core::title::{Namesakes, Wanted};
+use newsreel_core::{
     Arch, Error, ErrorCode, Flag, Language, Profile, Quality, Release, Resolution, ResultId, SearchQuery, SearchResult,
     SourceOutcome, SourceReport, TitleId,
 };
+use sha1::{Digest, Sha1};
 
 use crate::classify;
 use crate::observation::Observation;

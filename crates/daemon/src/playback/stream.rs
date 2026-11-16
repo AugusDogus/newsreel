@@ -1,10 +1,10 @@
 use std::time::Duration;
 
-use torrential_core::Plays;
-use torrential_core::catalog::Episode;
-use torrential_core::filetype::{FileType, Kind};
-use torrential_core::job::ReleaseFile;
-use torrential_core::title;
+use newsreel_core::Plays;
+use newsreel_core::catalog::Episode;
+use newsreel_core::filetype::{FileType, Kind};
+use newsreel_core::job::ReleaseFile;
+use newsreel_core::title;
 
 /// Folders that hold the subtitles for every video in the release.
 const SUBTITLE_FOLDERS: [&str; 4] = ["sub", "subs", "subtitle", "subtitles"];
@@ -113,7 +113,7 @@ fn in_subtitle_folder(path: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use torrential_core::{Container, Opens};
+    use newsreel_core::{Container, Opens};
 
     use super::*;
 

@@ -2,7 +2,7 @@
 //! `tests/fixtures/cinemeta` and `tests/fixtures/imdb`. With arguments, records only the answers
 //! whose fixture names hold one of them, so the others keep what the tests expect.
 //!
-//! `cargo run -p torrential-search --example record_catalog [-- sintel big-buck-bunny]`
+//! `cargo run -p newsreel-search --example record_catalog [-- sintel big-buck-bunny]`
 
 use std::path::Path;
 

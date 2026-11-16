@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use torrential_core::{Error, ErrorCode};
+use newsreel_core::{Error, ErrorCode};
 
 use crate::env::{Env, hooks};
 
@@ -84,7 +84,7 @@ impl Player {
         }
     }
 
-    /// Starts the player on its own, so it outlives torrential and never holds the terminal.
+    /// Starts the player on its own, so it outlives newsreel and never holds the terminal.
     pub fn launch(&self, launch: &Launch) -> Result<(), Error> {
         let (program, args) = command(self, launch);
         let mut command = Command::new(&program);
@@ -140,7 +140,7 @@ fn installed(env: &Env, programs: &[&str]) -> Option<PathBuf> {
     folders.flat_map(|folder| programs.iter().map(move |program| folder.join(program))).find(|path| path.is_file())
 }
 
-/// Detaches `command` from torrential, so the player outlives it and a Ctrl-C in its terminal.
+/// Detaches `command` from newsreel, so the player outlives it and a Ctrl-C in its terminal.
 #[cfg(unix)]
 fn on_its_own(command: &mut Command) {
     use std::os::unix::process::CommandExt;

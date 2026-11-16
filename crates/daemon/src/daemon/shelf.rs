@@ -3,8 +3,8 @@
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
+use newsreel_core::{Error, ErrorCode, Kind, ResultId, TitleCard, TitleId, VideoRef, Watched};
 use rusqlite::{Connection, OptionalExtension, Row, params};
-use torrential_core::{Error, ErrorCode, Kind, ResultId, TitleCard, TitleId, VideoRef, Watched};
 
 use super::db::{Db, sql_error};
 

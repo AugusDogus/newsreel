@@ -49,7 +49,7 @@ pub fn complaint(stderr: &str) -> String {
         (true, Some((_, rest))) => rest,
         _ => line,
     };
-    torrential_core::text::sanitize(line)
+    newsreel_core::text::sanitize(line)
 }
 
 #[cfg(test)]

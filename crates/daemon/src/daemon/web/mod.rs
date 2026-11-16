@@ -19,13 +19,11 @@ use std::future::Future;
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use newsreel_core::protocol::Change;
+use newsreel_core::{Category, DownloadId, Error, ErrorCode, Job, Profile, Release, SearchQuery, SearchResult, Target};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use torrential_core::protocol::Change;
-use torrential_core::{
-    Category, DownloadId, Error, ErrorCode, Job, Profile, Release, SearchQuery, SearchResult, Target,
-};
 
 use super::ctx::Ctx;
 use super::devices::Asker;
@@ -264,7 +262,7 @@ fn target(reference: &str) -> Result<Target, Error> {
     match Target::parse(reference, std::path::Path::new("/"))? {
         Target::NzbFile(_) => {
             Err(Error::new(ErrorCode::InvalidRef, "the web app cannot open an .nzb file by its path")
-                .with_hint("use the NZB's URL, or run torrential get with the file"))
+                .with_hint("use the NZB's URL, or run newsreel get with the file"))
         }
         Target::Title(video) => {
             Err(Error::new(ErrorCode::InvalidRef, format!("{video} is a film or a series, not a release"))

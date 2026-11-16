@@ -1,12 +1,12 @@
 use std::path::PathBuf;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use torrential_core::protocol::{
+use newsreel_core::protocol::{
     Change, Event, FilesReply, GetOutcome, GetReply, Home, JobAction, TitlePage, TitlePlayed,
 };
-use torrential_core::text::sanitize;
-use torrential_core::units::count;
-use torrential_core::{
+use newsreel_core::text::sanitize;
+use newsreel_core::units::count;
+use newsreel_core::{
     Arch, AttemptEvent, DownloadId, Error, Job, JobStatus, Machine, Preferences, ResultId, SearchQuery, SearchResult,
     TitleCard, TitleId, VideoRef,
 };
@@ -426,7 +426,7 @@ impl State {
             }
             Ok(None) => {
                 self.upgrade = None;
-                self.say(Tone::Info, "torrential is up to date.");
+                self.say(Tone::Info, "newsreel is up to date.");
             }
             Err(error) => {
                 if let Some(Upgrade::Installing(latest)) = self.upgrade.take() {

@@ -3,12 +3,12 @@ use std::path::Path;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use newsreel_core::error::Details;
+use newsreel_core::title::{Namesakes, Wanted};
+use newsreel_core::{ErrorCode, HexPrefix, Release, ResultId, SearchQuery, SourceOutcome};
+use newsreel_search::{IndexerConfig, Progress, ResultCache, SavedLink, Search, SearchConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
-use torrential_core::error::Details;
-use torrential_core::title::{Namesakes, Wanted};
-use torrential_core::{ErrorCode, HexPrefix, Release, ResultId, SearchQuery, SourceOutcome};
-use torrential_search::{IndexerConfig, Progress, ResultCache, SavedLink, Search, SearchConfig};
 
 #[derive(Clone)]
 struct Reply {
@@ -118,7 +118,7 @@ fn query(text: &str, sources: &[&str]) -> SearchQuery {
     SearchQuery { sources: sources.iter().map(|s| s.to_string()).collect(), timeout_ms: 3000, ..SearchQuery::new(text) }
 }
 
-fn outcomes(result: &torrential_core::SearchResult) -> Vec<(String, SourceOutcome)> {
+fn outcomes(result: &newsreel_core::SearchResult) -> Vec<(String, SourceOutcome)> {
     result.sources.iter().map(|r| (r.source.clone(), r.outcome.clone())).collect()
 }
 

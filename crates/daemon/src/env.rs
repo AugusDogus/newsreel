@@ -3,12 +3,12 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use torrential_core::units::{parse_duration, parse_size};
-use torrential_core::{DownloadId, Error, ErrorCode};
+use newsreel_core::units::{parse_duration, parse_size};
+use newsreel_core::{DownloadId, Error, ErrorCode};
 
 pub mod hooks;
 
-/// The environment torrential started with: its variables, and where its own binary was.
+/// The environment newsreel started with: its variables, and where its own binary was.
 #[derive(Clone, Debug)]
 pub struct Env {
     vars: HashMap<String, String>,
@@ -46,7 +46,7 @@ impl Env {
         Self { vars, executable: running_binary() }
     }
 
-    /// This environment as one whose torrential binary is at `path`.
+    /// This environment as one whose newsreel binary is at `path`.
     pub fn with_executable(self, path: &Path) -> Self {
         Self { executable: Ok(path.to_path_buf()), ..self }
     }
@@ -74,18 +74,18 @@ impl Env {
         }
     }
 
-    /// The path this torrential started from, for starting the engine.
+    /// The path this newsreel started from, for starting the engine.
     pub fn executable(&self) -> Result<PathBuf, Error> {
         let found = self.executable.clone();
-        found.map_err(|e| Error::new(ErrorCode::StorageError, format!("cannot find the torrential binary: {e}")))
+        found.map_err(|e| Error::new(ErrorCode::StorageError, format!("cannot find the newsreel binary: {e}")))
     }
 
-    /// Where this torrential is installed, with links resolved, for an update to replace and the
+    /// Where this newsreel is installed, with links resolved, for an update to replace and the
     /// login service to start.
     pub fn installed(&self) -> Result<PathBuf, Error> {
         let path = self.executable()?;
         std::fs::canonicalize(&path).map_err(|e| {
-            Error::new(ErrorCode::StorageError, format!("cannot find the torrential binary at {}: {e}", path.display()))
+            Error::new(ErrorCode::StorageError, format!("cannot find the newsreel binary at {}: {e}", path.display()))
         })
     }
 
@@ -120,7 +120,7 @@ fn running_binary() -> Result<PathBuf, String> {
     std::env::current_exe().map_err(|e| e.to_string())
 }
 
-/// The `TORRENTIAL_TEST_*` settings of a process a test started, each read and parsed here.
+/// The `NEWSREEL_TEST_*` settings of a process a test started, each read and parsed here.
 #[derive(Clone, Copy)]
 pub struct TestHooks<'a>(&'a Env);
 

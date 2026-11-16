@@ -1,7 +1,7 @@
 use std::cmp::{Ordering, Reverse};
 use std::collections::HashSet;
 
-use torrential_core::name::{self, year};
+use newsreel_core::name::{self, year};
 
 const STOPWORDS: &[&str] = &[
     "a", "an", "and", "at", "by", "de", "der", "die", "das", "el", "for", "in", "la", "le", "of", "on", "or", "the",
@@ -30,7 +30,7 @@ pub(crate) struct Relevance {
 
 impl Terms {
     pub fn parse(text: &str) -> Terms {
-        let text = torrential_core::text::sanitize(text).to_lowercase();
+        let text = newsreel_core::text::sanitize(text).to_lowercase();
         let mut words: Vec<String> = Vec::new();
         for word in tokens(&text) {
             if !words.contains(&word) {

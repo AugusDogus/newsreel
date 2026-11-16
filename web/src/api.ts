@@ -222,8 +222,8 @@ export class EngineError extends Error {
 
 const UNREACHABLE: ApiError = {
   code: ENGINE_UNREACHABLE,
-  message: "Cannot reach the torrential engine.",
-  hint: "Run torrential web in a terminal to start it, then try again.",
+  message: "Cannot reach the newsreel engine.",
+  hint: "Run newsreel web in a terminal to start it, then try again.",
 };
 
 /** The engine's error for anything a request threw, including a network failure when the engine is not running. */

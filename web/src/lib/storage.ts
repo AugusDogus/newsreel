@@ -38,9 +38,9 @@ export interface Preferences {
   showRemaining: boolean;
 }
 
-const POSITIONS = "torrential:positions";
-const PREFERENCES = "torrential:preferences";
-const OFFSETS = "torrential:subtitle-offsets";
+const POSITIONS = "newsreel:positions";
+const PREFERENCES = "newsreel:preferences";
+const OFFSETS = "newsreel:subtitle-offsets";
 const KEPT = 200;
 export const SUBTITLE_STYLE: SubtitleStyle = { scale: 1, backing: "shadow", lift: 7 };
 const DEFAULTS: Preferences = {

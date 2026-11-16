@@ -3,8 +3,8 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use newsreel_core::{Error, ErrorCode};
 use rusqlite::Connection;
-use torrential_core::{Error, ErrorCode};
 
 pub(super) const MIGRATIONS: &[&str] = &[r#"
 CREATE TABLE jobs (
@@ -205,25 +205,25 @@ pub fn corrupt(path: &Path, reason: &str) -> Error {
         ))
 }
 
-/// A newer torrential migrated the database past `known`. It kept the database it migrated from
+/// A newer newsreel migrated the database past `known`. It kept the database it migrated from
 /// as `state.v{known}.bak`, the state this version last wrote.
 fn newer(path: &Path, version: usize, known: usize) -> Error {
     let backup = path.with_extension(format!("v{known}.bak"));
     let error = Error::new(
         ErrorCode::StateCorrupt,
         format!(
-            "the state database {} is from a newer torrential (schema version {version}; this version reads up to {known})",
+            "the state database {} is from a newer newsreel (schema version {version}; this version reads up to {known})",
             path.display()
         ),
     );
     if backup.is_file() {
         error.with_hint(format!(
-            "install the newer torrential again, or stop it and replace {} with {}, the state from before the update",
+            "install the newer newsreel again, or stop it and replace {} with {}, the state from before the update",
             path.display(),
             backup.display()
         ))
     } else {
-        error.with_hint("install the newer torrential again")
+        error.with_hint("install the newer newsreel again")
     }
 }
 
@@ -271,11 +271,11 @@ mod tests {
         assert_eq!(
             err.message,
             format!(
-                "the state database {} is from a newer torrential (schema version 99; this version reads up to {known})",
+                "the state database {} is from a newer newsreel (schema version 99; this version reads up to {known})",
                 path.display()
             )
         );
-        assert_eq!(err.hint.as_deref(), Some("install the newer torrential again"));
+        assert_eq!(err.hint.as_deref(), Some("install the newer newsreel again"));
 
         let backup = dir.path().join(format!("state.v{known}.bak"));
         std::fs::write(&backup, b"the state before the update").unwrap();
@@ -283,7 +283,7 @@ mod tests {
         assert_eq!(
             err.hint,
             Some(format!(
-                "install the newer torrential again, or stop it and replace {} with {}, the state from before the update",
+                "install the newer newsreel again, or stop it and replace {} with {}, the state from before the update",
                 path.display(),
                 backup.display()
             ))

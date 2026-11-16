@@ -39,7 +39,7 @@ pub fn alive(pid: u32) -> bool {
 }
 
 /// Asks the process `pid` to stop with Ctrl-C on its console. A process can be on one console at a
-/// time, so a helper, `torrential daemon interrupt`, attaches to the engine's console and sends it,
+/// time, so a helper, `newsreel daemon interrupt`, attaches to the engine's console and sends it,
 /// and this process keeps its own terminal.
 #[cfg(windows)]
 pub fn interrupt(pid: u32) {
@@ -56,7 +56,7 @@ pub fn interrupt(pid: u32) {
 }
 
 /// Sends Ctrl-C to every process on the console of `pid`, from this process, which ignores it.
-/// Only `torrential daemon interrupt` calls it, since it leaves this process on that console.
+/// Only `newsreel daemon interrupt` calls it, since it leaves this process on that console.
 #[cfg(windows)]
 pub fn send_interrupt(pid: u32) -> std::io::Result<()> {
     use windows::Win32::System::Console::{

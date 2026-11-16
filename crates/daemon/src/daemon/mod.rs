@@ -39,9 +39,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use newsreel_core::protocol::WRITES_STOP_WITHIN;
+use newsreel_core::{Error, ErrorCode, Preferences};
 use tokio::sync::mpsc;
-use torrential_core::protocol::WRITES_STOP_WITHIN;
-use torrential_core::{Error, ErrorCode, Preferences};
 
 use crate::config::Config;
 use crate::disk::Disk;
@@ -103,12 +103,12 @@ impl Ports {
         let subtitles: Arc<dyn subtitle_port::SubtitlePort> = if fake(hooks::SUBTITLES) {
             Arc::new(subtitle_port::Fake::default())
         } else {
-            Arc::new(torrential_search::subtitles::Online::new(&settings.subtitles)?)
+            Arc::new(newsreel_search::subtitles::Online::new(&settings.subtitles)?)
         };
         let catalog: Arc<dyn titles::catalog_port::CatalogPort> = if fake(hooks::CATALOG) {
             Arc::new(titles::catalog_port::Fake::default())
         } else {
-            let config = torrential_search::catalog::CatalogConfig {
+            let config = newsreel_search::catalog::CatalogConfig {
                 cache_dir: Some(paths.cache.join("catalog")),
                 ..settings.catalog.clone()
             };
@@ -128,7 +128,7 @@ impl Ports {
                 engine: Box::new(fake::Engine::new(network)),
                 parse: fake::parse,
                 nzb: Arc::new(nzb_port::Passthrough),
-                search: Arc::new(fake::fixture::search(torrential_core::time::now())),
+                search: Arc::new(fake::fixture::search(newsreel_core::time::now())),
                 disk: Box::new(crate::disk::RoomyDisk),
                 machine: Detector::start(env, settings.downloads_dir(paths), Arc::new(crate::disk::RoomyDisk)),
                 preferences,
@@ -142,9 +142,9 @@ impl Ports {
         let disk = || -> Box<dyn Disk> {
             if roomy { Box::new(crate::disk::RoomyDisk) } else { Box::new(crate::disk::RealDisk) }
         };
-        let search = torrential_search::Search::new(&settings.search, torrential_search::ResultCache::new())?;
+        let search = newsreel_search::Search::new(&settings.search, newsreel_search::ResultCache::new())?;
         let search: Arc<dyn SearchPort> = Arc::new(search);
-        let pool = torrential_usenet::Pool::new(settings.usenet.clone());
+        let pool = newsreel_usenet::Pool::new(settings.usenet.clone());
         Ok(Self {
             engine: Box::new(usenet::Usenet::new(pool.clone(), runtime.clone(), paths.state.join("usenet"))),
             search,
@@ -185,7 +185,7 @@ pub struct Running {
 }
 
 /// Where the engine listens: the first of `ports` that is free, else any. It writes the port it
-/// takes and the token of this user's torrential to `access` before it answers anything there.
+/// takes and the token of this user's newsreel to `access` before it answers anything there.
 pub struct Listen<'a> {
     pub ports: &'a [u16],
     pub access: &'a Path,
@@ -201,7 +201,7 @@ pub fn start(
     listen: Listen,
 ) -> Result<Running, Error> {
     let store = Store::open(db)?;
-    ports.search.restore(store.results(torrential_core::time::now())?);
+    ports.search.restore(store.results(newsreel_core::time::now())?);
     let devices = Arc::new(devices::Devices::open(db)?);
     // Taken before the bind, so a change while the engine starts reaches the accept loop.
     let mut reach = devices.reach();
@@ -247,7 +247,7 @@ pub fn start(
     Ok(Running { ctx, owner: task, engine: thread, http })
 }
 
-/// Runs the engine until `torrential engine stop`, a signal, or, when `service` says launchd,
+/// Runs the engine until `newsreel engine stop`, a signal, or, when `service` says launchd,
 /// systemd or Task Scheduler started it, a switch to an installed update.
 pub fn run(env: &Env, service: bool, http_port: Option<u16>) -> u8 {
     let paths = match Paths::from_process(env) {
@@ -313,7 +313,7 @@ fn serve(env: &Env, paths: &Paths, service: bool, http_port: Option<u16>) -> Res
     let db = db::connect(&paths.database())?;
     let default_dir = settings.downloads_dir(paths);
     if seed {
-        fake::fixture::seed(&mut Store::open(&db)?, &default_dir, torrential_core::time::now())?;
+        fake::fixture::seed(&mut Store::open(&db)?, &default_dir, newsreel_core::time::now())?;
     }
     let asked = |hook| test.and_then(|test| test.duration(hook));
     let timing = match asked(hooks::TITLE_WAIT) {
@@ -362,7 +362,7 @@ fn serve(env: &Env, paths: &Paths, service: bool, http_port: Option<u16>) -> Res
         let ended = running.owner.await.unwrap_or(Ended::Stopped);
         // Before the port stops answering, so a stop that finds it refusing waits for the next engine.
         if ended == Ended::Restart && service {
-            service::leave_switching(paths, torrential_core::time::now());
+            service::leave_switching(paths, newsreel_core::time::now());
         }
         running.http.abort();
         signals.abort();

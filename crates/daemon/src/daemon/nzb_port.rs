@@ -1,7 +1,7 @@
 //! Turns an NZB, from a file or a URL, into the bytes the engine adds: a manifest resolved
 //! over NNTP, which [`super::engine_port::ParseLayout`] then reads.
 
-use torrential_core::Error;
+use newsreel_core::Error;
 
 use super::BoxFuture;
 

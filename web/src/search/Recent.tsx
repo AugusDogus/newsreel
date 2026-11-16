@@ -84,7 +84,7 @@ export function Recent() {
     return (
       <p className="max-w-[60ch] text-base text-pretty text-pencil sm:text-sm">
         {link === "connecting"
-          ? "Connecting to the torrential engine."
+          ? "Connecting to the newsreel engine."
           : "Search for something to watch. It plays here while it downloads."}
       </p>
     );

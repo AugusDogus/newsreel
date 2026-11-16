@@ -31,7 +31,7 @@ cargo fetch --locked
 
 # Amp and supervised services start in separate non-interactive login shells.
 # Export the complete dev shell there, without spawning a nested shell.
-profile_marker='# torrential orb development environment'
+profile_marker='# newsreel orb development environment'
 if ! grep -Fqx "$profile_marker" "$HOME/.bash_profile" 2>/dev/null; then
   cat >> "$HOME/.bash_profile" <<EOF
 

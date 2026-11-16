@@ -4,7 +4,7 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use torrential_core::Error;
+use newsreel_core::Error;
 
 use super::ctx::Ctx;
 use super::owner;
@@ -13,7 +13,7 @@ use crate::config::Policy;
 use crate::env::Env;
 use crate::log::log;
 use crate::paths::Paths;
-use torrential_core::time::now;
+use newsreel_core::time::now;
 
 use crate::update::release::{Put, Releases, check, installed, put_release};
 use crate::update::{Audience, Checked, HOUR, UPDATED, Updated, Version, read_json, write_json};
@@ -27,7 +27,7 @@ pub enum News {
     Waiting { latest: Version },
     /// Release `latest` is installed, and starts the next time the engine starts.
     Installed { latest: Version },
-    /// A newer release that `torrential update` installs.
+    /// A newer release that `newsreel update` installs.
     Available { current: String, latest: Version },
 }
 
@@ -45,9 +45,9 @@ impl News {
     pub fn line(&self) -> String {
         match self {
             Self::Updated { from, to } => Audience::Person.updated(from, to),
-            Self::Waiting { latest } => format!("torrential {latest} is installed and starts when nothing is playing."),
+            Self::Waiting { latest } => format!("newsreel {latest} is installed and starts when nothing is playing."),
             Self::Installed { latest } => {
-                format!("torrential {latest} is installed and starts the next time the engine starts.")
+                format!("newsreel {latest} is installed and starts the next time the engine starts.")
             }
             Self::Available { current, latest } => Audience::Person.out(current, *latest),
         }
@@ -123,7 +123,7 @@ pub async fn watch(env: Env, paths: Paths, board: &Board) -> Version {
                     };
                     match put.await {
                         Ok(Put::Installed) => {
-                            log(&format!("installed torrential {latest}"));
+                            log(&format!("installed newsreel {latest}"));
                             write_json(
                                 &paths.state.join(UPDATED),
                                 &Updated { from: current.clone(), to: latest.to_string() },
@@ -131,11 +131,11 @@ pub async fn watch(env: Env, paths: Paths, board: &Board) -> Version {
                             return latest;
                         }
                         Ok(Put::Current(installed)) => {
-                            log(&format!("torrential {installed} is already installed"));
+                            log(&format!("newsreel {installed} is already installed"));
                             return installed;
                         }
                         Ok(Put::NotWanted) => {
-                            log(&format!("updates is no longer auto, so torrential {latest} is not installed"));
+                            log(&format!("updates is no longer auto, so newsreel {latest} is not installed"));
                         }
                         Ok(Put::Refused(e)) => {
                             log(&format!("update failed: {}", e.message));
@@ -173,19 +173,19 @@ const SWITCH_RETRY: Duration = Duration::from_secs(60);
 /// download is saved. An engine without a login service keeps running until it next starts.
 async fn switch(ctx: &Ctx, to: Version, service: bool) {
     if !service {
-        log(&format!("torrential {to} starts the next time the engine starts"));
+        log(&format!("newsreel {to} starts the next time the engine starts"));
         ctx.news.post(Some(News::Installed { latest: to }));
         return std::future::pending().await;
     }
     loop {
         if ctx.playing.any() {
-            log(&format!("torrential {to} starts when nothing is playing"));
+            log(&format!("newsreel {to} starts when nothing is playing"));
             ctx.news.post(Some(News::Waiting { latest: to }));
         }
         match stop_for_next(ctx, ctx.playing.close().await).await {
             Ok(()) => return,
             Err(e) => {
-                log(&format!("torrential {to} waits: {}", e.message));
+                log(&format!("newsreel {to} waits: {}", e.message));
                 tokio::time::sleep(SWITCH_RETRY).await;
             }
         }
@@ -216,18 +216,18 @@ mod tests {
         let line = |policy, latest: &str, from| News::of(policy, &checked(latest), "0.5.0", from).map(|n| n.line());
         assert_eq!(
             line(Policy::Notify, "0.5.1", None).as_deref(),
-            Some("torrential 0.5.1 is available (you have 0.5.0). Run torrential update to install it.")
+            Some("newsreel 0.5.1 is available (you have 0.5.0). Run newsreel update to install it.")
         );
-        assert_eq!(line(Policy::Auto, "0.5.0", Some("0.4.0")).as_deref(), Some("Updated torrential to 0.5.0."));
+        assert_eq!(line(Policy::Auto, "0.5.0", Some("0.4.0")).as_deref(), Some("Updated newsreel to 0.5.0."));
         assert_eq!(line(Policy::Auto, "0.5.0", None), None);
         assert_eq!(line(Policy::Off, "0.5.1", Some("0.4.0")), None);
         assert_eq!(
             News::Waiting { latest: version("0.5.1") }.line(),
-            "torrential 0.5.1 is installed and starts when nothing is playing."
+            "newsreel 0.5.1 is installed and starts when nothing is playing."
         );
         assert_eq!(
             News::Installed { latest: version("0.5.1") }.line(),
-            "torrential 0.5.1 is installed and starts the next time the engine starts."
+            "newsreel 0.5.1 is installed and starts the next time the engine starts."
         );
     }
 
@@ -241,7 +241,7 @@ mod tests {
         assert!(checked("0.1.2").install_due("0.1.0", t));
         assert_eq!(
             News::of(Policy::Notify, &checked("0.1.2"), "0.1.0", None).map(|news| news.line()).as_deref(),
-            Some("torrential 0.1.2 is available (you have 0.1.0). Run torrential update to install it.")
+            Some("newsreel 0.1.2 is available (you have 0.1.0). Run newsreel update to install it.")
         );
     }
 }

@@ -1,12 +1,12 @@
 [package]
-name = "torrential-search"
+name = "newsreel-search"
 description = "Searches Newznab indexers, then merges and ranks the results"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-torrential-core = { path = "../core" }
+newsreel-core = { path = "../core" }
 fancy-regex = "0.20"
 futures-util = { version = "0.3", default-features = false, features = ["std"] }
 percent-encoding = "2"
