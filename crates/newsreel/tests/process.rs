@@ -87,7 +87,7 @@ fn a_version_mismatch_restarts_the_engine() {
 #[test]
 fn a_command_waits_for_the_login_service_to_start_the_engine_it_replaces() {
     use std::process::Stdio;
-    let mut home = Home::new().with(hooks::VERSION, "0.1.0");
+    let mut home = Home::new().with(hooks::VERSION, "0.0.1");
     let service = |home: &Home| {
         let mut engine = home.process(&["daemon", "run", "--service"]);
         engine.stdout(Stdio::null()).stderr(Stdio::null());
@@ -267,7 +267,7 @@ fn a_client_whose_engine_gives_way_to_a_newer_one_says_to_restart_this_newsreel(
 #[test]
 fn a_client_that_an_engine_playing_a_film_turns_away_never_uses_a_newer_one_it_finds_next() {
     let home = Home::new();
-    let engines = stand_in(&home, &["0.1.0", "9.0.0"]);
+    let engines = stand_in(&home, &["0.0.1", "9.0.0"]);
 
     let run = home.run(&["status"]);
 
