@@ -1,25 +1,43 @@
 <h1 align="center">newsreel</h1>
 
-<p align="center">Find films and shows on Usenet, and watch them on your Mac, phone, or TV while they download.</p>
+<p align="center">Find films and shows on Usenet, and watch them on your computer, phone, or TV while they download.</p>
 
-<p align="center">A fork of <a href="https://github.com/nexxeln/torrential">nexxeln/torrential</a> that downloads from NNTP servers instead of BitTorrent. See <a href="docs/usenet-conversion.md">docs/usenet-conversion.md</a>.</p>
+<p align="center">A slopfork of <a href="https://github.com/nexxeln/torrential">torrential</a> that downloads from Usenet instead of BitTorrent (<a href="docs/usenet-conversion.md">what changed</a>).</p>
 
 <p align="center">
-  <img src="docs/home.webp" alt="The web app's home page on a Mac, with two titles to continue watching and four saved titles" width="560">
-  <img src="docs/home-phone.webp" alt="The same home page on a phone" width="226">
+  <img src="docs/home.webp" alt="The web app's home page in a browser on a computer and on a phone, with two titles to continue watching and four saved titles" width="840">
 </p>
 
 ## Install
 
-This fork has no published releases, so it does not update itself. Build it with Rust, a C compiler, and [bun](https://bun.sh) (for the web app):
+On macOS and Linux:
 
 ```sh
-cargo install --path crates/newsreel
+curl -fsSL https://raw.githubusercontent.com/AugusDogus/newsreel/main/install.sh | sh
 ```
 
-Or, with Nix and flakes turned on, `nix develop -c cargo install --path crates/newsreel`.
+On Windows, in PowerShell:
 
-Then add your indexer and Usenet servers to `~/.config/newsreel/config.yaml`:
+```powershell
+irm https://raw.githubusercontent.com/AugusDogus/newsreel/main/install.ps1 | iex
+```
+
+The script puts one file at `~/.local/bin/newsreel`, or `%LOCALAPPDATA%\Programs\newsreel` on Windows. newsreel runs on macOS 14 or later on Apple silicon, on 64-bit Linux, and on 64-bit Windows 10 or later.
+
+<details>
+<summary>Build from source</summary>
+
+You need Rust, a C compiler, and [bun](https://bun.sh) for the web app, or Nix with flakes turned on.
+
+```sh
+git clone https://github.com/AugusDogus/newsreel
+cd newsreel
+cargo install --path crates/newsreel          # or: nix develop -c cargo install --path crates/newsreel
+```
+
+</details>
+
+Then add your indexer and Usenet servers to `~/.config/newsreel/config.yaml`, or `%LOCALAPPDATA%\newsreel\config\config.yaml` on Windows:
 
 ```yaml
 sources:
@@ -41,11 +59,11 @@ usenet:
 
 Keys and passwords come from the environment variables you name, never from the file.
 
-The engine starts at login and keeps running, so your phone and TV can always reach it. It carries on its downloads after a restart. To stop it starting at login, run `newsreel engine uninstall`.
+The engine starts at login and keeps running, so your phone and TV can always reach it. It carries on its downloads after a restart and installs updates when nothing is playing. To stop it starting at login, run `newsreel engine uninstall`.
 
 ## Run it on a server
 
-On a Linux server, NAS, or seedbox, install with `--server`:
+On a Linux server or NAS, install with `--server`:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/AugusDogus/newsreel/main/install.sh | sh -s -- --server
@@ -72,7 +90,7 @@ tv.example.com {
 }
 ```
 
-## Watch on the Mac
+## Watch on your computer
 
 ```sh
 newsreel web
@@ -82,25 +100,25 @@ Search by name. Each film or show is one card, not a list of releases. Press Pla
 
 Releases stored in RAR volumes play without extracting; compressed or password-protected ones are skipped with a reason.
 
-What you play goes to a folder that only newsreel uses, capped at 20 GiB. When it fills, newsreel deletes the plays you watched longest ago, but never the film you watched last or a title you saved. When you remove a download you started yourself, its files go to the Trash.
+What you play goes to a folder that only newsreel uses, capped at 20 GiB. When it fills, newsreel deletes the plays you watched longest ago, but never the film you watched last or a title you saved. When you remove a download you started yourself, its files go to the Trash, or the Recycle Bin on Windows.
 
 newsreel converts MKV files and surround sound for the browser with [ffmpeg](https://ffmpeg.org), and fetches ffmpeg the first time a file needs it.
 
 ## Add a phone or a TV
 
 <p align="center">
-  <img src="docs/add-device.webp" alt="The Devices page on the Mac, with a QR code, the address mac-mini.local:47919, a six-digit code, and one paired iPhone" width="800">
+  <img src="docs/add-device.webp" alt="The Devices page on a computer, with a QR code, the address mac-mini.local:47919, a six-digit code, and one paired iPhone" width="800">
 </p>
 
-On the Mac, open **Devices** and choose **Add a device**, or run `newsreel devices add`. On a phone, scan the QR code. On a TV, open the address in its browser and enter the code. The device needs no account and stores nothing. The web app works with a touch screen and with a TV remote. A device you did not add sees the pairing page and nothing else.
+On your computer, open **Devices** and choose **Add a device**, or run `newsreel devices add`. On a phone, scan the QR code. On a TV, open the address in its browser and enter the code. The device needs no account and stores nothing. The web app works with a touch screen and with a TV remote. A device you did not add sees the pairing page and nothing else.
 
 ## Play on TV
 
 <p align="center">
-  <img src="docs/play-on-tv.webp" alt="Night of the Living Dead on a phone, with the Play on TV list showing an LG TV and a Samsung TV" width="280">
+  <img src="docs/play-on-tv.webp" alt="Charade on a phone, with the Play on TV list showing an LG TV and a Samsung TV" width="300">
 </p>
 
-LG, Samsung, Sony, and most other smart TVs play over DLNA. On a title page, on the Mac or a phone you added, choose **Play on TV** and pick the TV. The phone then works as the remote. newsreel sends the TV only copies in a format it plays.
+LG, Samsung, Sony, and most other smart TVs play over DLNA. On a title page, on your computer or a phone you added, choose **Play on TV** and pick the TV. The phone then works as the remote. newsreel sends the TV only copies in a format it plays.
 
 ```sh
 newsreel tv                    # list the TVs on the home network
@@ -150,7 +168,7 @@ The skill teaches Claude Code, Codex, Gemini CLI, Cursor, and other agents to us
 
 ## Settings
 
-`newsreel setup` shows the screen and language newsreel found on the Mac and lets you change them. Results are ranked for your screen, CPU, and language. Releases from groups that [TRaSH Guides](https://trash-guides.info) ranks come first, and ones it lists to avoid are marked `avoid` and come last. Film and show details come from Cinemeta and IMDb. Set everything else in `~/.config/newsreel/config.yaml`, with the indexers and servers above:
+`newsreel setup` shows the screen and language newsreel found on your computer and lets you change them. Results are ranked for your screen, CPU, and language. Releases from groups that [TRaSH Guides](https://trash-guides.info) ranks come first, and ones it lists to avoid are marked `avoid` and come last. Film and show details come from Cinemeta and IMDb. Set everything else in `~/.config/newsreel/config.yaml`, with the indexers and servers above:
 
 ```yaml
 downloads:
