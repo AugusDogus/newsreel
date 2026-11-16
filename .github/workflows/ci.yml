@@ -92,3 +92,29 @@ jobs:
           if (-not $LASTEXITCODE) { throw 'the task is still registered' }
           if ((Engine) -ne 'stopped') { throw 'the engine still runs after uninstall' }
           $global:LASTEXITCODE = 0
+  # A fresh runner installs this build the way a person does, and the engine starts and stops.
+  windows-install:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchain
+        with:
+          target: x86_64-pc-windows-msvc
+          kind: build
+      - run: scripts/release.ps1
+      - name: Install with install.ps1, start the engine, and stop it
+        run: |
+          $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', 'dist' -PassThru
+          Start-Sleep 2
+          $env:NEWSREEL_DOWNLOAD_URL = 'http://127.0.0.1:8765'
+          ./install.ps1
+          Stop-Process $server
+          $newsreel = "$env:LOCALAPPDATA\Programs\newsreel\newsreel.exe"
+          & $newsreel status --json
+          if ($LASTEXITCODE) { throw 'newsreel status failed' }
+          if ((& $newsreel engine status --json | ConvertFrom-Json).engine -ne 'running') { throw 'the engine does not run' }
+          & $newsreel engine stop
+          if ($LASTEXITCODE) { throw 'engine stop failed' }
+          if ((& $newsreel engine status --json | ConvertFrom-Json).engine -ne 'stopped') { throw 'the engine still runs' }

@@ -3,7 +3,7 @@
 # To pair a phone or a TV, open the app's shell and run: newsreel devices add
 services:
   newsreel:
-    image: ghcr.io/nexxeln/torrential:latest
+    image: ghcr.io/augusdogus/newsreel:latest
     # The pairing link names the NAS's own addresses, and finding TVs multicasts on the home network.
     network_mode: host
     user: "568:568"

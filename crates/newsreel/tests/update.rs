@@ -337,7 +337,7 @@ fn a_checksum_mismatch_leaves_the_binary_untouched() {
             format!(
                 "error[verification_failed]: newsreel-{target}.tar.gz does not match its published checksum, so the \
                  installed newsreel is unchanged\nhint: run newsreel update again later; if it fails again, \
-                 report it at https://github.com/nexxeln/torrential/issues\n"
+                 report it at https://github.com/AugusDogus/newsreel/issues\n"
             )
             .as_str()
         )

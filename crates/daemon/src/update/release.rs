@@ -19,13 +19,11 @@ use crate::wire::{self, Access, Client};
 
 use super::{Archive, Checked, Version, tag_version, target};
 
-/// Where this build's releases are published. The Usenet fork publishes none yet, and the
-/// releases at nexxeln/torrential are BitTorrent builds, so it never installs or announces one.
-const RELEASES: Option<&str> = None;
+const RELEASES: &str = "https://github.com/AugusDogus/newsreel/releases";
 /// Names the container image newsreel runs from, which the Dockerfile sets. A newer image
 /// updates it, so it never looks for releases itself.
 const IMAGE: &str = "NEWSREEL_IMAGE";
-const ISSUES: &str = "https://github.com/nexxeln/torrential/issues";
+const ISSUES: &str = "https://github.com/AugusDogus/newsreel/issues";
 const CHECK_WITHIN: Duration = Duration::from_secs(10);
 const MAX_ASSET: usize = 256 << 20;
 const CONFIRM_WITHIN: Duration = Duration::from_secs(10);
@@ -37,15 +35,14 @@ pub struct Releases {
 }
 
 impl Releases {
-    /// Where releases come from: none for this build (see [`RELEASES`]). A test reads releases
-    /// only from the server it names in `hooks::RELEASES`.
+    /// The GitHub releases. A test reads releases only from the server it names in `RELEASES`.
     pub fn from_env(env: &Env) -> Option<Releases> {
         if env.var(IMAGE).is_some() {
             return None;
         }
         let base = match env.test() {
             Some(test) => test.var(hooks::RELEASES)?,
-            None => RELEASES?,
+            None => RELEASES,
         };
         Some(Releases { base: base.trim_end_matches('/').to_string() })
     }
@@ -56,8 +53,8 @@ impl Releases {
                 .with_hint(format!("pull the newer image and recreate the container: docker pull {image}")));
         }
         Releases::from_env(env).ok_or_else(|| {
-            Error::new(ErrorCode::NetworkUnavailable, "this build of newsreel has no release server to update from")
-                .with_hint("build a newer one from source with git pull and cargo install --path crates/newsreel")
+            Error::new(ErrorCode::NetworkUnavailable, "this test environment does not look for releases")
+                .with_hint(format!("set {} to a release server", hooks::RELEASES))
         })
     }
 
@@ -251,7 +248,7 @@ pub(crate) fn installed(env: &Env) -> Result<(PathBuf, &'static str), Error> {
             ErrorCode::NotFound,
             format!("there is no prebuilt newsreel for {} {}", std::env::consts::OS, std::env::consts::ARCH),
         )
-        .with_hint("build it from source: https://github.com/nexxeln/torrential#install"));
+        .with_hint("build it from source: https://github.com/AugusDogus/newsreel#install"));
     };
     let exe = env.installed()?;
     if exe.starts_with("/nix/store") {
@@ -547,11 +544,12 @@ mod tests {
     }
 
     #[test]
-    fn releases_come_only_from_a_server_a_test_names() {
+    fn a_test_engine_looks_for_releases_only_where_the_test_points_it() {
         let base = |pairs: &[(&str, &str)]| Releases::from_env(&Env::from_pairs(pairs.iter().copied())).map(|r| r.base);
         let local = (hooks::RELEASES, "http://127.0.0.1:8080/");
-        assert_eq!(base(&[]), None, "the Usenet fork publishes no releases");
-        assert_eq!(base(&[local]), None, "only a test process reads it");
+        let github = Some("https://github.com/AugusDogus/newsreel/releases");
+        assert_eq!(base(&[]).as_deref(), github);
+        assert_eq!(base(&[local]).as_deref(), github, "only a test process reads it");
         assert_eq!(base(&[(hooks::NETWORK, "loopback")]), None);
         assert_eq!(base(&[(hooks::ENGINE, "fake")]), None);
         assert_eq!(base(&[(hooks::NETWORK, "loopback"), local]).as_deref(), Some("http://127.0.0.1:8080"));
@@ -559,15 +557,15 @@ mod tests {
 
     #[test]
     fn newsreel_in_the_container_image_leaves_updates_to_the_image() {
-        let env = Env::from_pairs([(IMAGE, "ghcr.io/nexxeln/torrential")]);
+        let env = Env::from_pairs([(IMAGE, "ghcr.io/augusdogus/newsreel")]);
         assert_eq!(Releases::from_env(&env).map(|r| r.base), None, "the engine never looks for releases");
         let refused = Releases::required(&env).err().unwrap();
         assert_eq!(
             (refused.code, refused.message.as_str(), refused.hint.as_deref()),
             (
                 ErrorCode::Usage,
-                "newsreel runs from the container image ghcr.io/nexxeln/torrential",
-                Some("pull the newer image and recreate the container: docker pull ghcr.io/nexxeln/torrential")
+                "newsreel runs from the container image ghcr.io/augusdogus/newsreel",
+                Some("pull the newer image and recreate the container: docker pull ghcr.io/augusdogus/newsreel")
             )
         );
     }

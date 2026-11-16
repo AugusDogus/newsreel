@@ -48,7 +48,7 @@ The engine starts at login and keeps running, so your phone and TV can always re
 On a Linux server, NAS, or seedbox, install with `--server`:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/nexxeln/torrential/main/install.sh | sh -s -- --server
+curl -fsSL https://raw.githubusercontent.com/AugusDogus/newsreel/main/install.sh | sh -s -- --server
 ```
 
 The engine then starts when the machine boots, with no one logged in, and listens on the network. The command ends with a QR code and a link that pair your first phone or computer. Paired devices reach the server from any network, and anyone else gets only the pairing page. `newsreel server uninstall` turns this off.
@@ -58,7 +58,7 @@ Or run it in Docker, for amd64 and arm64. It needs the host's network to name it
 ```sh
 mkdir -p ~/newsreel
 docker run -d --name newsreel --network host --restart unless-stopped \
-  --user "$(id -u):$(id -g)" -v ~/newsreel:/data ghcr.io/nexxeln/torrential
+  --user "$(id -u):$(id -g)" -v ~/newsreel:/data ghcr.io/augusdogus/newsreel
 docker exec newsreel newsreel devices add
 ```
 

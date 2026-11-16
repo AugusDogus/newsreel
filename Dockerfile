@@ -14,7 +14,7 @@
 # (SSDP) multicasts on the home network. Everything it keeps is in /data:
 #   mkdir -p ~/newsreel
 #   docker run -d --name newsreel --network host --user "$(id -u):$(id -g)" \
-#     -v ~/newsreel:/data ghcr.io/nexxeln/torrential
+#     -v ~/newsreel:/data ghcr.io/augusdogus/newsreel
 #   docker exec newsreel newsreel devices add
 
 FROM --platform=$BUILDPLATFORM debian:13-slim AS build
@@ -22,14 +22,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 
 FROM debian:13-slim
 ARG TARGETARCH
-LABEL org.opencontainers.image.source="https://github.com/nexxeln/torrential" \
+LABEL org.opencontainers.image.source="https://github.com/AugusDogus/newsreel" \
       org.opencontainers.image.description="Search for a film or show, press Play, and watch it while it downloads." \
       org.opencontainers.image.licenses="MIT"
 COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=build --chown=1000:1000 /out/data /data
 COPY --chmod=755 image/${TARGETARCH}/newsreel /usr/local/bin/newsreel
 # Config in /data/config, downloads in /data/Downloads/newsreel.
-ENV HOME=/data NEWSREEL_HOME=/data NEWSREEL_IMAGE=ghcr.io/nexxeln/torrential
+ENV HOME=/data NEWSREEL_HOME=/data NEWSREEL_IMAGE=ghcr.io/augusdogus/newsreel
 USER 1000:1000
 WORKDIR /data
 VOLUME /data

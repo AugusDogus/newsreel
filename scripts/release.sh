@@ -53,7 +53,7 @@ case "$target" in
       exit 1
     fi
     (cd web && bun install --frozen-lockfile && bun run build --outDir ../target/linux/web --emptyOutDir)
-    # A UTF-8 LANG, as on the host, so libtorrent in the tests keeps names outside ASCII as they are.
+    # A UTF-8 LANG, as on the host, so the tests keep file names outside ASCII as they are.
     docker run --rm --init -v "$PWD:/src" -w /src -e OWNER="$(id -u):$(id -g)" -e CARGO="$cargo" -e LANG=C.UTF-8 \
       -e NEWSREEL_WEB_DIST=/src/target/linux/web \
       -e RUSTUP_HOME=/src/target/linux/rustup -e CARGO_HOME=/src/target/linux/cargo alpine:3.24 sh -euc '

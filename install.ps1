@@ -1,5 +1,5 @@
 # Installs newsreel for this user and starts its engine:
-#   irm https://raw.githubusercontent.com/nexxeln/torrential/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/AugusDogus/newsreel/main/install.ps1 | iex
 # NEWSREEL_VERSION picks a release, such as v0.6.0. NEWSREEL_INSTALL_DIR picks the folder.
 # NEWSREEL_DOWNLOAD_URL takes the place of the release's download folder, for a test.
 
@@ -8,7 +8,7 @@
   # Invoke-WebRequest downloads far faster without its progress bar.
   $ProgressPreference = 'SilentlyContinue'
 
-  $repo = 'nexxeln/torrential'
+  $repo = 'AugusDogus/newsreel'
   $target = 'x86_64-pc-windows-msvc'
   $dir = if ($env:NEWSREEL_INSTALL_DIR) { $env:NEWSREEL_INSTALL_DIR } else { Join-Path $env:LOCALAPPDATA 'Programs\newsreel' }
   $version = if ($env:NEWSREEL_VERSION) { $env:NEWSREEL_VERSION } else { 'latest' }

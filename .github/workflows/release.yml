@@ -1,0 +1,167 @@
+# Releases
+#   1. Bump version in Cargo.toml, run cargo update -p newsreel --offline, and commit "Release X.Y.Z" on main.
+#   2. git tag vX.Y.Z && git push origin main vX.Y.Z. This workflow tests, builds every target, and opens a draft release.
+#   3. Check the draft's assets, write the notes, and publish it with --latest. install.yml then installs it on every platform
+#      and points ghcr.io/augusdogus/newsreel:latest at the image the tag pushed.
+# workflow_dispatch, and pull requests that touch the release pipeline, build the same assets as artifacts only.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - .github/**
+      - scripts/release.sh
+      - scripts/release.ps1
+      - install.sh
+      - install.ps1
+      - Dockerfile
+      - .dockerignore
+      - flake.nix
+      - flake.lock
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check the tag matches Cargo.toml
+        if: github.ref_type == 'tag'
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match version $version in Cargo.toml"
+            exit 1
+          fi
+
+  test:
+    if: github.event_name != 'pull_request'
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - if: runner.os == 'Windows'
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/toolchain
+        with:
+          target: ${{ matrix.target }}
+          kind: build
+      - if: runner.os != 'Windows'
+        run: scripts/release.sh
+      - if: runner.os == 'Windows'
+        run: scripts/release.ps1
+      - name: Check the binary runs
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p check && tar -xzf dist/newsreel-${{ matrix.target }}.tar.gz -C check
+          ls check
+          check/newsreel --version
+      - name: Check the binary runs
+        if: runner.os == 'Windows'
+        run: |
+          Expand-Archive dist/newsreel-${{ matrix.target }}.zip check
+          Get-ChildItem check
+          check/newsreel.exe --version
+      - name: Install this build with install.ps1, which starts the engine
+        if: runner.os == 'Windows'
+        run: |
+          $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', 'dist' -PassThru
+          Start-Sleep 2
+          $env:NEWSREEL_DOWNLOAD_URL = 'http://127.0.0.1:8765'
+          ./install.ps1
+          $dir = "$env:LOCALAPPDATA\Programs\newsreel"
+          $path = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment').GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+          if (($path -split ';') -notcontains $dir) { throw "$dir is not on the user's PATH: $path" }
+          $status = & "$dir\newsreel.exe" engine status --json | ConvertFrom-Json
+          if ($status.engine -ne 'running') { throw "the engine is $($status.engine)" }
+          & "$dir\newsreel.exe" engine stop
+          Stop-Process $server
+      - name: Say whether Invoke-WebRequest marks a download from the internet
+        if: runner.os == 'Windows'
+        run: |
+          Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/AugusDogus/newsreel/main/install.sh -OutFile downloaded.txt
+          $mark = Get-Content downloaded.txt -Stream Zone.Identifier -Raw -ErrorAction SilentlyContinue
+          if ($mark) { "Zone.Identifier: $mark" } else { 'no Zone.Identifier stream' }
+      - uses: actions/upload-artifact@v7
+        with:
+          name: newsreel-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  image:
+    # A tag pushes only after the tests pass. A pull request builds the image without pushing it.
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.test.result != 'failure' }}
+    needs: [test, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: newsreel-*-linux-musl
+          path: dist
+          merge-multiple: true
+      - name: Put each architecture's binary where the Dockerfile looks for it
+        run: |
+          mkdir -p image/amd64 image/arm64
+          tar -xzf dist/newsreel-x86_64-unknown-linux-musl.tar.gz -C image/amd64
+          tar -xzf dist/newsreel-aarch64-unknown-linux-musl.tar.gz -C image/arm64
+      - name: Check the amd64 image runs
+        run: |
+          docker build -t newsreel:check .
+          docker run --rm newsreel:check --version
+      - name: Build the image for amd64 and arm64, and push it on a tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          docker buildx create --use --driver docker-container
+          set -- --platform linux/amd64,linux/arm64
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+            set -- "$@" --push -t "ghcr.io/augusdogus/newsreel:${GITHUB_REF_NAME#v}"
+          fi
+          docker buildx build "$@" .
+
+  draft:
+    if: github.ref_type == 'tag'
+    needs: [test, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Check every checksum
+        working-directory: dist
+        run: ls -l && sha256sum -c *.sha256
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --draft --verify-tag \
+            --title "newsreel ${GITHUB_REF_NAME#v}" --notes ""
