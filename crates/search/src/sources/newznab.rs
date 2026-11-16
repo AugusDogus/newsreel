@@ -3,10 +3,10 @@
 //! only reads the feed.
 
 use sha1::{Digest, Sha1};
-use torrential_core::{Category, Flag};
+use torrential_core::{Category, Flag, TitleId};
 use url::{Url, form_urlencoded};
 
-use super::{Ctx, Failure, SavedLink, rss};
+use super::{Ask, Ctx, Failure, SavedLink, rss};
 use crate::http::Retry;
 use crate::observation::{Observation, count, hex, web_url};
 
@@ -20,7 +20,15 @@ impl Newznab {
         let mut url = endpoint.clone();
         {
             let mut pairs = url.query_pairs_mut();
-            pairs.append_pair("t", "search").append_pair("q", ctx.terms.text());
+            match ctx.ask {
+                Ask::Words(terms) => pairs.append_pair("t", "search").append_pair("q", terms.text()),
+                // A popular film has a few hundred releases. NZBHydra answers this many at once;
+                // an indexer whose pages are smaller answers its first page.
+                Ask::Film(id) => pairs
+                    .append_pair("t", "movie")
+                    .append_pair("imdbid", id.as_str().trim_start_matches("tt"))
+                    .append_pair("limit", "300"),
+            };
             if let Some(key) = &self.api_key {
                 pairs.append_pair("apikey", key);
             }
@@ -87,7 +95,18 @@ fn observation(item: rss::Item) -> Option<Observation> {
     obs.size = item.attr("size").or(item.get("size")).and_then(|s| s.trim().parse().ok());
     obs.published = item.get("pubDate").and_then(crate::dates::rfc2822);
     obs.category = ids.iter().find_map(|id| category(*id));
+    obs.imdb = item.attr("imdb").and_then(imdb);
     Some(obs)
+}
+
+/// An IMDb tag, which indexers write with or without `tt` and leading zeros.
+fn imdb(tag: &str) -> Option<TitleId> {
+    let digits = tag.trim().trim_start_matches("tt");
+    let digits = digits.trim_start_matches('0');
+    if digits.is_empty() {
+        return None;
+    }
+    format!("tt{digits:0>7}").parse().ok()
 }
 
 /// Newznab's standard categories. Indexer-specific IDs (100000 and up) are skipped.

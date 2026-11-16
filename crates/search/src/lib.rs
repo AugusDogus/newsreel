@@ -38,7 +38,7 @@ use crate::cache::AnswerKey;
 pub use crate::cache::ResultCache;
 use crate::http::{FetchError, Http, Retry};
 pub use crate::sources::SavedLink;
-use crate::sources::{Ctx, Failure, Source};
+use crate::sources::{Ask, Ctx, Failure, Source};
 use crate::terms::Terms;
 
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
@@ -166,7 +166,11 @@ impl Search {
             );
         }
         // The first query's words weigh relevance, since it names the title most fully.
-        let terms = &texts[0];
+        let terms = &texts[0].clone();
+        // A film is asked for by its ID too, which finds the releases that name it otherwise.
+        // Episodes are tagged with other IDs than IMDb's, so a series is asked for by words.
+        let film = query.wanted.as_ref().filter(|w| w.episode.is_none()).map(|w| Ask::Film(w.id.clone()));
+        let texts: Vec<Ask> = film.into_iter().chain(texts.into_iter().map(Ask::Words)).collect();
         let deadline = started + Duration::from_millis(query.timeout_ms.into());
         let cache = &self.inner.cache;
         let mut selected = self.select(&query.sources)?;
@@ -178,7 +182,7 @@ impl Search {
             let key = AnswerKey {
                 source: source.meta.name.clone(),
                 scope: source.scope(),
-                text: terms.text().to_string(),
+                text: terms.key(),
                 adult: query.adult,
             };
             let cached = if query.fresh { None } else { cache.answer(&key, std::time::Instant::now()) };
@@ -326,10 +330,15 @@ impl Inner {
             .collect()
     }
 
-    async fn run(&self, source: &Source, terms: &Terms, deadline: Instant) -> Answer {
-        let ctx = Ctx { http: &self.http, terms, deadline };
+    async fn run(&self, source: &Source, ask: &Ask, deadline: Instant) -> Answer {
+        let ctx = Ctx { http: &self.http, ask, deadline };
         let rows = timeout_at(deadline, source.search(&ctx)).await.unwrap_or(Err(Failure::Timeout));
-        match rows.and_then(|rows| vet(terms, rows)) {
+        // Rows tagged with the film need not hold its words.
+        let rows = match ask {
+            Ask::Words(terms) => rows.and_then(|rows| vet(terms, rows)),
+            Ask::Film(_) => rows,
+        };
+        match rows {
             Ok(rows) => Answer::Fresh(Arc::new(rows)),
             Err(failure) => Answer::Failed(failure),
         }
@@ -368,8 +377,8 @@ pub async fn record(config: &SearchConfig, source: &str, query: &str) -> Result<
         .iter()
         .find(|s| s.meta.name == source)
         .ok_or_else(|| Error::new(ErrorCode::Usage, format!("unknown source {source:?}")))?;
-    let terms = Terms::parse(query);
-    let ctx = Ctx { http: &inner.http, terms: &terms, deadline: Instant::now() + Duration::from_secs(60) };
+    let ask = Ask::Words(Terms::parse(query));
+    let ctx = Ctx { http: &inner.http, ask: &ask, deadline: Instant::now() + Duration::from_secs(60) };
     let outcome = match source.search(&ctx).await {
         Ok(rows) => format!("{} rows", rows.len()),
         Err(failure) => format!("{failure:?}"),

@@ -6,7 +6,7 @@ use torrential_core::error::Details;
 use torrential_core::title::{Namesakes, Wanted};
 use torrential_core::{
     Arch, Error, ErrorCode, Flag, Language, Profile, Quality, Release, Resolution, ResultId, SearchQuery, SearchResult,
-    SourceOutcome, SourceReport,
+    SourceOutcome, SourceReport, TitleId,
 };
 
 use crate::classify;
@@ -133,6 +133,8 @@ pub(crate) struct Candidate {
     pub(crate) tier: u8,
     /// Set only in a title's search, for a release of the wanted title.
     pub(crate) title: Option<TitleFit>,
+    /// The title the indexers tagged the release with.
+    imdb: Option<TitleId>,
 }
 
 /// How a release of the wanted title plays here. Its span is in `release.span`.
@@ -237,6 +239,7 @@ fn combine(id: ResultId, group: &[Sighting<'_>], terms: &Terms) -> Candidate {
         languages,
         title: None,
         tier,
+        imdb: first(group, |o| o.imdb.clone()),
     }
 }
 
@@ -269,7 +272,12 @@ fn fitted(mut c: Candidate, wanted: &Wanted) -> Option<Candidate> {
     if c.extra {
         return None;
     }
-    let reading = wanted.fit(&c.release.name)?;
+    // A tag is the indexer's word on which title a release is, so another title's is not this one.
+    let reading = match &c.imdb {
+        Some(id) if *id == wanted.id => wanted.fit_tagged(&c.release.name)?,
+        Some(_) => return None,
+        None => wanted.fit(&c.release.name)?,
+    };
     let bitrate = rank::bitrate(c.release.size, reading.span, wanted);
     if bitrate.is_some_and(|mbps| mbps < FAKE_MBPS) {
         return None;

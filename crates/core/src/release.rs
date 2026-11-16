@@ -303,6 +303,7 @@ mod tests {
         let mut sources = raw;
         sources.releases[0].span = Some(Span::Film);
         sources.query.wanted = Some(Wanted {
+            id: "tt0063350".parse().unwrap(),
             name: "Night of the Living Dead".into(),
             year: Some(1968),
             episode: None,

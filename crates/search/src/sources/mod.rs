@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tokio::time::Instant;
-use torrential_core::{Error, ErrorCode, SourceOutcome, text};
+use torrential_core::{Error, ErrorCode, SourceOutcome, TitleId, text};
 use url::Url;
 
 use crate::http::{FetchError, Http};
@@ -76,9 +76,27 @@ impl From<FetchError> for Failure {
     }
 }
 
+/// What a search asks a source for.
+pub(crate) enum Ask {
+    /// Releases whose names hold these words.
+    Words(Terms),
+    /// The releases the indexer tagged with this film.
+    Film(TitleId),
+}
+
+impl Ask {
+    /// The ask as the cache keys its answers.
+    pub fn key(&self) -> String {
+        match self {
+            Self::Words(terms) => terms.text().to_string(),
+            Self::Film(id) => format!("film:{}", id.as_str()),
+        }
+    }
+}
+
 pub(crate) struct Ctx<'a> {
     pub http: &'a Http,
-    pub terms: &'a Terms,
+    pub ask: &'a Ask,
     pub deadline: Instant,
 }
 
