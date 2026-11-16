@@ -1,6 +1,6 @@
 import { CheckIcon, XMarkIcon } from "@heroicons/react/16/solid";
 import { useEffect, useRef } from "react";
-import type { TorrentFile } from "../api";
+import type { ReleaseFile } from "../api";
 import { bytes } from "../lib/format";
 import { fileName, readable } from "../lib/release";
 import { position } from "../lib/storage";
@@ -8,8 +8,8 @@ import { Link, watchPath } from "../router";
 
 interface Props {
   id: string;
-  /** The torrent's videos, in playing order. */
-  videos: TorrentFile[];
+  /** The release's videos, in playing order. */
+  videos: ReleaseFile[];
   current: number;
   onClose: () => void;
 }
@@ -27,7 +27,7 @@ function spaced(path: string): string {
   return `${name.title} ${name.tags}`.trim();
 }
 
-/** The other videos of a torrent, such as the episodes of a season. */
+/** The other videos of a release, such as the episodes of a season. */
 export function FilesPanel({ id, videos, current, onClose }: Props) {
   const playing = useRef<HTMLAnchorElement>(null);
   useEffect(() => playing.current?.focus(), []);
@@ -35,7 +35,7 @@ export function FilesPanel({ id, videos, current, onClose }: Props) {
 
   return (
     <aside
-      aria-label="Videos in this torrent"
+      aria-label="Videos in this release"
       data-overlay=""
       className="absolute inset-y-0 right-0 z-30 flex w-88 max-w-full animate-appear flex-col bg-raised/95 inset-ring inset-ring-white/10 backdrop-blur-md motion-reduce:animate-none"
     >

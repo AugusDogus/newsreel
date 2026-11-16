@@ -1,6 +1,6 @@
-//! Finds subtitles online for a film or an episode a torrent does not carry subtitles for.
+//! Finds subtitles online for a film or an episode a release does not carry subtitles for.
 //!
-//! The names in the torrent say what the video is. IMDb's title suggestions turn that into an
+//! The names in the release say what the video is. IMDb's title suggestions turn that into an
 //! ID, and each [`Provider`] searches by it. A request carries the title, the ID, and for a
 //! better match the file's name, size, and hash: nothing about the person or the machine.
 

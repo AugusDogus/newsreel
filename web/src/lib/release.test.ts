@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { TorrentFile } from "../api";
+import type { ReleaseFile } from "../api";
 import { fileUrl, readable, savedVideo } from "./release";
 
 describe("readable", () => {
@@ -25,7 +25,7 @@ describe("readable", () => {
 });
 
 describe("savedVideo", () => {
-  const file = (index: number, path: string, size: number, selected = true): TorrentFile => ({ index, path, size, selected, verified: size });
+  const file = (index: number, path: string, size: number, selected = true): ReleaseFile => ({ index, path, size, selected, verified: size });
 
   test("is the largest video the download kept, not a sample or a skipped file", () => {
     const files = [

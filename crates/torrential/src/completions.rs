@@ -17,7 +17,7 @@ pub fn complete_download_ids() -> Vec<CompletionCandidate> {
     jobs.iter()
         .zip(ids)
         .map(|(job, id)| {
-            let help = job.name.as_deref().map(torrential_core::text::sanitize).unwrap_or_default();
+            let help = torrential_core::text::sanitize(&job.name);
             CompletionCandidate::new(id).help(Some(help.into()))
         })
         .collect()

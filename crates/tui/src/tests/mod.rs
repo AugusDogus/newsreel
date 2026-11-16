@@ -7,11 +7,10 @@ use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use torrential_core::protocol::{Event, FilesReply, MetadataSource};
+use torrential_core::protocol::{Event, FileListSource, FilesReply};
 use torrential_core::{
-    Arch, Category, Display, Error, ErrorCode, Flag, InfoHash, Job, JobStatus, Language, Machine, Os, Profile,
-    Progress, Release, ReleaseId, SearchQuery, SearchResult, Selection, SourceOutcome, SourceReport, TorrentFile,
-    TorrentId,
+    Arch, Category, Display, DownloadId, Error, ErrorCode, Flag, Job, JobStatus, Language, Machine, Os, Profile,
+    Progress, Release, ReleaseFile, ResultId, SearchQuery, SearchResult, Selection, SourceOutcome, SourceReport,
 };
 
 use crate::state::{Item, Page, State};
@@ -21,12 +20,12 @@ pub const CLOCK: i64 = 1_790_000_000;
 const MIB: u64 = 1 << 20;
 const GIB: u64 = 1 << 30;
 
-pub fn id(short: &str) -> TorrentId {
+pub fn id(short: &str) -> DownloadId {
     format!("{short}{}", "5d3b8e2f1c4a".repeat(3))[..40].parse().unwrap()
 }
 
-pub fn result_id(short: &str) -> ReleaseId {
-    ReleaseId::Torrent(id(short))
+pub fn result_id(short: &str) -> ResultId {
+    ResultId::from_bytes(*id(short).as_bytes())
 }
 
 fn job(short: &str, name: &str, status: JobStatus, size: u64, done: u64, rate: u64, days_ago: i64) -> Job {
@@ -34,26 +33,22 @@ fn job(short: &str, name: &str, status: JobStatus, size: u64, done: u64, rate: u
     let eta = (rate > 0).then(|| (size - done).div_ceil(rate));
     Job {
         id: id(short),
-        info_hash: InfoHash::V1(*id(short).as_bytes()),
-        name: Some(name.into()),
-        path: Some(dir.join(name)),
+        name: name.into(),
+        path: dir.join(name),
         dir,
         status,
         progress: Progress {
-            size: Some(size),
+            size,
             verified: done,
             piece_map: None,
             down_rate: rate,
-            up_rate: 0,
-            peers: if rate > 0 { 27 } else { 0 },
-            seeds: 0,
+            connections: if rate > 0 { 27 } else { 0 },
             eta,
         },
         selection: Selection::All,
         added_at: CLOCK - days_ago * 86_400,
         title: None,
         place: torrential_core::Place::Folder,
-        waiting_for: None,
     }
 }
 
@@ -91,100 +86,40 @@ pub fn jobs() -> Vec<Job> {
     jobs
 }
 
-fn release(
-    short: &str,
-    name: &str,
-    source: &str,
-    flags: &[Flag],
-    seeders: Option<u32>,
-    size: u64,
-    days: i64,
-) -> Release {
+fn release(short: &str, name: &str, source: &str, flags: &[Flag], grabs: Option<u64>, size: u64, days: i64) -> Release {
     Release {
         id: result_id(short),
         name: name.into(),
         size: Some(size),
-        seeders,
-        leechers: None,
+        grabs,
         published: Some(CLOCK - days * 86_400),
         category: Some(Category::Video),
         flags: flags.iter().copied().collect(),
         sources: vec![source.into()],
-        magnet: None,
-        torrent_url: None,
-        info_url: None,
+        nzb_url: None,
         span: None,
-        swarm: None,
         failed: None,
     }
 }
 
 pub fn night() -> Vec<Release> {
     vec![
-        release(
-            "4c1e9a",
-            "Night of the Living Dead (1968)",
-            "archive.org",
-            &[Flag::PublicDomain],
-            None,
-            1366 * MIB,
-            3_300,
-        ),
-        release(
-            "b7f20d",
-            "Night of the Living Dead (1968) [DVD]",
-            "archive.org",
-            &[Flag::PublicDomain],
-            None,
-            3487 * MIB,
-            4_400,
-        ),
+        release("4c1e9a", "Night of the Living Dead (1968)", "geek", &[], None, 1366 * MIB, 3_300),
+        release("b7f20d", "Night of the Living Dead (1968) [DVD]", "geek", &[], None, 3487 * MIB, 4_400),
         release(
             "e3a915",
             "Night.of.the.Living.Dead.1968.1080p.BluRay.x264",
-            "knaben",
-            &[Flag::Trusted],
+            "hydra",
+            &[],
             Some(214),
             7987 * MIB,
             1_100,
         ),
-        release(
-            "09cd47",
-            "Night of the Living Dead 4K Restoration",
-            "knaben",
-            &[Flag::Official],
-            Some(88),
-            21_812 * MIB,
-            700,
-        ),
-        release(
-            "f61b2e",
-            "Night.of.the.Living.Dead.2025.CAM.x264",
-            "torrents-csv",
-            &[Flag::Cam],
-            Some(41),
-            1452 * MIB,
-            60,
-        ),
-        release(
-            "7a0c3f",
-            "Night of the Living Dead (1968) colorized",
-            "archive.org",
-            &[Flag::PublicDomain],
-            None,
-            734 * MIB,
-            2_200,
-        ),
-        release(
-            "c48e01",
-            "Night of the Living Dead, original score FLAC",
-            "knaben",
-            &[Flag::CreativeCommons],
-            Some(12),
-            178 * MIB,
-            1_500,
-        ),
-        release("2d9b6a", "Night of the Living Dead 1968 720p WEB", "torrents-csv", &[], Some(0), 2150 * MIB, 1_800),
+        release("09cd47", "Night of the Living Dead 4K Restoration", "hydra", &[], Some(88), 21_812 * MIB, 700),
+        release("f61b2e", "Night.of.the.Living.Dead.2025.CAM.x264", "planet", &[Flag::Cam], Some(41), 1452 * MIB, 60),
+        release("7a0c3f", "Night of the Living Dead (1968) colorized", "geek", &[], None, 734 * MIB, 2_200),
+        release("c48e01", "Night of the Living Dead, original score FLAC", "hydra", &[], Some(12), 178 * MIB, 1_500),
+        release("2d9b6a", "Night of the Living Dead 1968 720p WEB", "planet", &[], Some(0), 2150 * MIB, 1_800),
     ]
 }
 
@@ -216,23 +151,23 @@ pub fn result(releases: Vec<Release>, sources: Vec<SourceReport>) -> SearchResul
 pub fn final_sources() -> Vec<SourceReport> {
     vec![
         report("archlinux.org", SourceOutcome::Ok { results: 0 }),
-        report("archive.org", SourceOutcome::Ok { results: 3 }),
-        report("apibay", SourceOutcome::Http { status: 503 }),
-        report("knaben", SourceOutcome::Ok { results: 3 }),
-        report("torrents-csv", SourceOutcome::Ok { results: 2 }),
-        report("nyaa", SourceOutcome::Timeout),
+        report("geek", SourceOutcome::Ok { results: 3 }),
+        report("dognzb", SourceOutcome::Http { status: 503 }),
+        report("hydra", SourceOutcome::Ok { results: 3 }),
+        report("planet", SourceOutcome::Ok { results: 2 }),
+        report("slowznab", SourceOutcome::Timeout),
     ]
 }
 
 pub fn partial() -> (SearchResult, Vec<String>) {
-    let releases = night().into_iter().filter(|r| r.sources[0] == "archive.org").collect();
+    let releases = night().into_iter().filter(|r| r.sources[0] == "geek").collect();
     let sources = final_sources()[..2].to_vec();
-    let pending = ["apibay", "knaben", "torrents-csv", "nyaa"].map(String::from).to_vec();
+    let pending = ["dognzb", "hydra", "planet", "slowznab"].map(String::from).to_vec();
     (result(releases, sources), pending)
 }
 
-fn file(path: &str, size: u64, verified: u64, risky: bool) -> TorrentFile {
-    TorrentFile {
+fn file(path: &str, size: u64, verified: u64, risky: bool) -> ReleaseFile {
+    ReleaseFile {
         index: 0,
         path: path.into(),
         size,
@@ -259,10 +194,10 @@ pub fn dvd_files() -> FilesReply {
     ];
     FilesReply {
         id: id("b7f20d").to_hex(),
-        name: Some("night_of_the_living_dead_1968_dvd".into()),
+        name: "night_of_the_living_dead_1968_dvd".into(),
         total_size: files.iter().map(|(_, s)| s).sum(),
         files: files.iter().map(|(p, s)| file(p, *s, 0, p.ends_with(".exe"))).collect(),
-        metadata_source: MetadataSource::TorrentUrl,
+        source: FileListSource::NzbUrl,
         elapsed_ms: 12,
     }
 }
@@ -270,14 +205,14 @@ pub fn dvd_files() -> FilesReply {
 pub fn wikipedia_files() -> FilesReply {
     FilesReply {
         id: id("6f2c81").to_hex(),
-        name: Some("wikipedia-en-2026-09-text".into()),
+        name: "wikipedia-en-2026-09-text".into(),
         total_size: 23 * GIB,
         files: vec![
             file("enwiki-20260901-pages-articles-multistream.xml.bz2", 21_900 * MIB, 5_290 * MIB, false),
             file("enwiki-20260901-pages-articles-multistream-index.txt.bz2", 254 * MIB, 0, false),
             file("enwiki-20260901-abstract.xml.gz", 1_126 * MIB, 0, false),
         ],
-        metadata_source: MetadataSource::Download,
+        source: FileListSource::Download,
         elapsed_ms: 1,
     }
 }
@@ -285,10 +220,10 @@ pub fn wikipedia_files() -> FilesReply {
 pub fn stackexchange_files() -> FilesReply {
     FilesReply {
         id: id("91fd3b").to_hex(),
-        name: Some("stackexchange".into()),
+        name: "stackexchange".into(),
         total_size: 2_000 * MIB,
         files: (1..=20).map(|i| file(&format!("part{i:02}.7z"), 100 * MIB, i * 5 * MIB, false)).collect(),
-        metadata_source: MetadataSource::Download,
+        source: FileListSource::Download,
         elapsed_ms: 1,
     }
 }
@@ -341,7 +276,7 @@ pub fn later(state: &mut State, ms: u64) {
 
 pub fn cursor_name(state: &State) -> String {
     match state.cursor {
-        Some(Item::Download(id)) => state.job(id).and_then(|j| j.name.clone()).unwrap(),
+        Some(Item::Download(id)) => state.job(id).unwrap().name.clone(),
         Some(Item::Result(id)) => state.release(id).unwrap().name.clone(),
         None => "nothing".into(),
     }

@@ -74,7 +74,7 @@ async fn stream_conversion(ctx: &Ctx, request: &Request) -> Result<Conversion, E
     media::stream(ctx, id, index, t, audio, picture).await
 }
 
-/// WebVTT of a subtitle track inside a video, or of a subtitle file of the torrent.
+/// WebVTT of a subtitle track inside a video, or of a subtitle file of the release.
 pub async fn subtitles(conn: &mut Connection<'_>, request: &Request) -> io::Result<bool> {
     let ctx = conn.ctx;
     let conversion = tokio::select! {

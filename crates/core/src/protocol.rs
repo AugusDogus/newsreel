@@ -15,18 +15,17 @@ use serde::{Deserialize, Serialize};
 use crate::cast::{Cast, CastAction, CastRequest, TvList};
 use crate::catalog::{EpisodeInfo, TitleCard, TitleDetails, TitleId, VideoRef};
 use crate::device::DeviceList;
-use crate::error::Tried;
-use crate::error::{Error, ErrorCode};
-use crate::id::ReleaseId;
+use crate::error::{Error, ErrorCode, Tried};
+use crate::id::ResultId;
 use crate::indexer::{ApiKey, IndexerList};
-use crate::job::{Job, Selection, TorrentFile};
+use crate::job::{Job, ReleaseFile, Selection};
 use crate::release::{Release, SearchQuery, SearchResult};
 use crate::target::Target;
 use crate::watching::{AttemptEvent, Next, Watched};
 
-/// How long the engine waits for a torrent's file list before it gives up.
-pub const METADATA_WAIT: Duration = Duration::from_secs(60);
-/// How long the engine waits for libtorrent to stop writing a download it pauses.
+/// How long a client waits for the engine to fetch and read an NZB over NNTP.
+pub const RESOLVE_WAIT: Duration = Duration::from_secs(60);
+/// How long the engine waits for a download it pauses to stop writing.
 pub const WRITES_STOP_WITHIN: Duration = Duration::from_secs(10);
 /// How long the engine may take to find a title's source and start it, between two steps.
 pub const STEP_WITHIN: Duration = Duration::from_secs(240);
@@ -50,10 +49,9 @@ pub enum Request {
         #[serde(default)]
         stream: bool,
     },
-    /// Lists a torrent's files, fetching metadata if needed, within `timeout_ms`.
+    /// Lists a release's files, reading its NZB if needed.
     Files {
         target: Target,
-        timeout_ms: u32,
     },
     Get(GetRequest),
     /// Downloads these files first and in order, and serves them over local HTTP as they arrive.
@@ -123,7 +121,7 @@ pub enum Request {
     Tvs {
         fresh: bool,
     },
-    /// Plays a film, an episode, or a torrent's video on a TV. A title sends a `Frame::Update`
+    /// Plays a film, an episode, or a release's video on a TV. A title sends a `Frame::Update`
     /// for each step of finding its source. The reply comes once the TV plays, or the cast fails.
     Cast(CastRequest),
     /// Pauses, resumes, seeks, stops, or sets the volume of the cast on a TV: its ID or a part of
@@ -138,13 +136,13 @@ pub enum Request {
     /// keeps where it is in the watch history as a browser tab or a TV keeps theirs.
     Follow {
         video: VideoRef,
-        release: Option<ReleaseId>,
+        release: Option<ResultId>,
         socket: PathBuf,
     },
-    /// The Torznab indexers in config.yaml, each asked now whether it answers.
+    /// The Newznab indexers in config.yaml, each asked now whether it answers.
     Indexers,
-    /// Asks `url` whether it answers as a Torznab indexer, then writes it to config.yaml, where
-    /// the engine searches it from now on. A Prowlarr or Jackett server's own address adds each
+    /// Asks `url` whether it answers as a Newznab indexer, then writes it to config.yaml, where
+    /// the engine searches it from now on. A Prowlarr server's own address adds each Usenet
     /// indexer it has. An entry already there with the same URL takes the new key.
     AddIndexer {
         url: String,
@@ -160,14 +158,14 @@ pub enum Request {
 impl Request {
     /// Why a paired device may not send this request, or `None` when it may. A device reaches the
     /// engine from another machine, so it may not stop the engine, list, add or remove devices, or
-    /// name a path on the engine's machine: a folder, a `.torrent` file, or a player's socket. It
+    /// name a path on the engine's machine: a folder, an NZB file, or a player's socket. It
     /// may manage the indexers, since the server's engine is the one that searches them.
     pub fn refused_to_device(&self) -> Option<Error> {
         let local = |message: &str, hint: &str| Some(Error::new(ErrorCode::LocalOnly, message).with_hint(hint));
-        let torrent_file = |target: &Target| match target {
-            Target::TorrentFile(_) => local(
-                "the engine reads a .torrent file on its own machine, so another machine cannot name one",
-                "pass the torrent's magnet link or URL instead",
+        let nzb_file = |target: &Target| match target {
+            Target::NzbFile(_) => local(
+                "the engine reads an NZB file on its own machine, so another machine cannot name one",
+                "pass the NZB's URL or a search result ID instead",
             ),
             _ => None,
         };
@@ -191,14 +189,14 @@ impl Request {
             | Request::Indexers
             | Request::AddIndexer { .. }
             | Request::RemoveIndexer { .. } => None,
-            Request::Files { target, .. } | Request::Cast(CastRequest { target, .. }) => torrent_file(target),
+            Request::Files { target, .. } | Request::Cast(CastRequest { target, .. }) => nzb_file(target),
             Request::Get(GetRequest { target, dir, .. }) | Request::Play(PlayRequest { target, dir, .. }) => {
                 match dir {
                     Some(_) => local(
                         "only the machine that runs the engine can choose the folder a download goes to",
                         "leave out --dir, and the download goes to the engine's download folder",
                     ),
-                    None => torrent_file(target),
+                    None => nzb_file(target),
                 }
             }
             Request::Shutdown { .. } => {
@@ -221,8 +219,7 @@ impl Request {
         match self {
             Request::Hello => Duration::from_secs(5),
             Request::Search { query, .. } => Duration::from_millis(query.timeout_ms.into()) + Duration::from_secs(10),
-            Request::Files { timeout_ms, .. } => Duration::from_millis((*timeout_ms).into()) + Duration::from_secs(15),
-            Request::Get(get) if get.dry_run => METADATA_WAIT + Duration::from_secs(15),
+            Request::Files { .. } | Request::Get(_) => RESOLVE_WAIT + Duration::from_secs(15),
             Request::Pause { .. } | Request::Shutdown { .. } => 2 * WRITES_STOP_WITHIN,
             Request::PlayTitle(_) | Request::GetTitle(_) | Request::Cast(_) => STEP_WITHIN,
             Request::AddIndexer { .. } => 2 * REPLY_WITHIN,
@@ -258,7 +255,7 @@ pub struct PlayRequest {
     pub target: Target,
     /// `None` means the configured download folder. An existing download keeps its own.
     pub dir: Option<PathBuf>,
-    /// `TorrentFile::index` of each file to play: the video first, then its subtitles. They join any
+    /// `ReleaseFile::index` of each file to play: the video first, then its subtitles. They join any
     /// files the download already has selected.
     pub files: Vec<u32>,
 }
@@ -463,10 +460,10 @@ impl Reply for () {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct FilesReply {
     pub id: String,
-    pub name: Option<String>,
+    pub name: String,
     pub total_size: u64,
-    pub files: Vec<TorrentFile>,
-    pub metadata_source: MetadataSource,
+    pub files: Vec<ReleaseFile>,
+    pub source: FileListSource,
     pub elapsed_ms: u32,
 }
 
@@ -492,7 +489,7 @@ pub struct PlayReply {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Stream {
     pub index: u32,
-    /// Relative to the torrent's folder, sanitized, as in `TorrentFile`.
+    /// Relative to the release's folder, sanitized, as in `ReleaseFile`.
     pub path: String,
     pub size: u64,
     pub url: String,
@@ -526,14 +523,13 @@ pub struct DownloadPlan {
 }
 
 crate::words! {
-    /// Where a torrent's file list came from.
+    /// Where a release's file list came from.
     #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-    pub enum MetadataSource {
+    pub enum FileListSource {
         Download = "download",
         Cache = "cache",
-        TorrentFile = "torrent_file",
-        TorrentUrl = "torrent_url",
-        Peers = "peers",
+        NzbFile = "nzb_file",
+        NzbUrl = "nzb_url",
     }
 }
 
@@ -673,7 +669,7 @@ mod tests {
 
     #[test]
     fn a_paired_device_may_not_stop_the_engine_manage_devices_or_name_a_path_on_its_machine() {
-        let file = || Target::TorrentFile(PathBuf::from("/srv/films/sintel.torrent"));
+        let file = || Target::NzbFile(PathBuf::from("/srv/films/sintel.nzb"));
         let prefix = || Target::Prefix("9b5212".into());
         let get = |target, dir: Option<&str>| {
             Request::Get(GetRequest {
@@ -696,7 +692,7 @@ mod tests {
             })
         };
         let folder = Some("only the machine that runs the engine can choose the folder a download goes to");
-        let torrent = Some("the engine reads a .torrent file on its own machine, so another machine cannot name one");
+        let nzb = Some("the engine reads an NZB file on its own machine, so another machine cannot name one");
         let stop = Some("only the machine that runs the engine can stop it");
         let devices = Some("only the machine that runs the engine can list, add, or remove devices");
         let cases = [
@@ -704,11 +700,7 @@ mod tests {
             ("status", Request::Status { refs: vec![] }, None),
             ("remove with its files", Request::Remove { refs: vec!["9b5212".into()], delete: true }, None),
             ("get into the engine's folder", get(prefix(), None), None),
-            (
-                "files of a magnet",
-                Request::Files { target: Target::Magnet("magnet:?xt=urn:btih:9b52".into()), timeout_ms: 1 },
-                None,
-            ),
+            ("files of an NZB URL", Request::Files { target: Target::NzbUrl("https://x/sintel.nzb".into()) }, None),
             ("cast a download", cast(prefix()), None),
             ("get into a folder", get(prefix(), Some("/home/ada/.ssh")), folder),
             (
@@ -716,9 +708,9 @@ mod tests {
                 Request::Play(PlayRequest { target: prefix(), dir: Some("/tmp".into()), files: vec![0] }),
                 folder,
             ),
-            ("get a .torrent file", get(file(), None), torrent),
-            ("files of a .torrent file", Request::Files { target: file(), timeout_ms: 1 }, torrent),
-            ("cast a .torrent file", cast(file()), torrent),
+            ("get an NZB file", get(file(), None), nzb),
+            ("files of an NZB file", Request::Files { target: file() }, nzb),
+            ("cast an NZB file", cast(file()), nzb),
             ("stop", Request::Shutdown { asked: true }, stop),
             ("make way for another version", Request::Shutdown { asked: false }, stop),
             ("list devices", Request::Devices, devices),
@@ -730,7 +722,7 @@ mod tests {
                 Request::AddIndexer { url: "http://127.0.0.1:9696".into(), name: None, key: crate::ApiKey::new("k3y") },
                 None,
             ),
-            ("remove an indexer", Request::RemoveIndexer { name: "filelist".into() }, None),
+            ("remove an indexer", Request::RemoveIndexer { name: "nzbgeek".into() }, None),
             (
                 "follow a player",
                 Request::Follow { video: "tt0063350".parse().unwrap(), release: None, socket: "/tmp/mpv".into() },
@@ -797,7 +789,7 @@ mod tests {
         (10, &["follow"]),
         // Each request is a POST to the engine's HTTP port, which says the client's version.
         (11, &[]),
-        // Torznab indexers are added, listed and removed through the engine, which may be on a server.
+        // Newznab indexers are added, listed and removed through the engine, which may be on a server.
         (12, &["indexers", "add_indexer", "remove_indexer"]),
     ];
 

@@ -32,28 +32,28 @@ hint: add --yes to confirm
   "next": null
 }
 === invalid_ref, exit 3
-error[invalid_ref]: "9b5" is not a torrent reference: an ID is 4 to 40 hex characters, with a leading u for a result that has no infohash
-hint: pass an ID from `torrential search`, a magnet link, a .torrent file, or a .torrent URL
+error[invalid_ref]: "9b5" is not a release reference: an ID is 4 to 40 hex characters, with a leading u for a search result
+hint: pass an ID from `torrential search`, an .nzb file, or an NZB URL
 --- json
 {
   "schema": 1,
   "type": "error",
   "error": {
     "code": "invalid_ref",
-    "message": "\"9b5\" is not a torrent reference: an ID is 4 to 40 hex characters, with a leading u for a result that has no infohash",
-    "hint": "pass an ID from `torrential search`, a magnet link, a .torrent file, or a .torrent URL"
+    "message": "\"9b5\" is not a release reference: an ID is 4 to 40 hex characters, with a leading u for a search result",
+    "hint": "pass an ID from `torrential search`, an .nzb file, or an NZB URL"
   },
   "next": null
 }
-=== invalid_torrent, exit 3
-error[invalid_torrent]: not a torrent file: expected value at line 1 column 1
+=== invalid_release, exit 3
+error[invalid_release]: not a fake release: expected value at line 1 column 1
 --- json
 {
   "schema": 1,
   "type": "error",
   "error": {
-    "code": "invalid_torrent",
-    "message": "not a torrent file: expected value at line 1 column 1"
+    "code": "invalid_release",
+    "message": "not a fake release: expected value at line 1 column 1"
   },
   "next": null
 }
@@ -73,27 +73,27 @@ next: torrential status
   "next": "torrential status"
 }
 === ambiguous_ref, exit 3
-error[ambiguous_ref]: e3a1 matches 2 torrents
-  e3a1f0	ubuntu-24.04.5-desktop-amd64.iso	search result
-  e3a1c4	Ubuntu 24.04.5 LTS Desktop (repack)	search result
-hint: use a longer prefix, such as: torrential get e3a1f0
+error[ambiguous_ref]: ue3a1 matches 2 search results
+  ue3a1f0	ubuntu-24.04.5-desktop-amd64.iso	search result
+  ue3a1c4	Ubuntu 24.04.5 LTS Desktop (repack)	search result
+hint: use a longer prefix, such as: torrential get ue3a1f0
 --- json
 {
   "schema": 1,
   "type": "error",
   "error": {
     "code": "ambiguous_ref",
-    "message": "e3a1 matches 2 torrents",
-    "hint": "use a longer prefix, such as: torrential get e3a1f0",
+    "message": "ue3a1 matches 2 search results",
+    "hint": "use a longer prefix, such as: torrential get ue3a1f0",
     "details": {
       "candidates": [
         {
-          "id": "e3a1f0",
+          "id": "ue3a1f0",
           "name": "ubuntu-24.04.5-desktop-amd64.iso",
           "kind": "search result"
         },
         {
-          "id": "e3a1c4",
+          "id": "ue3a1c4",
           "name": "Ubuntu 24.04.5 LTS Desktop (repack)",
           "kind": "search result"
         }
@@ -103,19 +103,18 @@ hint: use a longer prefix, such as: torrential get e3a1f0
   "next": null
 }
 === job_conflict, exit 4
-error[job_conflict]: d40a19 has no file list yet, so there is nothing to verify
-hint: torrential wait d40a19 --until metadata
-next: torrential wait d40a19 --until metadata
+error[job_conflict]: d40a19 is busy saving its state
+hint: try torrential verify d40a19 again in a few seconds
 --- json
 {
   "schema": 1,
   "type": "error",
   "error": {
     "code": "job_conflict",
-    "message": "d40a19 has no file list yet, so there is nothing to verify",
-    "hint": "torrential wait d40a19 --until metadata"
+    "message": "d40a19 is busy saving its state",
+    "hint": "try torrential verify d40a19 again in a few seconds"
   },
-  "next": "torrential wait d40a19 --until metadata"
+  "next": null
 }
 === path_conflict, exit 4
 error[path_conflict]: 1 file already exists under /Users/ada/Movies/night
@@ -138,9 +137,9 @@ hint: choose another folder with --dir, or move the conflicting paths; only regu
   "next": null
 }
 === providers_unavailable, exit 5
-error[providers_unavailable]: all sources failed (knaben, apibay)
-  knaben: HTTP 502
-  apibay: timed out
+error[providers_unavailable]: all sources failed (hydra, dognzb)
+  hydra: HTTP 502
+  dognzb: timed out
 hint: check the network connection, or retry with a longer --timeout
 --- json
 {
@@ -148,18 +147,18 @@ hint: check the network connection, or retry with a longer --timeout
   "type": "error",
   "error": {
     "code": "providers_unavailable",
-    "message": "all sources failed (knaben, apibay)",
+    "message": "all sources failed (hydra, dognzb)",
     "hint": "check the network connection, or retry with a longer --timeout",
     "details": {
       "sources": [
         {
-          "source": "knaben",
+          "source": "hydra",
           "outcome": "http",
           "status": 502,
           "elapsed_ms": 300
         },
         {
-          "source": "apibay",
+          "source": "dognzb",
           "outcome": "timeout",
           "elapsed_ms": 300
         }
@@ -168,22 +167,8 @@ hint: check the network connection, or retry with a longer --timeout
   },
   "next": null
 }
-=== metadata_timeout, exit 5
-error[metadata_timeout]: no peer sent the file list for 9b5212 in time
-hint: try again later, or run torrential get 9b5212 to keep trying in the background
---- json
-{
-  "schema": 1,
-  "type": "error",
-  "error": {
-    "code": "metadata_timeout",
-    "message": "no peer sent the file list for 9b5212 in time",
-    "hint": "try again later, or run torrential get 9b5212 to keep trying in the background"
-  },
-  "next": null
-}
 === network_unavailable, exit 5
-error[network_unavailable]: no network route to any DHT node
+error[network_unavailable]: no route to news.example.com:563
 hint: check the network connection, then run the command again
 --- json
 {
@@ -191,27 +176,27 @@ hint: check the network connection, then run the command again
   "type": "error",
   "error": {
     "code": "network_unavailable",
-    "message": "no network route to any DHT node",
+    "message": "no route to news.example.com:563",
     "hint": "check the network connection, then run the command again"
   },
   "next": null
 }
 === fetch_failed, exit 5
-error[fetch_failed]: could not fetch https://archive.org/download/x/x_archive.torrent: HTTP 404
-hint: try the magnet link instead
+error[fetch_failed]: could not fetch the NZB: HTTP 404
+hint: check the network connection and the indexer, or search again
 --- json
 {
   "schema": 1,
   "type": "error",
   "error": {
     "code": "fetch_failed",
-    "message": "could not fetch https://archive.org/download/x/x_archive.torrent: HTTP 404",
-    "hint": "try the magnet link instead"
+    "message": "could not fetch the NZB: HTTP 404",
+    "hint": "check the network connection and the indexer, or search again"
   },
   "next": null
 }
 === sandbox_network_blocked, exit 6
-error[sandbox_network_blocked]: this sandbox blocks network access, so torrential cannot reach peers
+error[sandbox_network_blocked]: this sandbox blocks network access, so torrential cannot reach the indexers or Usenet servers
   signal: CODEX_SANDBOX_NETWORK_DISABLED=1 (codex)
 hint: in interactive Codex, rerun with sandbox_permissions "require_escalated" and prefix_rule ["torrential"]; unattended Codex (codex exec) has approvals off, so torrential cannot work there
 --- json
@@ -220,7 +205,7 @@ hint: in interactive Codex, rerun with sandbox_permissions "require_escalated" a
   "type": "error",
   "error": {
     "code": "sandbox_network_blocked",
-    "message": "this sandbox blocks network access, so torrential cannot reach peers",
+    "message": "this sandbox blocks network access, so torrential cannot reach the indexers or Usenet servers",
     "hint": "in interactive Codex, rerun with sandbox_permissions \"require_escalated\" and prefix_rule [\"torrential\"]; unattended Codex (codex exec) has approvals off, so torrential cannot work there",
     "details": {
       "sandbox": {
@@ -374,7 +359,7 @@ next: torrential verify 6bc1af --repair
   "next": "torrential verify 6bc1af --repair"
 }
 === no_source, exit 7
-error[no_source]: no peer or web seed has had the remaining 2 pieces (488.8 KiB) for 20m
+error[no_source]: no server has sent the remaining 2 pieces (488.8 KiB) for 20m
 hint: run torrential resume 770e77 to try again; the 33.0 MiB already verified is kept
 next: torrential resume 770e77
 --- json
@@ -383,7 +368,7 @@ next: torrential resume 770e77
   "type": "error",
   "error": {
     "code": "no_source",
-    "message": "no peer or web seed has had the remaining 2 pieces (488.8 KiB) for 20m",
+    "message": "no server has sent the remaining 2 pieces (488.8 KiB) for 20m",
     "hint": "run torrential resume 770e77 to try again; the 33.0 MiB already verified is kept"
   },
   "next": "torrential resume 770e77"

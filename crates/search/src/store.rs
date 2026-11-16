@@ -1,6 +1,5 @@
 //! Where search keeps what it fetched between processes: files in a folder, or a map in memory.
-//! Each item has a name such as `titles/tt0063350.json` or `academictorrents.xml`, and the time it
-//! was last written or used.
+//! Each item has a name such as `titles/tt0063350.json`, and the time it was last written or used.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -12,11 +11,6 @@ use std::time::{Duration, SystemTime};
 pub const TITLES: &str = "titles";
 /// The folder of pictures, and of the misses remembered for a day.
 pub const PICTURES: &str = "pictures";
-/// The folder of the official listing pages.
-pub const PAGES: &str = "pages";
-
-/// How long a listing page or a catalog is used as kept, before it is fetched again.
-pub const FRESH_FOR: Duration = Duration::from_secs(24 * 60 * 60);
 
 pub enum Store {
     Disk(PathBuf),

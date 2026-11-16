@@ -10,10 +10,10 @@ import { usePlayerPage } from "./page";
 import { type Memory, type Neighbor, Playback, type PlaybackProps, type Shown } from "./Playback";
 import { useSession } from "./session";
 
-const INFOHASH = /^[0-9a-f]{40}$/;
+const RELEASE_ID = /^[0-9a-f]{40}$/;
 
 interface Props {
-  /** A release or download ID, magnet link, or infohash. */
+  /** A release or download ID, or an NZB URL. */
   target: string;
   /** The file to play, or null for the engine's pick. */
   file: number | null;
@@ -24,7 +24,7 @@ export function Player({ target, file }: Props) {
   const [attempt, setAttempt] = useState(0);
   const session = useSession(target, file, attempt);
   const play = session.stage === "starting" ? null : (session.started?.play ?? null);
-  const live = useJob(play?.id ?? (INFOHASH.test(target) ? target : null));
+  const live = useJob(play?.id ?? (RELEASE_ID.test(target) ? target : null));
   const job = live ?? play?.job ?? null;
   const back = useCallback(() => goBack("/"), []);
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
@@ -35,7 +35,7 @@ export function Player({ target, file }: Props) {
   return (
     <main className="fixed inset-0 bg-black text-soft">
       {session.stage === "ready" ? (
-        <TorrentPlayback key={`${session.started.play.id}:${session.started.play.video.index}`} play={session.started.play} media={session.media} onReload={retry} onBack={back} />
+        <ReleasePlayback key={`${session.started.play.id}:${session.started.play.video.index}`} play={session.started.play} media={session.media} onReload={retry} onBack={back} />
       ) : (
         <div className="relative size-full">
           {session.stage === "failed" ? (
@@ -56,14 +56,14 @@ export function Player({ target, file }: Props) {
   );
 }
 
-/** A file of a torrent in the player: named by its release, moving through the torrent's videos, and keeping its place in this browser. */
-function TorrentPlayback(props: Omit<PlaybackProps, "shown">) {
+/** A file of a release in the player: named by the release, moving through its videos, and keeping its place in this browser. */
+function ReleasePlayback(props: Omit<PlaybackProps, "shown">) {
   const { play } = props;
-  const shown = useMemo(() => torrentShown(play), [play]);
+  const shown = useMemo(() => releaseShown(play), [play]);
   return <Playback {...props} shown={shown} />;
 }
 
-function torrentShown(play: PlayInfo): Shown {
+function releaseShown(play: PlayInfo): Shown {
   const { id, name, video: file } = play;
   const videos = play.files.filter((f) => isVideoFile(f.path)).sort((a, b) => a.path.localeCompare(b.path, "en", { numeric: true }));
   const here = videos.findIndex((f) => f.index === file.index);
@@ -74,14 +74,14 @@ function torrentShown(play: PlayInfo): Shown {
   const multiple = videos.length > 1;
   const release = readable(name).title;
   return {
-    kind: "torrent",
+    kind: "release",
     video: null,
     heading: releaseHeading(name, multiple ? fileName(file.path) : null),
     nowPlaying: { title: multiple ? episodeName(file.path, name) : release, album: release },
     previous: neighbor(here - 1),
     next: neighbor(here + 1),
     videos,
-    memory: torrentMemory(play),
+    memory: releaseMemory(play),
     cover: <Starting step={2} name={name} readout={<PlayingReadout play={play} />} />,
     poster: null,
     overlay: null,
@@ -97,8 +97,8 @@ function episodeName(path: string, release: string): string {
   return (whole.startsWith(show) && whole.slice(show.length).trim()) || whole;
 }
 
-/** A torrent's file starts where this browser saw it stop, and keeps its place there. */
-function torrentMemory(play: PlayInfo): Memory {
+/** A release's file starts where this browser saw it stop, and keeps its place there. */
+function releaseMemory(play: PlayInfo): Memory {
   const { id, name, video: file } = play;
   const stored = position(id, file.index);
   const start = stored && !stored.finished && stored.time > WORTH_SAVING ? stored.time : 0;

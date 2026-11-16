@@ -9,7 +9,7 @@ use crate::catalog::Episode;
 use crate::catalog::{EpisodeInfo, Kind, TitleCard, TitleDetails, TitleId, VideoRef};
 use crate::error::SourceReport;
 use crate::error::{Error, Skip, Tried};
-use crate::id::{ReleaseId, TorrentId};
+use crate::id::{DownloadId, ResultId};
 use crate::release::Release;
 use crate::title::Span;
 
@@ -22,7 +22,7 @@ pub struct Watched {
     /// Seconds. `None` until the player knows it.
     pub duration: Option<f64>,
     /// The release it played from.
-    pub release: Option<ReleaseId>,
+    pub release: Option<ResultId>,
     /// Unix seconds of the last update.
     pub at: i64,
 }
@@ -168,7 +168,7 @@ pub struct TitleLink {
     pub title: TitleId,
     pub span: Span,
     /// The search result the download came from.
-    pub release: Option<ReleaseId>,
+    pub release: Option<ResultId>,
 }
 
 /// One step of a title play. The web app reads these as NDJSON lines, and the last is `playing`
@@ -195,14 +195,14 @@ pub enum AttemptEvent {
         check: Check,
     },
     Skipped {
-        release: ReleaseId,
+        release: ResultId,
         reason: Skip,
     },
     /// The download and the file that play. The HTTP route adds how to play it.
     Playing {
         video: VideoRef,
         release: Release,
-        job: TorrentId,
+        job: DownloadId,
         file: u32,
         resume_at: Option<f64>,
     },
@@ -233,6 +233,10 @@ mod tests {
     use crate::release::Category;
 
     const HASH: &str = "9b521219bc48550140a666f74a29048ed78e933b";
+
+    fn result_id() -> ResultId {
+        ResultId::from_bytes(*HASH.parse::<crate::DownloadId>().unwrap().as_bytes())
+    }
 
     #[test]
     fn a_video_is_finished_where_the_shared_vectors_say() {
@@ -274,10 +278,8 @@ mod tests {
 
     #[test]
     fn watched_writes_whether_it_is_finished_and_not_the_release() {
-        let entry = Watched {
-            release: Some(ReleaseId::Torrent(HASH.parse().unwrap())),
-            ..watched("tt0903747:3:5", 1290.4, Some(2820.0), 1762990000)
-        };
+        let entry =
+            Watched { release: Some(result_id()), ..watched("tt0903747:3:5", 1290.4, Some(2820.0), 1762990000) };
         assert_eq!(
             serde_json::to_string(&entry).unwrap(),
             r#"{"video":"tt0903747:3:5","position":1290.4,"duration":2820.0,"finished":false,"at":1762990000}"#
@@ -409,29 +411,25 @@ mod tests {
 
     fn release() -> Release {
         Release {
-            id: ReleaseId::Torrent(HASH.parse().unwrap()),
+            id: result_id(),
             name: "Night.of.the.Living.Dead.1968.1080p.BluRay.x264".into(),
             size: Some(1_500_000_000),
-            seeders: Some(40),
-            leechers: None,
+            grabs: Some(40),
             published: None,
             category: Some(Category::Video),
             flags: BTreeSet::new(),
-            sources: vec!["knaben".into()],
-            magnet: None,
-            torrent_url: None,
-            info_url: None,
+            sources: vec!["hydra".into()],
+            nzb_url: None,
             span: Some(Span::Film),
-            swarm: None,
             failed: None,
         }
     }
 
     const RELEASE: &str = concat!(
-        r#"{"id":"9b521219bc48550140a666f74a29048ed78e933b","name":"Night.of.the.Living.Dead.1968.1080p.BluRay.x264","#,
-        r#""size":1500000000,"seeders":40,"leechers":null,"published":null,"category":"video","#,
-        r#""quality":{"resolution":"1080p","codec":"h264","hdr":false},"flags":[],"sources":["knaben"],"#,
-        r#""magnet":null,"torrent_url":null,"info_url":null,"span":"film"}"#
+        r#"{"id":"u9b521219bc48550140a666f74a29048ed78e933b","name":"Night.of.the.Living.Dead.1968.1080p.BluRay.x264","#,
+        r#""size":1500000000,"grabs":40,"published":null,"category":"video","#,
+        r#""quality":{"resolution":"1080p","codec":"h264","hdr":false},"flags":[],"sources":["hydra"],"#,
+        r#""nzb_url":null,"span":"film"}"#
     );
 
     #[test]
@@ -449,17 +447,14 @@ mod tests {
             AttemptEvent::Searched {
                 found: 5,
                 sources: vec![SourceReport {
-                    source: "archive.org".into(),
+                    source: "hydra".into(),
                     outcome: SourceOutcome::Ok { results: 2 },
                     elapsed_ms: 812,
                 }],
             },
             AttemptEvent::Trying { rank: 1, of: 5, release: release() },
             AttemptEvent::Check { check: Check::FileList },
-            AttemptEvent::Skipped {
-                release: ReleaseId::Torrent(HASH.parse().unwrap()),
-                reason: Skip::NoFileList { waited_s: 20 },
-            },
+            AttemptEvent::Skipped { release: result_id(), reason: Skip::NoFileList { waited_s: 20 } },
             AttemptEvent::Playing {
                 video: video("tt0903747:3:5"),
                 release: release(),
@@ -469,10 +464,7 @@ mod tests {
             },
             AttemptEvent::Failed {
                 error: error(ErrorCode::NoSource, "No source of Night of the Living Dead (1968) plays now"),
-                tried: vec![Tried {
-                    release: ReleaseId::Torrent(HASH.parse().unwrap()),
-                    reason: Skip::NoData { waited_s: 30 },
-                }],
+                tried: vec![Tried { release: result_id(), reason: Skip::NoData { waited_s: 30 } }],
             },
         ];
         let written: Vec<String> = steps.iter().map(|step| serde_json::to_string(step).unwrap()).collect();
@@ -480,12 +472,12 @@ mod tests {
             written,
             [
                 r#"{"type":"resolved","video":"tt0063350","title":{"id":"tt0063350","kind":"film","name":"Night of the Living Dead","year":1968,"rating":7.8},"episode":null}"#.to_string(),
-                r#"{"type":"searched","found":5,"sources":[{"source":"archive.org","outcome":"ok","results":2,"elapsed_ms":812}]}"#.to_string(),
+                r#"{"type":"searched","found":5,"sources":[{"source":"hydra","outcome":"ok","results":2,"elapsed_ms":812}]}"#.to_string(),
                 format!(r#"{{"type":"trying","rank":1,"of":5,"release":{RELEASE}}}"#),
                 r#"{"type":"check","check":"file_list"}"#.to_string(),
-                format!(r#"{{"type":"skipped","release":"{HASH}","reason":{{"reason":"no_file_list","waited_s":20,"text":"no peer sent its file list in 20s"}}}}"#),
+                format!(r#"{{"type":"skipped","release":"u{HASH}","reason":{{"reason":"no_file_list","waited_s":20,"text":"its NZB did not arrive in 20s"}}}}"#),
                 format!(r#"{{"type":"playing","video":"tt0903747:3:5","release":{RELEASE},"job":"{HASH}","file":4,"resume_at":1834.2}}"#),
-                format!(r#"{{"type":"failed","error":{{"code":"no_source","message":"No source of Night of the Living Dead (1968) plays now"}},"tried":[{{"release":"{HASH}","reason":{{"reason":"no_data","waited_s":30,"text":"no data arrived in 30s"}}}}]}}"#),
+                format!(r#"{{"type":"failed","error":{{"code":"no_source","message":"No source of Night of the Living Dead (1968) plays now"}},"tried":[{{"release":"u{HASH}","reason":{{"reason":"no_data","waited_s":30,"text":"no data arrived in 30s"}}}}]}}"#),
             ]
         );
         let read: Vec<AttemptEvent> = written.iter().map(|line| serde_json::from_str(line).unwrap()).collect();
@@ -508,7 +500,7 @@ mod tests {
         assert_eq!(
             skips,
             [
-                r#"{"reason":"no_file_list","waited_s":20,"text":"no peer sent its file list in 20s"}"#,
+                r#"{"reason":"no_file_list","waited_s":20,"text":"its NZB did not arrive in 20s"}"#,
                 r#"{"reason":"no_video","text":"none of its files is the video"}"#,
                 r#"{"reason":"unplayable","container":"avi","text":"its .avi file needs ffmpeg, which is not installed"}"#,
                 r#"{"reason":"too_large","error":{"code":"disk_full","message":"not enough space"},"text":"not enough space"}"#,
@@ -523,13 +515,9 @@ mod tests {
 
     #[test]
     fn a_title_link_writes_its_span_and_the_release_it_came_from() {
-        let link = TitleLink {
-            title: "tt0903747".parse().unwrap(),
-            span: Span::Season(1),
-            release: Some(ReleaseId::Torrent(HASH.parse().unwrap())),
-        };
+        let link = TitleLink { title: "tt0903747".parse().unwrap(), span: Span::Season(1), release: Some(result_id()) };
         let json = serde_json::to_string(&link).unwrap();
-        assert_eq!(json, format!(r#"{{"title":"tt0903747","span":"s1","release":"{HASH}"}}"#));
+        assert_eq!(json, format!(r#"{{"title":"tt0903747","span":"s1","release":"u{HASH}"}}"#));
         assert_eq!(serde_json::from_str::<TitleLink>(&json).unwrap(), link);
         let unlisted = TitleLink { release: None, ..link };
         assert_eq!(serde_json::to_string(&unlisted).unwrap(), r#"{"title":"tt0903747","span":"s1","release":null}"#);

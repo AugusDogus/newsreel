@@ -11,9 +11,6 @@ expression: value
       "outcome": "planned",
       "job": {
         "id": "4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c",
-        "info_hash": {
-          "v1": "4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c"
-        },
         "name": "night_of_the_living_dead",
         "dir": "[home]/Downloads/torrential",
         "path": "[home]/Downloads/torrential/night_of_the_living_dead",
@@ -22,9 +19,7 @@ expression: value
           "size": 1432408064,
           "verified": 0,
           "down_rate": 0,
-          "up_rate": 0,
-          "peers": 0,
-          "seeds": 0,
+          "connections": 0,
           "eta": null
         },
         "selection": {

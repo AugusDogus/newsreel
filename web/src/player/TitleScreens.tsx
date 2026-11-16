@@ -41,7 +41,7 @@ function Name({ naming }: { naming: Naming }) {
   );
 }
 
-/** A release in a few words: its quality, size, and swarm. */
+/** A release in a few words: its quality, size, and grabs. */
 function about(release: Release): string {
   const { quality } = release;
   return [
@@ -49,7 +49,7 @@ function about(release: Release): string {
     quality.codec && CODECS[quality.codec],
     quality.hdr && "HDR",
     release.size !== null && bytes(release.size),
-    release.seeders !== null && count(release.seeders, "seeder"),
+    release.grabs !== null && count(release.grabs, "grab"),
     release.sources[0],
   ]
     .filter(Boolean)
@@ -89,7 +89,7 @@ function steps(attempt: Attempt): Step[] {
   return [
     {
       title: found === null ? "Finding sources" : found === 1 ? "Found 1 source" : `Found ${found} sources`,
-      detail: "Searching the indexes for this title's torrents.",
+      detail: "Searching the indexers for this title's releases.",
     },
     {
       title: trying ? `Trying source ${trying.rank} of ${trying.of}` : "Trying sources",

@@ -1,5 +1,5 @@
-//! `torrential indexers`: the Torznab indexers the engine searches, such as the trackers added to
-//! Jackett or Prowlarr.
+//! `torrential indexers`: the Newznab indexers the engine searches, such as NZBHydra, an
+//! indexer's own API, or the Usenet indexers added to Prowlarr.
 
 use torrential_core::Error;
 use torrential_core::indexer::{ApiKey, Check, Indexer, IndexerList, KeyFrom};
@@ -81,8 +81,8 @@ mod tests {
         let list = IndexerList {
             indexers: vec![
                 Indexer {
-                    name: "thepiratebay".into(),
-                    url: "http://127.0.0.1:9117/api/v2.0/indexers/thepiratebay/results/torznab/api".into(),
+                    name: "hydra".into(),
+                    url: "http://127.0.0.1:5076/api".into(),
                     key: KeyFrom::Config,
                     check: Check::Answers {
                         categories: ["Console", "Movies", "Audio", "PC", "TV", "XXX"]
@@ -93,29 +93,29 @@ mod tests {
                     },
                 },
                 Indexer {
-                    name: "filelist".into(),
+                    name: "nzbgeek".into(),
                     url: "http://127.0.0.1:9696/3/api".into(),
                     key: KeyFrom::Env("PROWLARR_KEY".into()),
                     check: Check::Fails { reason: "it refused the API key".into() },
                 },
                 Indexer {
-                    name: "bitmagnet".into(),
-                    url: "http://127.0.0.1:3333/torznab".into(),
+                    name: "drunkenslug".into(),
+                    url: "https://drunkenslug.com/api".into(),
                     key: KeyFrom::None,
                     check: Check::Answers { categories: vec![] },
                 },
             ],
-            added: vec!["thepiratebay".into()],
+            added: vec!["hydra".into()],
         };
         assert_eq!(
             list_doc(&list).plain(),
             "NAME\tANSWERS\tKEY\tCATEGORIES\tURL\n\
-             thepiratebay\tyes\tconfig.yaml\tConsole, Movies, Audio, PC, +2\thttp://127.0.0.1:9117/api/v2.0/indexers/thepiratebay/results/torznab/api\n\
-             filelist\tno\t$PROWLARR_KEY\t-\thttp://127.0.0.1:9696/3/api\n\
-             bitmagnet\tyes\t-\t-\thttp://127.0.0.1:3333/torznab\n\
+             hydra\tyes\tconfig.yaml\tConsole, Movies, Audio, PC, +2\thttp://127.0.0.1:5076/api\n\
+             nzbgeek\tno\t$PROWLARR_KEY\t-\thttp://127.0.0.1:9696/3/api\n\
+             drunkenslug\tyes\t-\t-\thttps://drunkenslug.com/api\n\
              # 3 indexers\n\
-             # added thepiratebay\n\
-             # filelist does not answer: it refused the API key\n"
+             # added hydra\n\
+             # nzbgeek does not answer: it refused the API key\n"
         );
         assert_eq!(
             list_doc(&IndexerList::default()).plain(),

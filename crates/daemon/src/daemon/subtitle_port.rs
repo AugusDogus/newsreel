@@ -1,4 +1,4 @@
-//! Subtitles from online sources, for videos whose torrent carries none.
+//! Subtitles from online sources, for videos whose release carries none.
 
 use std::sync::{Arc, Mutex};
 

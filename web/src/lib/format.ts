@@ -64,7 +64,7 @@ export function list(names: string[]): string {
 
 /**
  * The engine writes messages for a terminal: lower case, no period. On a page they read as sentences.
- * A message that starts with an ID, such as `tt0063350` or an infohash, keeps it as written.
+ * A message that starts with an ID, such as `tt0063350` or a download ID, keeps it as written.
  */
 export function sentence(text: string): string {
   const trimmed = text.trim();

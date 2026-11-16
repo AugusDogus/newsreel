@@ -9,7 +9,7 @@ import { type Fetching, readMedia } from "./ffmpeg";
 export type Session<P, S extends { play: PlayInfo }> =
   | { stage: "starting"; progress: P }
   /**
-   * The download runs. Waiting for the first pieces to see what is in the file, and for ffmpeg while the engine fetches
+   * The download runs. Waiting for the first parts to see what is in the file, and for ffmpeg while the engine fetches
    * it to convert the file.
    */
   | { stage: "reading"; progress: P; started: S; ffmpeg: Fetching | null }

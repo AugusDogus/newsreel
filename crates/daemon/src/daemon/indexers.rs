@@ -1,4 +1,4 @@
-//! The Torznab indexers in config.yaml. The engine adds and removes them, so a command line on
+//! The Newznab indexers in config.yaml. The engine adds and removes them, so a command line on
 //! another machine changes the engine it drives, and its searches use the new list at once.
 
 use std::sync::Arc;
@@ -7,7 +7,7 @@ use tokio::sync::Mutex;
 use torrential_core::indexer::{ApiKey, Check, Indexer, IndexerList};
 use torrential_core::{Error, ErrorCode};
 use torrential_search::indexers::{Found, Probe};
-use torrential_search::{SearchConfig, TorznabConfig};
+use torrential_search::{IndexerConfig, SearchConfig};
 use url::Url;
 
 use super::ctx::Ctx;
@@ -76,16 +76,16 @@ impl Indexers {
     /// load as a whole keeps the old list.
     fn apply(&self, ctx: &Ctx, listed: &Listed, rerun: &str) -> Result<(), Error> {
         let before = Config::load(&self.paths, &self.env)?.search;
-        let torznab = listed
+        let indexers = listed
             .entries
             .iter()
-            .map(|entry| TorznabConfig {
+            .map(|entry| IndexerConfig {
                 name: entry.name.clone(),
                 url: entry.url.clone(),
                 api_key: entry.key.resolve(&self.env).map(|key| key.expose().to_string()),
             })
             .collect();
-        let after = SearchConfig { torznab, disabled: listed.disabled.clone(), ..before.clone() };
+        let after = SearchConfig { indexers, disabled: listed.disabled.clone() };
         ctx.search.reconfigure(&after)?;
         let writes = Writes::new(&self.env, rerun.to_string());
         if let Err(e) = config::save_indexers(&self.paths, listed, &writes) {
@@ -103,7 +103,7 @@ pub async fn list(ctx: &Ctx) -> Result<IndexerList, Error> {
 }
 
 /// Asks `url` what it is, and writes each indexer it finds to config.yaml with `key`: one for a
-/// Torznab endpoint, and each indexer of a Prowlarr or Jackett server. An entry with the same URL
+/// Newznab endpoint, and each Usenet indexer of a Prowlarr server. An entry with the same URL
 /// takes the new key, and the name when one is given.
 pub async fn add(ctx: &Ctx, url: &str, name: Option<String>, key: Option<ApiKey>) -> Result<IndexerList, Error> {
     let indexers = &ctx.indexers;
@@ -113,9 +113,9 @@ pub async fn add(ctx: &Ctx, url: &str, name: Option<String>, key: Option<ApiKey>
     }
     let wanted: Vec<(Option<String>, String, Url)> = match indexers.probe.find(&url, key.as_ref()).await? {
         Found::Endpoint { .. } => vec![(name, derived(&url), url.clone())],
-        Found::Server { app, indexers: hosted } => {
+        Found::Prowlarr { indexers: hosted } => {
             if name.is_some() && hosted.len() > 1 {
-                let message = format!("{} at {url} has {} indexers, and --name names one", app.as_str(), hosted.len());
+                let message = format!("Prowlarr at {url} has {} indexers, and --name names one", hosted.len());
                 return Err(Error::new(ErrorCode::Usage, message).with_hint("leave out --name"));
             }
             hosted.into_iter().map(|hosted| (name.clone(), slug(&hosted.name), hosted.url)).collect()
@@ -211,10 +211,9 @@ fn valid(name: &str) -> Result<(), Error> {
         .with_hint("use lowercase letters, digits, '-', '_', or '.'"))
 }
 
-/// Whether a built-in source or an entry other than the one at `except` is named `name`.
+/// Whether an entry other than the one at `except` is named `name`.
 fn taken(listed: &Listed, name: &str, except: Option<usize>) -> bool {
-    torrential_search::builtin(name)
-        || listed.entries.iter().enumerate().any(|(at, entry)| Some(at) != except && entry.name == name)
+    listed.entries.iter().enumerate().any(|(at, entry)| Some(at) != except && entry.name == name)
 }
 
 /// `name`, or the first of `name-2`, `name-3` and on that is free.
@@ -223,14 +222,11 @@ fn free(listed: &Listed, name: &str) -> String {
     candidates.find(|candidate| !taken(listed, candidate, None)).expect("names never run out")
 }
 
-/// A name for the endpoint at `url`: a Jackett indexer's ID, a Prowlarr indexer's number, or the host.
+/// A name for the endpoint at `url`: a Prowlarr indexer's number, or the host.
 fn derived(url: &Url) -> String {
     let segments: Vec<&str> = url.path_segments().map(|s| s.filter(|s| !s.is_empty()).collect()).unwrap_or_default();
-    let jackett = segments.windows(3).find(|w| w[0] == "indexers" && w[2] == "results").map(|w| w[1]);
-    let named = match (jackett, segments.as_slice()) {
-        (Some("all"), _) => "jackett".to_string(),
-        (Some(id), _) => id.to_string(),
-        (None, [number, "api"]) if number.parse::<u32>().is_ok() => format!("prowlarr-{number}"),
+    let named = match segments.as_slice() {
+        [number, "api"] if number.parse::<u32>().is_ok() => format!("prowlarr-{number}"),
         _ => url.host_str().unwrap_or_default().to_string(),
     };
     slug(&named)
@@ -257,14 +253,13 @@ mod tests {
     #[test]
     fn names_come_from_the_indexer_the_address_names() {
         let named = |url: &str| derived(&Url::parse(url).unwrap());
-        assert_eq!(named("http://127.0.0.1:9117/api/v2.0/indexers/filelist/results/torznab/api"), "filelist");
-        assert_eq!(named("http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/"), "jackett");
         assert_eq!(named("http://nas.local:9696/prowlarr/12/api"), "nas.local");
         assert_eq!(named("http://127.0.0.1:9696/12/api"), "prowlarr-12");
-        assert_eq!(named("http://bitmagnet.lan:3333/torznab"), "bitmagnet.lan");
+        assert_eq!(named("http://hydra.lan:5076/api"), "hydra.lan");
+        assert_eq!(named("https://api.nzbgeek.info/api"), "api.nzbgeek.info");
         assert_eq!(
-            [slug("The Pirate Bay"), slug("FileList.io"), slug("Ро́ (RO)"), slug("!!")],
-            ["the-pirate-bay", "filelist.io", "ro", "indexer"]
+            [slug("NZBgeek"), slug("DrunkenSlug.com"), slug("Ро́ (RO)"), slug("!!")],
+            ["nzbgeek", "drunkenslug.com", "ro", "indexer"]
         );
     }
 

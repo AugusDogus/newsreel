@@ -53,14 +53,14 @@ pub fn run(args: PullArgs, mode: Mode, env: &Env, cwd: &Path) -> Result<u8, Erro
         Some(dir) => super::absolute(dir, cwd, env),
         None => config::downloads_dir(Config::load(&paths, env).as_ref(), &paths),
     };
-    let name = listing.name.clone().unwrap_or_else(|| job.id.to_hex());
+    let name = listing.name.clone();
     let total = listing.files.iter().map(|file| file.size).sum();
     let bar = progress(mode, total);
     let mut pulled = Vec::new();
     for file in &listing.files {
         let path = inside(&dir, &name, &file.path).ok_or_else(|| {
             Error::new(
-                ErrorCode::InvalidTorrent,
+                ErrorCode::InvalidRelease,
                 format!("the engine named a file outside the download: {}", file.path),
             )
         })?;
@@ -92,7 +92,7 @@ fn done(conn: &mut connect::Conn, reference: &str) -> Result<Job, Error> {
 }
 
 /// Where file `path` of the download `name` goes in `dir`, laid out as the engine lays it out: a
-/// torrent of one file is that file, and any other is a folder. `None` for a name or path that
+/// release of one file is that file, and any other is a folder. `None` for a name or path that
 /// would leave `dir`, which an engine that misbehaves could send.
 fn inside(dir: &Path, name: &str, path: &str) -> Option<PathBuf> {
     let parts = |text: &str| -> Option<Vec<String>> {

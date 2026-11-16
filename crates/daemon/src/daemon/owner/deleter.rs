@@ -11,7 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use torrential_core::{Error, ErrorCode, TorrentId};
+use torrential_core::{DownloadId, Error, ErrorCode};
 
 use super::super::book::{Identity, PlayName};
 use super::super::store::{Store, Tombstone};
@@ -144,7 +144,7 @@ impl InUse {
 
 /// One deletion and the download whose engine handle has to close first.
 struct Pending {
-    job: TorrentId,
+    job: DownloadId,
     what: What,
     /// Run before, so its outcome is no longer news for an `rm`.
     ran: bool,
@@ -245,7 +245,7 @@ impl Deleter {
     }
 
     /// Makes a new, empty folder for a play of `id`, and answers where it is and which it is.
-    pub fn make_play(&self, id: TorrentId) -> Result<(PathBuf, Identity), Error> {
+    pub fn make_play(&self, id: DownloadId) -> Result<(PathBuf, Identity), Error> {
         let refused = |why: &str| Error::new(ErrorCode::StorageError, format!("no play can start, for {why}"));
         let root = self.plays.as_ref().map_err(|why| refused(why))?;
         root.intact().map_err(|why| {
@@ -328,12 +328,12 @@ impl Deleter {
     }
 
     /// Whether a deletion of a download not in `draining` is waiting to run.
-    pub fn ready(&self, draining: &BTreeSet<TorrentId>) -> bool {
+    pub fn ready(&self, draining: &BTreeSet<DownloadId>) -> bool {
         self.pending.iter().any(|pending| !draining.contains(&pending.job))
     }
 
     /// The folder of a deletion still waiting for `job`.
-    pub fn waiting_in(&self, job: TorrentId) -> Option<&Path> {
+    pub fn waiting_in(&self, job: DownloadId) -> Option<&Path> {
         self.pending.iter().find(|pending| pending.job == job && !pending.ran).map(|pending| match &pending.what {
             What::Play { dir, .. } | What::Files { dir, .. } => dir.as_path(),
         })
@@ -350,11 +350,11 @@ impl Deleter {
     /// time did, for the `rm` that asked for it.
     pub fn run(
         &mut self,
-        draining: &BTreeSet<TorrentId>,
+        draining: &BTreeSet<DownloadId>,
         in_use: Result<Arc<InUse>, String>,
         store: &mut Store,
         reach: &Reach,
-    ) -> Vec<(TorrentId, Report)> {
+    ) -> Vec<(DownloadId, Report)> {
         let mut reports = Vec::new();
         for mut pending in std::mem::take(&mut self.pending) {
             if draining.contains(&pending.job) {
@@ -734,8 +734,8 @@ mod tests {
         Trash::At(root.join("trash"))
     }
 
-    fn id(n: u8) -> TorrentId {
-        TorrentId::from_bytes([n; 20])
+    fn id(n: u8) -> DownloadId {
+        DownloadId::from_bytes([n; 20])
     }
 
     fn tomb(n: u8) -> Tombstone {

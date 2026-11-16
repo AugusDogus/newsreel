@@ -1,5 +1,6 @@
-//! Shows which releases a title's search keeps and which it drops, against the live sources.
-//! Run it to judge the matcher on real names: `cargo run --example title_sources tt0063350`.
+//! Shows which releases a title's search keeps and which it drops, against a live Newznab
+//! indexer. Run it to judge the matcher on real names:
+//! `NEWZNAB_URL=http://127.0.0.1:5076/api NEWZNAB_API_KEY=… cargo run --example title_sources tt0063350`.
 //! `--screen 1080p` or `--screen 2160p` and `--language en` rank as a machine with that screen
 //! and system language would.
 
@@ -8,7 +9,7 @@ use std::collections::BTreeSet;
 use torrential_core::title::{Span, Wanted, normalized};
 use torrential_core::{Category, Language, Machine, Os, Preferences, Profile, Screen, SearchQuery, VideoRef};
 use torrential_search::catalog::{Catalog, CatalogConfig};
-use torrential_search::{ResultCache, Search, SearchConfig};
+use torrential_search::{IndexerConfig, ResultCache, Search, SearchConfig};
 
 const MOST: u16 = 200;
 const WITHIN_MS: u32 = 12_000;
@@ -26,7 +27,10 @@ async fn main() {
     println!("{} ({:?}), {:?}, queries {:?}", wanted.name, wanted.year, wanted.namesakes, wanted.queries());
     println!("ranked for {}", profile.describe());
 
-    let search = Search::new(&SearchConfig::default(), ResultCache::new()).expect("a search");
+    let url = std::env::var("NEWZNAB_URL").unwrap_or_else(|_| fail("set NEWZNAB_URL to a Newznab API URL"));
+    let indexer = IndexerConfig { name: "indexer".into(), url, api_key: std::env::var("NEWZNAB_API_KEY").ok() };
+    let config = SearchConfig { indexers: vec![indexer], ..SearchConfig::default() };
+    let search = Search::new(&config, ResultCache::new()).expect("a search");
     let query = |text: String, wanted: Option<Wanted>| SearchQuery {
         category: Some(Category::Video),
         limit: MOST,
@@ -40,10 +44,10 @@ async fn main() {
     println!("\nkept {} of {} in play order:", kept.releases.len(), kept.total);
     for release in &kept.releases {
         let span = release.span.map(|span| span.to_string()).unwrap_or_default();
-        let seeders = release.seeders.map_or("?".into(), |s| s.to_string());
+        let grabs = release.grabs.map_or("?".into(), |g| g.to_string());
         let size = release.size.map_or("?".into(), |bytes| format!("{:.1}G", bytes as f64 / 1e9));
         let words = wanted.other_words(&release.name);
-        println!("  {span:<9}{seeders:>6} seeds {size:>7} +{words}  {}  [{}]", release.name, release.sources.join(","));
+        println!("  {span:<9}{grabs:>6} grabs {size:>7} +{words}  {}  [{}]", release.name, release.sources.join(","));
     }
 
     let ids: Vec<_> = kept.releases.iter().map(|r| r.id).collect();
@@ -51,23 +55,22 @@ async fn main() {
     for text in wanted.queries() {
         if let Ok(raw) = search.search(&query(text, None)).await {
             let gone = raw.releases.into_iter().filter(|r| !ids.contains(&r.id));
-            dropped.extend(gone.map(|r| (wanted.fit(&r.name).map(|n| n.span), r.name, r.seeders, r.size)));
+            dropped.extend(gone.map(|r| (wanted.fit(&r.name).map(|n| n.span), r.name, r.grabs, r.size)));
         }
     }
     let name = normalized(&wanted.name);
     let (fits, rest): (Vec<_>, Vec<_>) = dropped.into_iter().partition(|(span, ..)| span.is_some());
     let (near, far): (Vec<_>, Vec<_>) = rest.into_iter().partition(|(_, d, ..)| normalized(d).contains(&name));
-    println!("\ndropped {} that fit the title, for no seeders, a fake size, or being an extra:", fits.len());
-    for (span, name, seeders, size) in &fits {
-        let reason = match (seeders, span.and_then(|span| mbps(&wanted, span, *size))) {
-            (Some(0), _) => "no seeders".to_string(),
-            (_, Some(rate)) if rate < 0.25 => format!("{rate:.2} Mbit/s"),
+    println!("\ndropped {} that fit the title, for a fake size or being an extra:", fits.len());
+    for (span, name, _, size) in &fits {
+        let reason = match span.and_then(|span| mbps(&wanted, span, *size)) {
+            Some(rate) if rate < 0.25 => format!("{rate:.2} Mbit/s"),
             _ => "an extra".to_string(),
         };
         println!("  {reason:<12}  {name}");
     }
     println!("\ndropped {} that do not fit, whose name holds the title:", near.len());
-    near.iter().for_each(|(_, name, seeders, _)| println!("  {seeders:?} seeds  {name}"));
+    near.iter().for_each(|(_, name, grabs, _)| println!("  {grabs:?} grabs  {name}"));
     println!("\ndropped {} others", far.len());
 }
 

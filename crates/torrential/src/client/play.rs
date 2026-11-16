@@ -31,7 +31,7 @@ use torrential_daemon::player::{self, Launch, Player};
 
 const TICK: Duration = Duration::from_millis(500);
 /// The countdown plans with the mean rate over this long, since the rate a moment reports swings as
-/// pieces and peers come and go.
+/// articles and connections come and go.
 const RATE_WINDOW: Duration = Duration::from_secs(20);
 
 #[derive(Serialize)]
@@ -82,7 +82,7 @@ pub enum Hold {
 pub fn run(args: PlayArgs, mode: Mode, env: &Env, cwd: &Path) -> Result<u8, Error> {
     let video = titles::named(&args.words)?;
     match &video {
-        Some(video) if args.dir.is_some() => return Err(torrential_core::target::not_a_torrent(video, "--dir")),
+        Some(video) if args.dir.is_some() => return Err(torrential_core::target::not_a_release(video, "--dir")),
         None if args.source.is_some() => return Err(titles::for_a_title("--source")),
         _ => {}
     }
@@ -94,13 +94,13 @@ pub fn run(args: PlayArgs, mode: Mode, env: &Env, cwd: &Path) -> Result<u8, Erro
             let (reply, title) = titles::play(&mut conn, TitleRequest { video, source: args.source }, mode)?;
             Playing { name: title.name.clone(), reply, title: Some(title) }
         }
-        None => torrent(&mut conn, args, mode, env, cwd)?,
+        None => release(&mut conn, args, mode, env, cwd)?,
     };
     present(conn, playing, mode, env, &paths, &config)
 }
 
-/// Starts the video of the torrent `args` name, or of the top search result for its words.
-fn torrent(conn: &mut Conn, args: PlayArgs, mode: Mode, env: &Env, cwd: &Path) -> Result<Playing, Error> {
+/// Starts the video of the release `args` name, or of the top search result for its words.
+fn release(conn: &mut Conn, args: PlayArgs, mode: Mode, env: &Env, cwd: &Path) -> Result<Playing, Error> {
     let finding = (mode == Mode::Human).then(|| {
         let bar = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr())
             .with_style(ProgressStyle::with_template("{spinner} {msg}").expect("the template is valid"));
@@ -115,7 +115,7 @@ fn torrent(conn: &mut Conn, args: PlayArgs, mode: Mode, env: &Env, cwd: &Path) -
     let (target, title, listing) = found?;
     let dir = args.dir.map(|d| absolute(&d, cwd, env));
     let reply = start(conn, target, &listing, dir)?;
-    let name = title.or(listing.name).unwrap_or_else(|| short_ref(&listing.id));
+    let name = title.unwrap_or(listing.name);
     Ok(Playing { name, reply, title: None })
 }
 
@@ -219,18 +219,27 @@ pub fn open(conn: &mut Conn, player: &Player, playing: &Playing, env: &Env, path
 /// Picks the video and its subtitles from `listing` and asks the engine to stream them.
 pub fn start(conn: &mut Conn, target: Target, listing: &FilesReply, dir: Option<PathBuf>) -> Result<PlayReply, Error> {
     let Some(playable) = stream::pick(&listing.files, Plays::ANY) else {
-        let id = short_ref(&listing.id);
-        let name = listing.name.clone().unwrap_or_else(|| id.clone());
-        return Err(Error::new(ErrorCode::NoSelection, format!("{name} has no video file"))
-            .with_hint(format!("run torrential files {id} to list its files"))
-            .with_next(format!("torrential files {id}")));
+        // Named the way the user named it: a release not downloaded yet has no download ID.
+        let again = match &target {
+            Target::Prefix(prefix) => Some(short_ref(prefix)),
+            Target::NzbFile(path) => Some(shell_word(&path.display().to_string())),
+            // The URL can carry an API key, so it is never printed.
+            Target::NzbUrl(_) | Target::Title(_) => None,
+        };
+        let error = Error::new(ErrorCode::NoSelection, format!("{} has no video file", listing.name));
+        return Err(match again {
+            Some(again) => error
+                .with_hint(format!("run torrential files {again} to list its files"))
+                .with_next(format!("torrential files {again}")),
+            None => error.with_hint("run torrential files with the same NZB URL to list its files"),
+        });
     };
     let files = [playable.video].into_iter().chain(playable.subtitles).collect();
     let reply: Box<PlayReply> = conn.ask(&Request::Play(PlayRequest { target, dir, files }))?;
     Ok(*reply)
 }
 
-/// The torrent the words name, with its files and, when a search found it, the result's name. A
+/// The release the words name, with its files and, when a search found it, the result's name. A
 /// single word that names a download, a search result, or anything else `get` takes wins over a
 /// search for the words, which takes the top video result.
 fn resolve(conn: &mut Conn, words: &[String], cwd: &Path) -> Result<(Target, Option<String>, FilesReply), Error> {
@@ -394,7 +403,7 @@ pub fn hold_line(hold: Hold) -> String {
         Hold::Countdown(wait) => {
             format!("Starts in {} so playback does not pause. Press Enter to start now", format::clock(wait))
         }
-        Hold::Stalled => "Waiting for peers".to_string(),
+        Hold::Stalled => "Waiting for the servers".to_string(),
     }
 }
 

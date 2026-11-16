@@ -6,16 +6,16 @@ import { Spinner } from "../ui/Spinner";
 
 /** Typing pauses this long before a search starts. */
 const TYPING_MS = 300;
-/** Text that names one torrent instead of describing one: a magnet link, an infohash, or a .torrent URL. */
-const TORRENT = /^(magnet:\?\S+|[0-9a-f]{40}|https?:\/\/\S+\.torrent(\?\S*)?)$/i;
+/** Text that names one release instead of describing one: a 40-hex download ID, a `u` result ID, or an NZB's URL. */
+const DIRECT = /^(u?[0-9a-f]{40}|https?:\/\/\S+)$/i;
 
 export interface SearchText {
   text: string;
   setText: (text: string) => void;
-  /** The text names one torrent, which Enter plays. */
-  torrent: boolean;
+  /** The text names one release, which Enter plays. */
+  direct: boolean;
   commit: (words: string) => void;
-  /** Escape clears, and Enter plays a torrent or searches before the typing pause ends. True when the key was used. */
+  /** Escape clears, and Enter plays a release or searches before the typing pause ends. True when the key was used. */
   keyDown: (event: KeyboardEvent<HTMLInputElement>) => boolean;
 }
 
@@ -38,9 +38,9 @@ export function useSearchText(query: string, onCommit: (words: string) => void):
     committed.current = words;
     onCommit(words);
   };
-  const torrent = TORRENT.test(text.trim());
+  const direct = DIRECT.test(text.trim());
   useEffect(() => {
-    if (torrent || text.trim() === committed.current.trim()) return;
+    if (direct || text.trim() === committed.current.trim()) return;
     const timer = setTimeout(() => commit(text.trim()), TYPING_MS);
     return () => clearTimeout(timer);
   });
@@ -50,7 +50,7 @@ export function useSearchText(query: string, onCommit: (words: string) => void):
       event.preventDefault();
       setText("");
       commit("");
-    } else if (event.key === "Enter" && torrent) {
+    } else if (event.key === "Enter" && direct) {
       event.stopPropagation();
       navigate(watchPath(text.trim()));
     } else if (event.key === "Enter" && text.trim() !== committed.current.trim()) {
@@ -63,7 +63,7 @@ export function useSearchText(query: string, onCommit: (words: string) => void):
     return true;
   };
 
-  return { text, setText, torrent, commit, keyDown };
+  return { text, setText, direct, commit, keyDown };
 }
 
 interface Props {
@@ -137,7 +137,7 @@ export function SearchField({ input, search, label, placeholder, busy, onKeyDown
       </div>
       <div className="flex min-h-7 items-center justify-between gap-4 px-0.5">
         <p aria-live="polite" className="truncate text-sm text-pencil tabular-nums">
-          {search.torrent ? "Press Enter to play this torrent" : status}
+          {search.direct ? "Press Enter to play this release" : status}
         </p>
         {aside}
       </div>

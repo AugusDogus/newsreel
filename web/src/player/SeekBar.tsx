@@ -65,7 +65,7 @@ const clamp = (value: number) => Math.min(1, Math.max(0, value));
 const at = (fraction: number) => ({ "--at": `${fraction * 100}%` }) as CSSProperties;
 
 /**
- * The timeline. From dim to bright it shows what has not downloaded, what the torrent has on disk,
+ * The timeline. From dim to bright it shows what has not downloaded, what the release has on disk,
  * what the browser has buffered, and what has played. The playhead is drawn every frame straight
  * to the DOM, so playing renders nothing in React.
  */

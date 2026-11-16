@@ -297,7 +297,7 @@ pub fn post(address: &Address, token: &str, client: Client, request: &Request, w
 }
 
 /// Where an engine serves file `index` of download `id`, whole or in ranges, under its own name.
-pub fn file_route(id: torrential_core::TorrentId, index: u32, path: &str) -> String {
+pub fn file_route(id: torrential_core::DownloadId, index: u32, path: &str) -> String {
     crate::daemon::http::route_of(id, index, path)
 }
 

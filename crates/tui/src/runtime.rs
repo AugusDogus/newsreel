@@ -139,8 +139,7 @@ fn run_loop<B: Backend>(
 fn wake_at(state: &State) -> Option<Instant> {
     let spin = state.spinning().then(|| state.next_frame());
     let toast = state.toast.as_ref().map(|t| t.until);
-    let prefetch = state.prefetch.map(|(_, at)| at);
-    [spin, toast, prefetch, state.next_stall()].into_iter().flatten().min()
+    [spin, toast, state.next_stall()].into_iter().flatten().min()
 }
 
 fn listen(tx: Sender<Msg>) {

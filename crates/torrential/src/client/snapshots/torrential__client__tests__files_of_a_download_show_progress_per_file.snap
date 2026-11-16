@@ -1,6 +1,6 @@
 ---
 source: crates/torrential/src/client/tests.rs
-expression: "both(&files(&reply), &Response::Files { files: reply })"
+expression: "both(&files(&reply, None), &Response::Files { files: reply })"
 ---
 SIZE	DONE	PATH
 4.0 GiB	100%	debian-13.1.0-amd64-DVD-1.iso
@@ -40,7 +40,7 @@ next: torrential wait 9b5212
         "verified": 0
       }
     ],
-    "metadata_source": "download",
+    "source": "download",
     "elapsed_ms": 3
   },
   "next": "torrential wait 9b5212"

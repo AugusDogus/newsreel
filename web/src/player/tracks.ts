@@ -5,7 +5,7 @@ import { fileName } from "../lib/release";
 import { preferences, savePreferences } from "../lib/storage";
 
 export type SubtitleSource =
-  /** A subtitle file of the torrent. */
+  /** A subtitle file of the release. */
   | { kind: "file"; index: number }
   /** A text track inside the video file. */
   | { kind: "embedded"; stream: number }
@@ -21,7 +21,7 @@ export interface SubtitleOption {
   language: string | null;
   /** The track's own language tag, which tells regional forms apart. */
   tag: string | null;
-  /** Online tracks made for this exact file fit its timing. Tracks of the torrent always do. */
+  /** Online tracks made for this exact file fit its timing. Tracks of the release always do. */
   exact: boolean;
   /** Null for picture subtitles, which cannot be drawn as text. */
   source: SubtitleSource | null;
@@ -33,7 +33,7 @@ function localOptions(play: PlayInfo, media: MediaInfo): SubtitleOption[] {
     return {
       key: `file:${file.index}`,
       label: language ? languageName(language) : fileName(file.path),
-      detail: language ? fileName(file.path) : "A file in this torrent",
+      detail: language ? fileName(file.path) : "A file in this release",
       language,
       tag: language,
       exact: true,
@@ -130,7 +130,7 @@ function bestIn(options: SubtitleOption[], languages: string[]): SubtitleOption 
 }
 
 export interface Subtitles {
-  /** Tracks of the torrent: its subtitle files, then the video's own tracks. */
+  /** Tracks of the release: its subtitle files, then the video's own tracks. */
   local: SubtitleOption[];
   online: OnlineLookup;
   /** The track showing, or null for none. */
@@ -139,7 +139,7 @@ export interface Subtitles {
   choose: (key: string | null) => void;
   /**
    * Turns subtitles off, or on: the track last shown, else one in a preferred language from the
-   * torrent, else the best online one. Returns what is showing after, or `"none"` when there is
+   * release, else the best online one. Returns what is showing after, or `"none"` when there is
    * nothing to turn on.
    */
   toggle: () => SubtitleOption | null | "none";
@@ -147,7 +147,7 @@ export interface Subtitles {
 
 /**
  * The subtitle tracks of one video and which one shows. The online lookup runs beside playback
- * and never holds it up. When the person has subtitles on in a language the torrent lacks, the
+ * and never holds it up. When the person has subtitles on in a language the release lacks, the
  * best online track in that language turns on by itself once it is found, and gives way to one
  * timed for this exact file when the engine finds that later.
  */

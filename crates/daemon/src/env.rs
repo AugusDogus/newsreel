@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use torrential_core::units::{parse_duration, parse_size};
-use torrential_core::{Error, ErrorCode, TorrentId};
+use torrential_core::{DownloadId, Error, ErrorCode};
 
 pub mod hooks;
 
@@ -149,20 +149,6 @@ impl<'a> TestHooks<'a> {
         self.var(hook) == Some("live")
     }
 
-    /// The peers of the loopback network, or `None` on the public network.
-    pub fn loopback_peers(&self) -> Result<Option<Vec<SocketAddr>>, Error> {
-        if self.var(hooks::NETWORK) != Some("loopback") {
-            return Ok(None);
-        }
-        let Some(list) = self.var(hooks::PEERS) else { return Ok(Some(Vec::new())) };
-        let peer = |peer: &str| {
-            peer.trim().parse().map_err(|_| {
-                Error::new(ErrorCode::Usage, format!("{} has {peer:?}, which is not an address", hooks::PEERS))
-            })
-        };
-        list.split(',').map(peer).collect::<Result<_, _>>().map(Some)
-    }
-
     pub fn ssdp(&self) -> Result<Option<SocketAddr>, Error> {
         self.var(hooks::SSDP)
             .map(|address| {
@@ -171,12 +157,12 @@ impl<'a> TestHooks<'a> {
             .transpose()
     }
 
-    /// Bytes per second the fake swarm sends.
+    /// Bytes per second the fake network sends.
     pub fn fake_rate(&self) -> u64 {
         self.var(hooks::FAKE_RATE).and_then(parse_size).unwrap_or(10 << 20)
     }
 
-    pub fn dead(&self) -> Vec<TorrentId> {
+    pub fn dead(&self) -> Vec<DownloadId> {
         self.var(hooks::DEAD).unwrap_or_default().split(',').filter_map(|id| id.parse().ok()).collect()
     }
 

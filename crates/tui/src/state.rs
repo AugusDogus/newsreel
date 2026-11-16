@@ -5,14 +5,14 @@ use std::time::{Duration, Instant};
 use torrential_core::protocol::JobAction;
 use torrential_core::units::format_limit;
 use torrential_core::{
-    Error, Job, JobStatus, Machine, Playback, Preferences, Release, ReleaseId, Screen, SourceReport, TorrentFile,
-    TorrentId,
+    DownloadId, Error, Job, JobStatus, Machine, Playback, Preferences, Release, ReleaseFile, ResultId, Screen,
+    SourceReport,
 };
 
 use crate::titles::Titles;
 use crate::tree::Tree;
 
-/// Which screen shows: films and shows, or the downloads with their torrent search.
+/// Which screen shows: films and shows, or the downloads with their Usenet search.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Page {
     Titles,
@@ -21,8 +21,8 @@ pub enum Page {
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Item {
-    Download(TorrentId),
-    Result(ReleaseId),
+    Download(DownloadId),
+    Result(ResultId),
 }
 
 impl Item {
@@ -184,7 +184,7 @@ impl Edit {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Sort {
     BestMatch,
-    Seeds,
+    Grabs,
     Size,
     Age,
 }
@@ -193,7 +193,7 @@ impl Sort {
     pub fn label(self) -> &'static str {
         match self {
             Self::BestMatch => "best match",
-            Self::Seeds => "seeds",
+            Self::Grabs => "grabs",
             Self::Size => "size",
             Self::Age => "age",
         }
@@ -201,8 +201,8 @@ impl Sort {
 
     pub fn next(self) -> Self {
         match self {
-            Self::BestMatch => Self::Seeds,
-            Self::Seeds => Self::Size,
+            Self::BestMatch => Self::Grabs,
+            Self::Grabs => Self::Size,
             Self::Size => Self::Age,
             Self::Age => Self::BestMatch,
         }
@@ -224,7 +224,7 @@ pub enum Files {
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct DownloadFiles {
-    pub files: Vec<TorrentFile>,
+    pub files: Vec<ReleaseFile>,
     pub asked: Instant,
     pub cursor: usize,
     pub scroll: usize,
@@ -235,7 +235,7 @@ impl DownloadFiles {
         Self { files: Vec::new(), asked, cursor: 0, scroll: 0 }
     }
 
-    pub fn picked(&self) -> Vec<&TorrentFile> {
+    pub fn picked(&self) -> Vec<&ReleaseFile> {
         self.files.iter().filter(|f| f.selected).collect()
     }
 
@@ -290,7 +290,7 @@ pub enum Upgrade {
 
 pub fn group(status: &JobStatus) -> u8 {
     match status {
-        JobStatus::Downloading | JobStatus::Checking | JobStatus::Metadata | JobStatus::Queued => 0,
+        JobStatus::Downloading | JobStatus::Checking | JobStatus::Queued => 0,
         JobStatus::Error { .. } => 1,
         JobStatus::Paused => 2,
         JobStatus::Done { .. } => 3,
@@ -299,7 +299,7 @@ pub fn group(status: &JobStatus) -> u8 {
 
 pub fn label(status: &JobStatus) -> &'static str {
     match status {
-        JobStatus::Downloading | JobStatus::Metadata => "downloading",
+        JobStatus::Downloading => "downloading",
         JobStatus::Checking => "checking",
         JobStatus::Queued => "waiting",
         JobStatus::Error { .. } => "error",
@@ -322,24 +322,25 @@ pub struct State {
     pub page: Page,
     pub titles: Titles,
     pub downloads: Vec<Job>,
-    pub download_files: HashMap<TorrentId, DownloadFiles>,
-    pub pending: HashMap<TorrentId, JobAction>,
-    pub arrived: HashMap<TorrentId, Instant>,
+    pub download_files: HashMap<DownloadId, DownloadFiles>,
+    pub pending: HashMap<DownloadId, JobAction>,
+    pub arrived: HashMap<DownloadId, Instant>,
     pub free_space: Option<u64>,
     pub free_space_at: Option<Instant>,
     pub query: Input,
     pub search: Option<Search>,
     pub sort: Sort,
-    pub files: HashMap<ReleaseId, Files>,
+    pub files: HashMap<ResultId, Files>,
+    /// The download each search result started here became.
+    pub became: HashMap<ResultId, DownloadId>,
     pub focus: Focus,
     pub cursor: Option<Item>,
     pub collapsed: bool,
     pub follow_top: bool,
     pub touched: bool,
-    pub prefetch: Option<(ReleaseId, Instant)>,
     pub scroll: u16,
     pub help: bool,
-    pub confirm: Option<TorrentId>,
+    pub confirm: Option<DownloadId>,
     pub ranking: Option<Ranking>,
     pub preferences: Option<Preferences>,
     pub machine: Option<Machine>,
@@ -352,7 +353,6 @@ pub struct State {
 pub const SPINNER: [&str; 4] = ["   ", ".  ", ".. ", "..."];
 pub const SPIN_EVERY: Duration = Duration::from_millis(250);
 pub const STALL_AFTER: Duration = Duration::from_secs(30);
-pub const PREFETCH_AFTER: Duration = Duration::from_millis(300);
 
 impl State {
     pub fn new(now: Instant, clock: i64, size: (u16, u16), home: Option<PathBuf>) -> Self {
@@ -375,12 +375,12 @@ impl State {
             search: None,
             sort: Sort::BestMatch,
             files: HashMap::new(),
+            became: HashMap::new(),
             focus: Focus::Query,
             cursor: None,
             collapsed: false,
             follow_top: false,
             touched: false,
-            prefetch: None,
             scroll: 0,
             help: false,
             confirm: None,
@@ -406,7 +406,7 @@ impl State {
         self.started + SPIN_EVERY * (self.frames() as u32 + 1)
     }
 
-    pub fn job(&self, id: TorrentId) -> Option<&Job> {
+    pub fn job(&self, id: DownloadId) -> Option<&Job> {
         self.downloads.iter().find(|j| j.id == id)
     }
 
@@ -434,7 +434,7 @@ impl State {
         }
     }
 
-    pub fn release(&self, id: ReleaseId) -> Option<&Release> {
+    pub fn release(&self, id: ResultId) -> Option<&Release> {
         self.search.as_ref()?.releases.iter().find(|r| r.id == id)
     }
 
@@ -457,7 +457,7 @@ impl State {
             .collect();
         match self.sort {
             Sort::BestMatch => {}
-            Sort::Seeds => shown.sort_by_key(|r| std::cmp::Reverse(r.seeders)),
+            Sort::Grabs => shown.sort_by_key(|r| std::cmp::Reverse(r.grabs)),
             Sort::Size => shown.sort_by_key(|r| std::cmp::Reverse(r.size)),
             Sort::Age => shown.sort_by_key(|r| std::cmp::Reverse(r.published)),
         }
@@ -487,11 +487,13 @@ impl State {
         downloads.chain(self.results().into_iter().map(|r| Item::Result(r.id))).collect()
     }
 
+    /// Whether a search result is already one of the downloads.
+    pub fn downloaded(&self, id: ResultId) -> bool {
+        self.became.get(&id).is_some_and(|job| self.job(*job).is_some())
+    }
+
     pub fn active(&self) -> usize {
-        self.downloads
-            .iter()
-            .filter(|j| matches!(j.status, JobStatus::Downloading | JobStatus::Metadata | JobStatus::Checking))
-            .count()
+        self.downloads.iter().filter(|j| matches!(j.status, JobStatus::Downloading | JobStatus::Checking)).count()
     }
 
     pub fn rate(&self) -> u64 {
@@ -506,7 +508,7 @@ impl State {
         let starting = self.engine == Engine::Starting;
         let searching = self.search.as_ref().is_some_and(|s| matches!(s.phase, SearchPhase::Running { .. }));
         let loading = self.files.values().any(|f| matches!(f, Files::Loading { .. }));
-        let busy_job = self.downloads.iter().any(|j| matches!(j.status, JobStatus::Metadata | JobStatus::Checking));
+        let busy_job = self.downloads.iter().any(|j| j.status == JobStatus::Checking);
         let upgrading = matches!(self.upgrade, Some(Upgrade::Installing(_)));
         let titles = self.titles.spinning();
         starting || searching || loading || busy_job || upgrading || titles || !self.pending.is_empty()

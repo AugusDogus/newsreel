@@ -64,7 +64,7 @@ interface Props {
   /** Null where the browser has no way to fill the screen. */
   onFullscreen: (() => void) | null;
   filesOpen: boolean;
-  /** More than one video in the torrent. */
+  /** More than one video in the release. */
   hasFiles: boolean;
   hasNext: boolean;
   nextLabel: string;
@@ -119,7 +119,7 @@ export function Controls(props: Props) {
         <div className="min-w-0 flex-1" />
 
         {props.hasFiles && (
-          <ControlButton label="Videos in this torrent" aria-expanded={props.filesOpen} onClick={props.onFiles}>
+          <ControlButton label="Videos in this release" aria-expanded={props.filesOpen} onClick={props.onFiles}>
             <QueueListIcon />
           </ControlButton>
         )}

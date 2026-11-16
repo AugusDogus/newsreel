@@ -8,7 +8,7 @@ export type Route =
   | { page: "title"; id: string; season: number | null; sources: string | null }
   /** A film or an episode, or a series for its next episode. `source` pins one release. */
   | { page: "play"; video: string; source: string | null }
-  | { page: "torrents"; query: string; everything: boolean }
+  | { page: "releases"; query: string; everything: boolean }
   | { page: "watch"; ref: string; file: number | null }
   | { page: "downloads" }
   /** The phones and TVs that watch from this Mac, and the code that adds one. */
@@ -42,8 +42,8 @@ function parse(href: string): Route {
   if (parts[0] === "play" && parts.length === 2 && VIDEO_REF.test(parts[1]!)) {
     return { page: "play", video: parts[1]!, source: query.get("source") };
   }
-  if (parts[0] === "torrents" && parts.length === 1) {
-    return { page: "torrents", query: query.get("q") ?? "", everything: query.has("all") };
+  if (parts[0] === "releases" && parts.length === 1) {
+    return { page: "releases", query: query.get("q") ?? "", everything: query.has("all") };
   }
   if (parts[0] === "watch" && parts.length === 2) {
     const file = query.get("file");
@@ -75,11 +75,11 @@ export function playPath(video: string, source?: string): string {
   return withQuery(`/play/${video}`, new URLSearchParams(source ? { source } : {}));
 }
 
-export function torrentsPath(query: string, everything: boolean): string {
+export function releasesPath(query: string, everything: boolean): string {
   const params = new URLSearchParams();
   if (query) params.set("q", query);
   if (everything) params.set("all", "1");
-  return withQuery("/torrents", params);
+  return withQuery("/releases", params);
 }
 
 export function watchPath(ref: string, file?: number): string {

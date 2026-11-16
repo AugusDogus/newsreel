@@ -1,15 +1,13 @@
 //! The names of the variables a test sets to change what torrential does. The end-to-end tests
 //! include this file, so a name is spelled once.
 
-/// `fake` runs the made-up engine, swarm, search and catalogs instead of libtorrent and the network.
+/// `fake` runs the made-up engine, network, search and catalogs instead of Usenet and the indexers.
 pub const ENGINE: &str = "TORRENTIAL_TEST_ENGINE";
-/// `loopback` keeps libtorrent off the public network, with the peers in `PEERS`.
+/// `loopback` runs the real engine against the loopback NNTP servers and indexers a test serves.
 pub const NETWORK: &str = "TORRENTIAL_TEST_NETWORK";
-/// Comma-separated addresses of the peers on the loopback network.
-pub const PEERS: &str = "TORRENTIAL_TEST_PEERS";
-/// How fast the fake swarm sends, as a size per second.
+/// How fast the fake network sends, as a size per second.
 pub const FAKE_RATE: &str = "TORRENTIAL_TEST_FAKE_RATE";
-/// Comma-separated IDs of torrents no fake peer sends a piece of.
+/// Comma-separated IDs of downloads whose articles no fake server has.
 pub const DEAD: &str = "TORRENTIAL_TEST_DEAD";
 /// `live` gives the fake engine the real subtitle sources.
 pub const SUBTITLES: &str = "TORRENTIAL_TEST_SUBTITLES";

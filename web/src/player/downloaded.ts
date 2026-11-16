@@ -9,8 +9,8 @@ export type Downloaded = number[];
 const POLL_MS = 1000;
 const WHOLE: Downloaded = Array.from({ length: PIECE_RUNS }, () => 1);
 
-/** The torrent-wide map, read for this file: coarse for a small file in a large torrent, but always there. */
-function fromTorrentMap(job: Job, file: StreamedFile, totalSize: number): Downloaded {
+/** The release-wide map, read for this file: coarse for a small file in a large release, but always there. */
+function fromReleaseMap(job: Job, file: StreamedFile, totalSize: number): Downloaded {
   const runs = arrived(job, file, totalSize);
   return Array.from({ length: PIECE_RUNS }, (_, i) => {
     const middle = (i + 0.5) / PIECE_RUNS;
@@ -20,7 +20,7 @@ function fromTorrentMap(job: Job, file: StreamedFile, totalSize: number): Downlo
 
 /**
  * Which parts of the playing file have downloaded. Asks the engine for the file's own piece map
- * about once a second while the download runs, and reads the job's torrent-wide map while the
+ * about once a second while the download runs, and reads the job's release-wide map while the
  * engine does not answer.
  */
 export function useDownloaded(job: Job, file: StreamedFile, totalSize: number): Downloaded {
@@ -46,7 +46,7 @@ export function useDownloaded(job: Job, file: StreamedFile, totalSize: number): 
     };
   }, [id, file.index, done]);
 
-  const coarse = useMemo(() => (own || done ? null : fromTorrentMap(job, file, totalSize)), [own, done, job, file, totalSize]);
+  const coarse = useMemo(() => (own || done ? null : fromReleaseMap(job, file, totalSize)), [own, done, job, file, totalSize]);
   return done ? WHOLE : (own ?? coarse ?? WHOLE);
 }
 

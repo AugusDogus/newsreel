@@ -1,12 +1,12 @@
 ---
 source: crates/torrential/src/client/tests.rs
-expression: "both(&doc, &Typed\n{ kind: \"files\", body: Files { files: reply, matched: Some(matched) } })"
+expression: "both(&doc, &Typed\n{\n    kind: DocKind::Files, body: Files { files: reply, matched: Some(matched) }\n})"
 ---
 SIZE	DONE	PATH
 51.4 KiB	-	Night.asr.srt
 569 MiB	-	Night.mp4
 250 MiB	-	VTS_01_1.mp4
-# 3 of 4 files in night_of_the_living_dead_dvd match · 819 MiB · file list from the .torrent URL in 0.4s
+# 3 of 4 files in night_of_the_living_dead_dvd match · 819 MiB · file list from the NZB URL in 0.4s
 next: torrential get 6bc1af --files '*.MP4' --files Night.asr.srt
 
 --- json
@@ -40,7 +40,7 @@ next: torrential get 6bc1af --files '*.MP4' --files Night.asr.srt
         "verified": 0
       }
     ],
-    "metadata_source": "torrent_url",
+    "source": "nzb_url",
     "elapsed_ms": 412
   },
   "matched": {

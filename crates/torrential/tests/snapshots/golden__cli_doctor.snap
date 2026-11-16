@@ -41,7 +41,7 @@ expression: value
       {
         "check": "sources",
         "status": "skipped",
-        "detail": "8 enabled; run torrential doctor --network to test each one"
+        "detail": "0 enabled; run torrential doctor --network to test each one"
       },
       {
         "check": "profile",

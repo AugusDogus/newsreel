@@ -13,7 +13,7 @@ use torrential_core::{DeviceList, ErrorCode};
 use super::super::devices::Reach;
 use super::super::http;
 use super::super::names::Names;
-use super::{GIB, Harness, MIB, Outside, fake, torrent, written};
+use super::{GIB, Harness, MIB, Outside, fake, release, written};
 use crate::config::{Exposure, PublicAddress};
 
 const IPHONE: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148";
@@ -139,12 +139,12 @@ pub(super) async fn listening(h: &Harness, ip: Ipv4Addr, on: bool) {
 async fn a_phone_reaches_nothing_until_it_pairs_and_nothing_once_it_is_removed() {
     let ip = lan();
     let h = Harness::new();
-    let film = torrent(70, "film", &[("film.mp4", 2 * MIB)]);
+    let film = release(70, "film", &[("film.mp4", 2 * MIB)]);
     written(&h.downloads().join("film/film.mp4"), 2 * MIB);
-    h.swarm.set_rate(100 * GIB);
-    h.get(h.torrent_file(&film), &[]).await.unwrap();
+    h.network.set_rate(100 * GIB);
+    h.get(h.nzb_file(&film), &[]).await.unwrap();
     h.until("done", |jobs| jobs[0].status.name() == "done").await;
-    let file = format!("/{}/0/film.mp4", film.info_hash.id().to_hex());
+    let file = format!("/{}/0/film.mp4", film.id.to_hex());
     listening(&h, ip, false).await;
 
     let offer = devices(&h, Request::AddDevice).await.offer.unwrap();
@@ -495,7 +495,7 @@ async fn a_paired_machine_reaches_what_a_device_may_ask_and_a_stranger_reaches_n
             max_size: None,
             dry_run: false,
         }),
-        Request::Files { target: torrential_core::Target::TorrentFile("/etc/passwd".into()), timeout_ms: 1000 },
+        Request::Files { target: torrential_core::Target::NzbFile("/etc/passwd".into()) },
     ];
     for request in refused {
         let answer = ask(request.clone()).await;
@@ -524,7 +524,7 @@ async fn only_this_machine_and_its_paired_machines_reach_the_indexers() {
     let config = Harness::paths(&h.dir).config.join("config.yaml");
     std::fs::create_dir_all(config.parent().unwrap()).unwrap();
     let text =
-        "# mine\nsources:\n  torznab:\n    - name: filelist\n      url: http://127.0.0.1:9/api\n      api_key: k3y\n";
+        "# mine\nsources:\n  newznab:\n    - name: filelist\n      url: http://127.0.0.1:9/api\n      api_key: k3y\n";
     std::fs::write(&config, text).unwrap();
     let offer = devices(&h, Request::AddDevice).await.offer.unwrap();
     listening(&h, ip, true).await;
@@ -565,12 +565,12 @@ async fn only_this_machine_and_its_paired_machines_reach_the_indexers() {
 async fn a_cast_grant_serves_its_one_file_to_a_tv_until_it_is_dropped() {
     let ip = lan();
     let h = Harness::new();
-    let film = torrent(71, "film", &[("film.mp4", 4 * MIB), ("other.mp4", MIB)]);
+    let film = release(71, "film", &[("film.mp4", 4 * MIB), ("other.mp4", MIB)]);
     let bytes = written(&h.downloads().join("film/film.mp4"), 4 * MIB);
     written(&h.downloads().join("film/other.mp4"), MIB);
-    h.get(h.torrent_file(&film), &[]).await.unwrap();
+    h.get(h.nzb_file(&film), &[]).await.unwrap();
     h.until("downloading", |jobs| jobs[0].status.name() == "downloading").await;
-    let id = film.info_hash.id();
+    let id = film.id;
 
     let waiting = h.running.ctx.devices.grant(id, 0, "film.mp4").unwrap();
     listening(&h, ip, true).await;
@@ -588,7 +588,7 @@ async fn a_cast_grant_serves_its_one_file_to_a_tv_until_it_is_dropped() {
     assert!(received.len() < MIB as usize, "no piece had arrived");
     listening(&h, ip, false).await;
 
-    h.swarm.set_rate(100 * GIB);
+    h.network.set_rate(100 * GIB);
     let grant = h.running.ctx.devices.grant(id, 0, "film.mp4").unwrap();
     listening(&h, ip, true).await;
     let range = tv.send("GET", grant.path(), &["Range: bytes=1000-1099"], "").await;
@@ -731,8 +731,8 @@ async fn a_paired_phone_whose_first_request_is_slow_stays_open_while_strangers_c
 async fn a_request_whose_body_arrives_after_its_device_is_removed_is_refused_and_changes_nothing() {
     let ip = lan();
     let h = Harness::new();
-    let film = torrent(71, "film", &[("film.mp4", MIB)]);
-    h.get(h.torrent_file(&film), &[]).await.unwrap();
+    let film = release(71, "film", &[("film.mp4", MIB)]);
+    h.get(h.nzb_file(&film), &[]).await.unwrap();
     let offer = devices(&h, Request::AddDevice).await.offer.unwrap();
     listening(&h, ip, true).await;
     let port = h.running.ctx.http_port;
@@ -740,7 +740,7 @@ async fn a_request_whose_body_arrives_after_its_device_is_removed_is_refused_and
     let id = phone.pair(&offer.code).await.json()["device"]["id"].as_str().unwrap().to_string();
     // An open code keeps the engine on the network once the phone is gone.
     devices(&h, Request::AddDevice).await;
-    let body = format!(r#"{{"refs":["{}"]}}"#, film.info_hash.id().to_hex());
+    let body = format!(r#"{{"refs":["{}"]}}"#, film.id.to_hex());
     let head = format!(
         "POST /api/remove HTTP/1.1\r\nHost: {ip}:{port}\r\nCookie: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         phone.cookie.as_deref().unwrap(),
@@ -761,7 +761,7 @@ async fn a_request_whose_body_arrives_after_its_device_is_removed_is_refused_and
         "the phone's request is answered as a removed device's: {answer:?}"
     );
     let left: Vec<_> = h.status().await.into_iter().map(|job| job.id).collect();
-    assert_eq!(left, [film.info_hash.id()], "the film is not removed");
+    assert_eq!(left, [film.id], "the film is not removed");
 }
 
 /// Another program on `port` of the home network, so the engine cannot listen there. macOS lets

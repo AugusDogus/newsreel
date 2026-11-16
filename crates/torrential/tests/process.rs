@@ -36,7 +36,7 @@ fn status_starts_an_engine_that_outlives_the_call() {
     assert_eq!(run.code, 0, "{}", run.stderr);
     assert_eq!(
         run.stdout,
-        "ID\tSTATE\tPROGRESS\tSIZE\tDOWN\tPEERS\tETA\tNAME\n# 0 downloads\nnext: torrential search <words>\n"
+        "ID\tSTATE\tPROGRESS\tSIZE\tDOWN\tCONNS\tETA\tNAME\n# 0 downloads\nnext: torrential search <words>\n"
     );
     let (pid, version) = home.engine().expect("the engine is still running");
     assert!(alive(pid));
@@ -305,7 +305,7 @@ fn a_sandboxed_client_refuses_to_start_an_engine() {
     assert_eq!(run.stdout, "");
     assert_eq!(
         run.stderr,
-        "error[sandbox_network_blocked]: this sandbox blocks network access, so torrential cannot reach peers\n  \
+        "error[sandbox_network_blocked]: this sandbox blocks network access, so torrential cannot reach the indexers or Usenet servers\n  \
          signal: CODEX_SANDBOX_NETWORK_DISABLED=1 (codex)\n\
          hint: in interactive Codex, rerun with sandbox_permissions \"require_escalated\" and prefix_rule [\"torrential\"]; \
          unattended Codex (codex exec) has approvals off, so torrential cannot work there\n"
@@ -634,21 +634,25 @@ fn a_login_service_someone_else_wrote_is_left_alone() {
     assert_eq!(std::fs::read_to_string(&service.unit).unwrap(), "a unit the person wrote\n");
 }
 
-fn magnet(size: u64) -> String {
-    format!("magnet:?xt=urn:btih:{ARCH}&dn=archlinux-2026.10.01-x86_64.iso&xl={size}")
+/// An NZB for the fake engine: one file of `size` bytes, downloaded as `ARCH`.
+fn arch_nzb(home: &Home, size: u64) -> String {
+    let name = "archlinux-2026.10.01-x86_64.iso";
+    let file = home.dir.path().join("arch.nzb");
+    std::fs::write(&file, serde_json::json!({"id": ARCH, "name": name, "files": [[name, size]]}).to_string()).unwrap();
+    file.display().to_string()
 }
 
 #[test]
 fn wait_times_out_with_exit_8_while_the_download_runs() {
     let home = Home::new().with(hooks::ENGINE, "fake").with(hooks::FAKE_RATE, "1MiB");
-    let get = home.run(&["get", &magnet(10 << 30), "--dir", &home.downloads()]);
+    let get = home.run(&["get", &arch_nzb(&home, 10 << 30), "--dir", &home.downloads()]);
     assert_eq!(get.code, 0, "{}", get.stderr);
     assert!(get.stdout.starts_with("started 9b5212"), "{}", get.stdout);
     assert!(get.stdout.ends_with("next:  torrential wait 9b5212\n"), "{}", get.stdout);
     let wait = home.run(&["wait", "9b5212", "--timeout", "1s"]);
     assert_eq!(wait.code, 8, "{}", wait.stderr);
     let lines: Vec<&str> = wait.stdout.lines().collect();
-    assert_eq!(lines[0], "ELAPSED\tID\tSTATE\tPROGRESS\tSIZE\tDOWN\tPEERS\tETA\tNAME");
+    assert_eq!(lines[0], "ELAPSED\tID\tSTATE\tPROGRESS\tSIZE\tDOWN\tCONNS\tETA\tNAME");
     assert!(lines[1].starts_with("0s\t9b5212\t"), "{}", wait.stdout);
     assert_eq!(lines[lines.len() - 2], "# still running after 1s", "{}", wait.stdout);
     assert_eq!(lines[lines.len() - 1], "next: torrential wait 9b5212");
@@ -661,7 +665,7 @@ fn wait_times_out_with_exit_8_while_the_download_runs() {
 #[test]
 fn wait_ends_soon_after_the_engine_is_stopped() {
     let home = Home::new().with(hooks::ENGINE, "fake").with(hooks::FAKE_RATE, "1MiB");
-    assert_eq!(home.run(&["get", &magnet(10 << 30), "--dir", &home.downloads()]).code, 0);
+    assert_eq!(home.run(&["get", &arch_nzb(&home, 10 << 30), "--dir", &home.downloads()]).code, 0);
     let wait = home.start(&["wait", "9b5212", "--timeout", "60s"]);
 
     let started = Instant::now();
@@ -676,7 +680,7 @@ fn wait_ends_soon_after_the_engine_is_stopped() {
 #[test]
 fn wait_follows_a_download_again_when_the_engine_comes_back() {
     let home = Home::new().with(hooks::ENGINE, "fake").with(hooks::FAKE_RATE, "1MiB");
-    assert_eq!(home.run(&["get", &magnet(10 << 30), "--dir", &home.downloads()]).code, 0);
+    assert_eq!(home.run(&["get", &arch_nzb(&home, 10 << 30), "--dir", &home.downloads()]).code, 0);
     let (pid, _) = home.engine().unwrap();
     let wait = home.start(&["wait", "9b5212", "--timeout", "8s", "--json"]);
 
@@ -693,7 +697,7 @@ fn wait_follows_a_download_again_when_the_engine_comes_back() {
 #[test]
 fn wait_that_finds_a_newer_engine_after_a_restart_says_to_restart_this_torrential() {
     let mut home = Home::new().with(hooks::ENGINE, "fake").with(hooks::FAKE_RATE, "1MiB").with(hooks::VERSION, "0.1.0");
-    assert_eq!(home.run(&["get", &magnet(10 << 30), "--dir", &home.downloads()]).code, 0);
+    assert_eq!(home.run(&["get", &arch_nzb(&home, 10 << 30), "--dir", &home.downloads()]).code, 0);
     let (pid, _) = home.engine().unwrap();
     let wait = home.start(&["wait", "9b5212", "--timeout", "20s"]);
 
@@ -714,8 +718,8 @@ fn search_get_and_wait_rechecks_a_completed_download() {
     let home = Home::new().with(hooks::ENGINE, "fake").with(hooks::FAKE_RATE, "100GiB");
     let search = home.run(&["search", "arch", "linux"]);
     assert_eq!(search.code, 0, "{}", search.stderr);
-    assert_eq!(search.stdout.lines().nth(1).unwrap().split('\t').next(), Some("9b5212"));
-    let get = home.run(&["get", "9b5212", "--dir", &home.downloads()]);
+    assert_eq!(search.stdout.lines().nth(1).unwrap().split('\t').next(), Some("u9b5212"));
+    let get = home.run(&["get", "u9b5212", "--dir", &home.downloads()]);
     assert_eq!(get.code, 0, "{}", get.stderr);
     let wait = home.run(&["wait", "9b5212"]);
     assert_eq!(wait.code, 0, "{}{}", wait.stdout, wait.stderr);
@@ -741,7 +745,7 @@ const NIGHT: &str = "4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c";
 fn play_json_names_the_video_and_its_subtitles_and_opens_nothing() {
     let home = Home::new().with(hooks::ENGINE, "fake").with(hooks::FAKE_RATE, "1MiB");
     assert_eq!(home.run(&["search", "night", "of", "the", "living", "dead"]).code, 0);
-    let doc = home.json(&["play", "4c1e9a", "--json"]);
+    let doc = home.json(&["play", "u4c1e9a", "--json"]);
     let streams: Vec<(u64, String, u64, String)> = doc["streams"]
         .as_array()
         .unwrap()
@@ -801,16 +805,16 @@ fn play_searches_for_words_and_for_an_id_that_names_nothing() {
 }
 
 #[test]
-fn play_refuses_a_torrent_without_a_video() {
+fn play_refuses_a_release_without_a_video() {
     let home = Home::new().with(hooks::ENGINE, "fake");
     assert_eq!(home.run(&["search", "night", "of", "the", "living", "dead"]).code, 0);
-    let run = home.run(&["play", "c48e01"]);
+    let run = home.run(&["play", "uc48e01"]);
     assert_eq!(
         (run.code, run.stderr.as_str()),
         (
             7,
-            "error[no_selection]: Night of the Living Dead score has no video file\nhint: run torrential files c48e01 \
-             to list its files\nnext: torrential files c48e01\n"
+            "error[no_selection]: Night of the Living Dead score has no video file\nhint: run torrential files uc48e01 \
+             to list its files\nnext: torrential files uc48e01\n"
         )
     );
 }
@@ -825,7 +829,7 @@ fn play_opens_the_configured_player_with_the_subtitles_and_the_system_language()
     home.write_config("player: mpv\n");
     home.set("PATH", &format!("{}:/usr/bin:/bin", bin.display()));
     assert_eq!(home.run(&["search", "night", "of", "the", "living", "dead"]).code, 0);
-    let run = home.run(&["play", "4c1e9a"]);
+    let run = home.run(&["play", "u4c1e9a"]);
     assert_eq!(
         (run.code, run.stdout.as_str()),
         (
@@ -851,7 +855,7 @@ fn play_opens_the_configured_player_with_the_subtitles_and_the_system_language()
 fn a_killed_engine_comes_back_with_the_download_running() {
     let home = Home::new().with(hooks::ENGINE, "fake").with(hooks::FAKE_RATE, "1MiB");
     let began = Instant::now();
-    let get = home.run(&["get", &magnet(10 << 30), "--dir", &home.downloads()]);
+    let get = home.run(&["get", &arch_nzb(&home, 10 << 30), "--dir", &home.downloads()]);
     assert_eq!(get.code, 0, "after {:?}: {}\nengine log:\n{}", began.elapsed(), get.stderr, home.log());
     let (pid, _) = home.engine().unwrap();
     kill(pid);
@@ -912,7 +916,7 @@ fn usage_errors_exit_2_with_a_hint() {
     assert_eq!(doc["next"], "torrential --help");
     let bare = home.run(&[]);
     assert_eq!(bare.code, 0);
-    assert!(bare.stdout.starts_with("torrential searches torrent indexes"));
+    assert!(bare.stdout.starts_with("torrential searches Usenet indexers"));
 }
 
 #[test]
@@ -956,7 +960,7 @@ fn a_command_whose_token_file_names_a_port_another_program_took_starts_an_engine
     let left = Access { port: other.local_addr().unwrap().port(), token: "5a".repeat(32) };
     std::fs::create_dir_all(home.state()).unwrap();
     left.write(&home.token_file()).unwrap();
-    // It closes each connection without a word, as a BitTorrent listener does with an HTTP request.
+    // It closes each connection without a word, as a server for another protocol might with an HTTP request.
     std::thread::spawn(move || other.incoming().for_each(drop));
 
     let run = home.run(&["status"]);
@@ -1158,16 +1162,16 @@ fn setup_shows_the_detected_machine_and_saves_and_clears_overrides() {
     assert!(home.run(&["setup"]).stdout.contains("\nupdates:  off\n"));
 }
 
-fn fake_torrent(name: &str, size: u64) -> Vec<u8> {
-    let torrent = serde_json::json!({"info_hash": {"v1": "7".repeat(40)}, "name": name, "files": [[name, size]]});
-    serde_json::to_vec(&torrent).unwrap()
+fn fake_release(name: &str, size: u64) -> Vec<u8> {
+    let release = serde_json::json!({"id": "7".repeat(40), "name": name, "files": [[name, size]]});
+    serde_json::to_vec(&release).unwrap()
 }
 
 #[test]
 fn get_takes_its_size_cap_from_setup_unless_max_size_is_passed() {
     let home = Home::new().with(hooks::ENGINE, "fake");
-    let file = home.dir.path().join("night.torrent");
-    std::fs::write(&file, fake_torrent("night-of-the-living-dead-2160p.mkv", 3 << 30)).unwrap();
+    let file = home.dir.path().join("night.nzb");
+    std::fs::write(&file, fake_release("night-of-the-living-dead-2160p.mkv", 3 << 30)).unwrap();
     let file = file.display().to_string();
     assert_eq!(home.run(&["setup", "--max-size", "2GB"]).code, 0);
 
@@ -1188,11 +1192,10 @@ fn get_takes_its_size_cap_from_setup_unless_max_size_is_passed() {
 fn errors_name_a_reference_by_its_hash_or_kind_never_its_url() {
     let home = Home::new().with(hooks::ENGINE, "fake");
     let hash = "ab".repeat(20);
-    let magnet = format!("magnet:?xt=urn:btih:{hash}&tr=https%3A%2F%2Fprivate.example%2Fannounce%2Fs3cret");
 
     let runs = [
-        home.run(&["status", "https://private.example/dl/7.torrent?apikey=s3cret"]),
-        home.run(&["status", &magnet]),
+        home.run(&["status", "https://private.example/getnzb/7.nzb?apikey=s3cret"]),
+        home.run(&["status", &hash]),
         home.run(&["pause", "udp://private.example/announce?passkey=s3cret"]),
     ];
 
@@ -1202,7 +1205,7 @@ fn errors_name_a_reference_by_its_hash_or_kind_never_its_url() {
         [
             (
                 3,
-                "error[invalid_ref]: this command takes a download ID, not a .torrent URL\nhint: run torrential \
+                "error[invalid_ref]: this command takes a download ID, not an NZB URL\nhint: run torrential \
                  status to list download IDs\nnext: torrential status\n"
             ),
             (
@@ -1214,8 +1217,8 @@ fn errors_name_a_reference_by_its_hash_or_kind_never_its_url() {
             ),
             (
                 3,
-                "error[invalid_ref]: a URL is not a torrent reference unless it is a magnet link or an http or https \
-                 URL\nhint: pass an ID from `torrential search`, a magnet link, a .torrent file, or a .torrent URL\n"
+                "error[invalid_ref]: a URL is not a release reference unless it is an http or https link to an NZB\n\
+                 hint: pass an ID from `torrential search`, an .nzb file, or an NZB URL\n"
             ),
         ]
     );

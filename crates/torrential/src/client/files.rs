@@ -1,7 +1,7 @@
-//! `torrential files`: the files of a torrent or a download.
+//! `torrential files`: the files of a release or a download.
 
 use serde::Serialize;
-use torrential_core::protocol::{FilesReply, MetadataSource};
+use torrential_core::protocol::{FileListSource, FilesReply};
 use torrential_core::text::sanitize;
 use torrential_core::units::format_size;
 use torrential_core::{Error, Selection};
@@ -21,12 +21,7 @@ pub struct Files {
 pub fn keep_matching(reply: &mut FilesReply, patterns: &[String]) -> Result<FileMatch, Error> {
     let set = torrential_daemon::selection::compile(patterns)?;
     let wanted = reply.files.iter().map(|f| set.is_match(&f.path)).collect();
-    let wanted = torrential_daemon::selection::some_match(
-        wanted,
-        patterns,
-        reply.name.as_deref().unwrap_or(&reply.id),
-        &reply.id,
-    )?;
+    let wanted = torrential_daemon::selection::some_match(wanted, patterns, &reply.name, &reply.id)?;
     let total_files = reply.files.len();
     let mut wanted = wanted.into_iter();
     reply.files.retain(|_| wanted.next().unwrap_or(false));
@@ -43,7 +38,7 @@ pub struct FileMatch {
 }
 
 pub fn files(reply: &FilesReply, matched: Option<&FileMatch>) -> Doc {
-    let from_download = reply.metadata_source == MetadataSource::Download;
+    let from_download = reply.source == FileListSource::Download;
     let risky = reply.files.iter().any(|f| f.risk.is_some());
     let rows = reply
         .files
@@ -53,7 +48,7 @@ pub fn files(reply: &FilesReply, matched: Option<&FileMatch>) -> Doc {
             let done = match (from_download, f.selected) {
                 (false, _) | (true, false) => NONE.to_string(),
                 (true, true) => format::percent(&torrential_core::Progress {
-                    size: Some(f.size),
+                    size: f.size,
                     verified: f.verified,
                     ..Default::default()
                 }),
@@ -72,13 +67,12 @@ pub fn files(reply: &FilesReply, matched: Option<&FileMatch>) -> Doc {
     if risky {
         header.push("RISK");
     }
-    let name = reply.name.as_deref().map_or_else(|| format::UNKNOWN.to_string(), sanitize);
-    let source = match reply.metadata_source {
-        MetadataSource::Download => "from the download",
-        MetadataSource::Cache => "from cache",
-        MetadataSource::TorrentFile => "from the .torrent file",
-        MetadataSource::TorrentUrl => "from the .torrent URL",
-        MetadataSource::Peers => "from peers",
+    let name = sanitize(&reply.name);
+    let source = match reply.source {
+        FileListSource::Download => "from the download",
+        FileListSource::Cache => "from cache",
+        FileListSource::NzbFile => "from the .nzb file",
+        FileListSource::NzbUrl => "from the NZB URL",
     };
     let count = reply.files.len();
     let elapsed = format::seconds_tenths(reply.elapsed_ms);
@@ -101,7 +95,7 @@ pub fn files(reply: &FilesReply, matched: Option<&FileMatch>) -> Doc {
         ));
     }
     if risky {
-        summary.push("executables in a media torrent are a common sign of malware".to_string());
+        summary.push("executables in a media release are a common sign of malware".to_string());
     }
     let id = short_ref(&reply.id);
     let next = match matched {

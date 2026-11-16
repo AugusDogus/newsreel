@@ -73,7 +73,6 @@ export function useJob(id: string | null): Job | null {
 /** What each state of a download is called on a page. */
 export const STATE_WORDS: Record<JobState, string> = {
   queued: "Queued",
-  metadata: "Finding peers",
   checking: "Checking files",
   downloading: "Downloading",
   paused: "Paused",
@@ -81,11 +80,6 @@ export const STATE_WORDS: Record<JobState, string> = {
   error: "Failed",
 };
 
-/** Why a download that needs peers gets none: the network interface torrents are bound to is down. */
-export function waiting(job: Job): string | null {
-  return job.waiting_for ? `Waiting for ${job.waiting_for}` : null;
-}
-
 export function isActive(job: Job): boolean {
-  return job.state === "downloading" || job.state === "metadata" || job.state === "checking" || job.state === "queued";
+  return job.state === "downloading" || job.state === "checking" || job.state === "queued";
 }

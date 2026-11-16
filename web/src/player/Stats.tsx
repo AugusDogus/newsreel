@@ -46,7 +46,7 @@ export function Stats({ media, how, play, subtitle, offset, audio }: Props) {
     ["Container", media.container],
     ["Buffer", ahead ? `${(ahead[1] - element.currentTime).toFixed(1)} s ahead` : "Empty"],
     ["Frames", `${quality.droppedVideoFrames} dropped of ${quality.totalVideoFrames}`],
-    ["Download", job.state === "downloading" ? `${rate(progress.down_rate)} from ${count(progress.peers, "peer")}` : job.state],
+    ["Download", job.state === "downloading" ? `${rate(progress.down_rate)} from ${count(progress.connections, "connection")}` : job.state],
     ["Subtitles", subtitle ? `${subtitle.label} · ${subtitle.source?.kind ?? "none"} · ${offsetText(offset).toLowerCase()}` : "Off"],
   ];
 

@@ -90,9 +90,9 @@ fn connect_drives_the_engine_on_another_machine_and_never_starts_one_here() {
     }
     let indexer = Server::start(|_| {
         let caps = br#"<caps><categories><category id="5000" name="TV" /></categories></caps>"#;
-        vec![("/torznab/api?t=caps&apikey=k3y", vec![ok(caps.to_vec())])]
+        vec![("/newznab/api?t=caps&apikey=k3y", vec![ok(caps.to_vec())])]
     });
-    let endpoint = format!("{}/torznab/api", indexer.base);
+    let endpoint = format!("{}/newznab/api", indexer.base);
     let added = laptop.json(&["indexers", "add", &endpoint, "--key", "k3y", "--name", "romania", "--json"]);
     assert_eq!(added["indexers"][0]["check"]["state"], "answers", "{added:#}");
     assert_eq!(server.json(&["indexers", "--json"])["indexers"][0]["name"], "romania", "the server's engine has it");

@@ -34,9 +34,9 @@ pub const fn code(error: ErrorCode) -> u8 {
     match error {
         Internal => INTERNAL,
         Usage | ConfirmationRequired => USAGE,
-        InvalidRef | InvalidTorrent | NotFound | AmbiguousRef => REFERENCE,
+        InvalidRef | InvalidRelease | NotFound | AmbiguousRef => REFERENCE,
         JobConflict | PathConflict => CONFLICT,
-        ProvidersUnavailable | MetadataTimeout | NetworkUnavailable | FetchFailed => NETWORK,
+        ProvidersUnavailable | NetworkUnavailable | FetchFailed => NETWORK,
         SandboxNetworkBlocked
         | SandboxWriteBlocked
         | DaemonUnavailable
@@ -52,10 +52,7 @@ pub const fn code(error: ErrorCode) -> u8 {
 /// Whether the same command may succeed if run again later.
 pub const fn retryable(error: ErrorCode) -> bool {
     use ErrorCode::*;
-    matches!(
-        error,
-        ProvidersUnavailable | MetadataTimeout | NetworkUnavailable | FetchFailed | DaemonUnavailable | Interrupted
-    )
+    matches!(error, ProvidersUnavailable | NetworkUnavailable | FetchFailed | DaemonUnavailable | Interrupted)
 }
 
 #[cfg(test)]

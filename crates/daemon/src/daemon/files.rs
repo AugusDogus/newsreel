@@ -2,60 +2,44 @@ use std::path::{Path, PathBuf};
 
 use torrential_core::filetype::{self, FileType};
 use torrential_core::text::sanitize;
-use torrential_core::{Error, FileRisk, InfoHash, Selection};
-pub use torrential_engine::on_disk;
+use torrential_core::{Error, FileRisk, Selection};
 
-use super::metainfo::{MetaFile, Metainfo};
+use super::layout::{Layout, LayoutFile};
 use crate::selection::{compile, some_match};
 
-pub fn wanted(metainfo: &Metainfo, selection: &Selection) -> Result<Vec<bool>, Error> {
+pub fn wanted(layout: &Layout, selection: &Selection) -> Result<Vec<bool>, Error> {
     let patterns = match selection {
-        Selection::All => return Ok(vec![true; metainfo.files.len()]),
+        Selection::All => return Ok(vec![true; layout.files.len()]),
         Selection::Patterns(patterns) => patterns,
     };
     let set = compile(patterns)?;
     let wanted: Vec<bool> =
-        metainfo.files.iter().map(|f| set.is_match(&f.path) || set.is_match(sanitize(&f.path))).collect();
-    some_match(wanted, patterns, &metainfo.name, &metainfo.info_hash.id().to_hex())
+        layout.files.iter().map(|f| set.is_match(&f.path) || set.is_match(sanitize(&f.path))).collect();
+    some_match(wanted, patterns, &layout.name, &layout.id.to_hex())
 }
 
-pub fn targets(metainfo: &Metainfo, dir: &Path, wanted: &[bool]) -> Vec<PathBuf> {
-    metainfo.files.iter().zip(wanted).filter(|(_, w)| **w).map(|(f, _)| path(metainfo, f, dir)).collect()
+pub fn targets(layout: &Layout, dir: &Path, wanted: &[bool]) -> Vec<PathBuf> {
+    layout.files.iter().zip(wanted).filter(|(_, w)| **w).map(|(f, _)| path(layout, f, dir)).collect()
 }
 
-/// Where `file` of a download in `dir` is on disk, as libtorrent names the folder and the file.
-pub fn path(metainfo: &Metainfo, file: &MetaFile, dir: &Path) -> PathBuf {
-    on_disk(dir).join(relative(metainfo, file))
+/// Where `file` of a download in `dir` is on disk.
+pub fn path(layout: &Layout, file: &LayoutFile, dir: &Path) -> PathBuf {
+    dir.join(relative(layout, file))
 }
 
-/// Where `file` is inside the download's folder, as libtorrent names it on disk, which can differ
-/// from the name the torrent lists.
-pub fn relative(metainfo: &Metainfo, file: &MetaFile) -> PathBuf {
-    let listed =
-        if metainfo.single_file { PathBuf::from(&metainfo.name) } else { Path::new(&metainfo.name).join(&file.path) };
-    on_disk(&listed)
+/// Where `file` is inside the download's folder.
+pub fn relative(layout: &Layout, file: &LayoutFile) -> PathBuf {
+    if layout.single_file { PathBuf::from(&layout.name) } else { Path::new(&layout.name).join(&file.path) }
 }
 
-/// The torrent's folder or single file in `dir`, as libtorrent names it on disk.
+/// The release's folder or single file in `dir`.
 pub fn root(dir: &Path, name: &str) -> PathBuf {
-    on_disk(&dir.join(name))
+    dir.join(name)
 }
 
-/// Where a download writes in `dir`: at or below the torrent's folder or single file, and to the
-/// parts file where libtorrent keeps pieces a selected file shares with one that is not selected.
-pub fn footprint(metainfo: &Metainfo, dir: &Path) -> [PathBuf; 2] {
-    [root(dir, &metainfo.name), on_disk(&dir.join(parts_file(&metainfo.info_hash)))]
-}
-
-/// libtorrent names the parts file after the torrent's v2 hash cut to 20 bytes, or after its v1
-/// hash when it has no v2 one, and keeps it in the download folder.
-fn parts_file(hash: &InfoHash) -> String {
-    let best = match hash {
-        InfoHash::V1(v1) => &v1[..],
-        InfoHash::V2(v2) | InfoHash::Hybrid { v2, .. } => &v2[..20],
-    };
-    let hex: String = best.iter().map(|b| format!("{b:02x}")).collect();
-    format!(".{hex}.parts")
+/// Where a download writes in `dir`: at or below the release's folder or single file.
+pub fn footprint(layout: &Layout, dir: &Path) -> [PathBuf; 1] {
+    [root(dir, &layout.name)]
 }
 
 const EXECUTABLE: [&str; 25] = [
@@ -63,23 +47,23 @@ const EXECUTABLE: [&str; 25] = [
     "command", "app", "dmg", "pkg", "apk", "lnk", "cpl", "run", "reg",
 ];
 
-pub fn risks(metainfo: &Metainfo) -> Vec<Option<FileRisk>> {
+pub fn risks(layout: &Layout) -> Vec<Option<FileRisk>> {
     let media: u64 =
-        metainfo.files.iter().filter(|f| FileType::of(&f.path).is_some_and(|t| t.media)).map(|f| f.size).sum();
-    let mostly_media = media * 2 > metainfo.total();
+        layout.files.iter().filter(|f| FileType::of(&f.path).is_some_and(|t| t.media)).map(|f| f.size).sum();
+    let mostly_media = media * 2 > layout.total();
     let executable = |path: &str| EXECUTABLE.contains(&filetype::extension(path).as_str());
-    metainfo.files.iter().map(|f| (mostly_media && executable(&f.path)).then_some(FileRisk::Executable)).collect()
+    layout.files.iter().map(|f| (mostly_media && executable(&f.path)).then_some(FileRisk::Executable)).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::daemon::fake;
-    use torrential_core::ErrorCode;
+    use torrential_core::{DownloadId, ErrorCode};
 
-    fn film() -> Metainfo {
-        fake::TorrentFile {
-            info_hash: InfoHash::V1([0x6b; 20]),
+    fn film() -> Layout {
+        fake::Posting {
+            id: DownloadId::from_bytes([0x6b; 20]),
             name: "night_of_the_living_dead_dvd".into(),
             files: vec![
                 ("Night.mp4".into(), 596_399_542),
@@ -88,7 +72,7 @@ mod tests {
                 ("Codec Installer.exe".into(), 1_200_000),
             ],
         }
-        .metainfo()
+        .layout()
         .unwrap()
     }
 
@@ -103,12 +87,12 @@ mod tests {
 
     #[test]
     fn a_path_as_the_file_list_shows_it_picks_the_file() {
-        let odd = fake::TorrentFile {
-            info_hash: InfoHash::V1([0x6c; 20]),
+        let odd = fake::Posting {
+            id: DownloadId::from_bytes([0x6c; 20]),
             name: "show".into(),
             files: vec![("Ep  01\u{202e}.mkv".into(), 10), ("Ep 02.mkv".into(), 10)],
         }
-        .metainfo()
+        .layout()
         .unwrap();
         let shown = globset::escape(&sanitize("Ep  01\u{202e}.mkv"));
         assert_eq!(shown, "Ep 01.mkv");
@@ -125,7 +109,7 @@ mod tests {
     }
 
     #[test]
-    fn executables_in_media_torrents_are_marked() {
+    fn executables_in_media_releases_are_marked() {
         assert_eq!(risks(&film()), [None, None, None, Some(FileRisk::Executable)]);
         let mut tools = film();
         tools.files.retain(|f| f.path.ends_with(".exe"));
@@ -133,22 +117,16 @@ mod tests {
     }
 
     #[test]
-    fn a_download_writes_at_its_folder_or_single_file_and_to_the_parts_file_named_by_its_best_hash() {
-        let torrent = |info_hash, name: &str, files: &[&str]| {
+    fn a_download_writes_at_its_folder_or_single_file() {
+        let release = |hex: &str, name: &str, files: &[&str]| {
             let files = files.iter().map(|path| (path.to_string(), 1_000)).collect();
-            fake::TorrentFile { info_hash, name: name.into(), files }.metainfo().unwrap()
+            fake::Posting { id: hex.repeat(20).parse().unwrap(), name: name.into(), files }.layout().unwrap()
         };
         let dir = Path::new("/d");
-        let pack = torrent(InfoHash::V1([0xab; 20]), "Pack", &["a.mkv", "extras/b.mkv", "c.nfo"]);
-        assert_eq!(
-            footprint(&pack, dir),
-            ["/d/Pack", "/d/.abababababababababababababababababababab.parts"].map(PathBuf::from)
-        );
-        let single = torrent(InfoHash::Hybrid { v1: [0x11; 20], v2: [0x22; 32] }, "film.mp4", &["film.mp4"]);
-        let parts = format!("/d/.{}.parts", "22".repeat(20));
-        assert_eq!(footprint(&single, dir), ["/d/film.mp4", parts.as_str()].map(PathBuf::from));
-        let v2 = torrent(InfoHash::V2([0x33; 32]), "Two", &["x.mp4"]);
-        assert_eq!(footprint(&v2, dir)[1], PathBuf::from(format!("/d/.{}.parts", "33".repeat(20))));
+        let pack = release("ab", "Pack", &["a.mkv", "extras/b.mkv", "c.nfo"]);
+        assert_eq!(footprint(&pack, dir), [PathBuf::from("/d/Pack")]);
+        let single = release("11", "film.mp4", &["film.mp4"]);
+        assert_eq!(footprint(&single, dir), [PathBuf::from("/d/film.mp4")]);
     }
 
     #[test]
@@ -161,11 +139,11 @@ mod tests {
                 PathBuf::from("/d/night_of_the_living_dead_dvd/extras/VTS_01_1.MP4")
             ]
         );
-        let iso = fake::TorrentFile {
-            info_hash: InfoHash::V1([1; 20]),
+        let iso = fake::Posting {
+            id: DownloadId::from_bytes([1; 20]),
             name: "a.iso".into(),
             files: vec![("a.iso".into(), 5)],
         };
-        assert_eq!(targets(&iso.metainfo().unwrap(), dir, &[true]), [PathBuf::from("/d/a.iso")]);
+        assert_eq!(targets(&iso.layout().unwrap(), dir, &[true]), [PathBuf::from("/d/a.iso")]);
     }
 }

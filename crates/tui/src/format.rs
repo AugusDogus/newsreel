@@ -112,7 +112,7 @@ pub fn age(at: i64, now: i64) -> String {
     torrential_core::units::age(now.saturating_sub(at).max(0) as u64)
 }
 
-pub fn seeds(n: Option<u32>) -> String {
+pub fn grabs(n: Option<u64>) -> String {
     match n {
         None => "–".into(),
         Some(n) if n < 1_000 => n.to_string(),
@@ -219,8 +219,8 @@ mod tests {
     }
 
     #[test]
-    fn seeds_read_short() {
-        assert_eq!([seeds(None), seeds(Some(0)), seeds(Some(2_041)), seeds(Some(41_200))], ["–", "0", "2,041", "41k"]);
+    fn grabs_read_short() {
+        assert_eq!([grabs(None), grabs(Some(0)), grabs(Some(2_041)), grabs(Some(41_200))], ["–", "0", "2,041", "41k"]);
     }
 
     #[test]

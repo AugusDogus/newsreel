@@ -2,7 +2,7 @@
 //! The columns disagree on a few rows, such as `ogv`, `divx` and `mts`, because each keeps the
 //! answer its question had before they were one table.
 
-/// What a file in a torrent is to a play.
+/// What a file in a release is to a play.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Kind {
     Video,
@@ -23,7 +23,7 @@ pub struct FileType {
     pub browser: Option<&'static str>,
     /// ffmpeg's name for its format, where torrential names it to ffmpeg.
     pub ffmpeg: Option<&'static str>,
-    /// Counts toward a torrent that is mostly media, where an executable file is a risk.
+    /// Counts toward a release that is mostly media, where an executable file is a risk.
     pub media: bool,
 }
 

@@ -64,7 +64,7 @@ pub fn named(words: &[String]) -> Result<Option<VideoRef>, Error> {
     }
 }
 
-/// The error for `--source` or an episode, given with a torrent.
+/// The error for `--source` or an episode, given with a release.
 pub fn for_a_title(what: &str) -> Error {
     Error::new(ErrorCode::Usage, format!("{what} goes with a title ID such as tt0063350"))
         .with_hint("run torrential titles <words> to find a title's ID")

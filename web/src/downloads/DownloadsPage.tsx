@@ -1,25 +1,24 @@
 import { useEffect, useState } from "react";
-import { type ApiError, asApiError, change, files, type Job, type TorrentFile } from "../api";
+import { type ApiError, asApiError, change, files, type Job, type ReleaseFile } from "../api";
 import { bytes, count, percent, rate, sentence, span } from "../lib/format";
-import { STATE_WORDS, useJobs, waiting } from "../lib/jobs";
+import { STATE_WORDS, useJobs } from "../lib/jobs";
 import { fileName, fileUrl, readable, savedVideo } from "../lib/release";
 import { Link, watchPath } from "../router";
 import { Button, buttonClass } from "../ui/Button";
 import { Header } from "../ui/Header";
 import { Meter } from "../ui/Meter";
 import { trashed } from "./trashed";
-import { SHORT_ID } from "../wire";
 
 function facts(job: Job): string {
   const { progress } = job;
   const size = progress.size;
-  const have = size === null ? null : job.state === "done" ? bytes(size) : `${bytes(progress.verified)} of ${bytes(size)}`;
-  const moving = job.state === "downloading" && !job.waiting_for;
+  const have = job.state === "done" ? bytes(size) : `${bytes(progress.verified)} of ${bytes(size)}`;
+  const moving = job.state === "downloading";
   return [
-    waiting(job) ?? STATE_WORDS[job.state],
+    STATE_WORDS[job.state],
     have,
     moving ? rate(progress.down_rate) : null,
-    moving ? count(progress.peers, "peer") : null,
+    moving ? count(progress.connections, "connection") : null,
     moving && progress.eta !== null ? `${span(progress.eta)} left` : null,
   ]
     .filter(Boolean)
@@ -30,7 +29,7 @@ type Action = "pause" | "resume" | "remove";
 
 /** A plain download of a finished film under its own name, which the browser can resume when the connection drops. */
 function Save({ id }: { id: string }) {
-  const [file, setFile] = useState<TorrentFile | null>(null);
+  const [file, setFile] = useState<ReleaseFile | null>(null);
   useEffect(() => {
     const abort = new AbortController();
     files(id, abort.signal).then(
@@ -52,7 +51,7 @@ function Row({ job, onFailed, onTrashed }: { job: Job; onFailed: (error: ApiErro
   const [busy, setBusy] = useState<Action | null>(null);
   // A download in the person's own folder asks what becomes of its files before it goes.
   const [asking, setAsking] = useState(false);
-  const name = readable(job.name ?? job.id.slice(0, SHORT_ID));
+  const name = readable(job.name);
   const { progress } = job;
   const fraction = job.state === "done" ? 1 : progress.size ? progress.verified / progress.size : 0;
   const stopped = job.state === "paused" || job.state === "error";
@@ -68,7 +67,7 @@ function Row({ job, onFailed, onTrashed }: { job: Job; onFailed: (error: ApiErro
   return (
     <li className="grid grid-cols-1 items-center gap-x-6 gap-y-2 py-4 sm:grid-cols-[minmax(0,1fr)_--spacing(78)]">
       <div className="flex min-w-0 flex-col gap-2">
-        <div className="truncate text-base font-medium text-ink sm:text-sm" title={job.name ?? undefined}>
+        <div className="truncate text-base font-medium text-ink sm:text-sm" title={job.name}>
           {name.title} <span className="font-normal text-pencil">{name.tags}</span>
         </div>
         <Meter fraction={fraction} label="Downloaded" tone={job.state === "downloading" || job.state === "done" ? "action" : "muted"} />

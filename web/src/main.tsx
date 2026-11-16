@@ -23,7 +23,7 @@ function App() {
       return <TitlePage key={route.id} id={route.id} season={route.season} sources={route.sources} />;
     case "play":
       return <TitlePlayer key={`${route.video}:${route.source}`} video={route.video} source={route.source} />;
-    case "torrents":
+    case "releases":
       return <SearchPage query={route.query} everything={route.everything} />;
     case "watch":
       return <Player key={`${route.ref}:${route.file}`} target={route.ref} file={route.file} />;

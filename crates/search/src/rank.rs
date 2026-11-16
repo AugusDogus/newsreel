@@ -1,35 +1,19 @@
 //! How releases order: what fits the player and the disk, how close a resolution is to the
-//! screen, how a swarm stands, and the chain that sorts a search's candidates by them.
+//! screen, how TRaSH Guides rates a release, and the chain that sorts a search's candidates by them.
 
 use std::cmp::{Ordering, Reverse};
 use std::ops::RangeInclusive;
 
-use torrential_core::filetype::FileType;
 use torrential_core::title::{Span, Wanted};
 use torrential_core::{
-    Arch, Category, Codec, Container, Decoding, Flag, Language, Player, Plays, Profile, Quality, Resolution, Sort,
-    Swarm, name,
+    Arch, Category, Codec, Decoding, Flag, Language, Player, Profile, Quality, Resolution, Sort, name,
 };
 
 use crate::assemble::Candidate;
-use crate::observation::{VideoCodec, VideoFile};
 use crate::terms;
 
 /// Below this many Mbit/s a release is a fake or a broken file.
 pub(crate) const FAKE_MBPS: f64 = 0.25;
-
-/// The tier of a swarm with `seeders`, listed by a lawful catalog or not. `None` for a swarm
-/// known to have no seeder outside a lawful catalog. A lawful catalog that does not count
-/// seeders serves its files from web seeds over HTTP, as dependable as any swarm.
-pub fn swarm(seeders: Option<u32>, lawful: bool) -> Option<Swarm> {
-    match (seeders, lawful) {
-        (Some(20..), _) | (None, true) => Some(Swarm::Strong),
-        (Some(5..=19), _) => Some(Swarm::Fair),
-        (Some(1..=4), _) => Some(Swarm::Weak),
-        (Some(0), true) | (None, false) => Some(Swarm::Unknown),
-        (Some(0), false) => None,
-    }
-}
 
 /// The Mbit/s at each resolution that looks right and streams comfortably. A small encode of a
 /// popular release sits low in it, and a remux runs above it.
@@ -96,27 +80,22 @@ fn closeness(profile: &Profile, resolution: Option<Resolution>) -> u8 {
     }
 }
 
-/// The file of `videos` a play in `player` opens, as the play itself picks it: in a browser, one
-/// it plays as it is when that is nearly as large as the largest.
-fn opened(player: Player, videos: &[VideoFile]) -> Option<&VideoFile> {
-    let plays = match player {
-        Player::External => Plays::ANY,
-        Player::Browser { .. } | Player::Device(_) => Plays::BROWSER,
-    };
-    plays.preferred(videos, |video| video.size, |video| &video.name)
+/// A video's codec, as a release's name gives it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum VideoCodec {
+    /// H.264, HEVC or AV1, which a screen may decode in hardware.
+    Modern(Codec),
+    /// An older codec no browser decodes, such as Theora, XviD, DivX or MPEG-2.
+    Old,
 }
 
 /// Tags that name a codec no browser decodes.
 const OLD_CODECS: [&str; 4] = ["xvid", "divx", "mpeg2", "theora"];
 
-/// The codec of a release's video: what its catalog says of the file a play opens, else what its
-/// name says. `None` when neither says.
-fn codec(c: &Candidate, opened: Option<&VideoFile>) -> Option<VideoCodec> {
+/// The codec of a release's video, as its name says it. `None` when the name does not say.
+fn codec(c: &Candidate) -> Option<VideoCodec> {
     let named_old = || name::tags(&c.release.name).iter().any(|tag| OLD_CODECS.contains(&tag.as_str()));
-    opened
-        .and_then(|video| video.codec)
-        .or(c.quality.codec.map(VideoCodec::Modern))
-        .or_else(|| named_old().then_some(VideoCodec::Old))
+    c.quality.codec.map(VideoCodec::Modern).or_else(|| named_old().then_some(VideoCodec::Old))
 }
 
 /// Lower decodes better in `player`: in hardware, then in software, then not at all, as a browser
@@ -134,38 +113,6 @@ fn decoding(player: Player, codec: Option<VideoCodec>) -> u8 {
             Some(Decoding::Software) => 1,
             Some(Decoding::No) => 2,
         },
-    }
-}
-
-/// Whether the file a play opens is in an older container, Ogg, AVI, MPEG, WMV or a transport
-/// stream, which plays after MP4, MKV, WebM and MOV. A file not known counts as the newer kind.
-fn old_container(opened: Option<&VideoFile>) -> bool {
-    let newer =
-        |container| matches!(container, Some(Container::Mp4 | Container::Mkv | Container::WebM | Container::Mov));
-    opened.and_then(|video| FileType::of(&video.name)).is_some_and(|file| !newer(file.container))
-}
-
-/// The lines a screen of `resolution` shows: the top of its band.
-const fn lines(resolution: Resolution) -> u32 {
-    match resolution {
-        Resolution::Sd => 576,
-        Resolution::P720 => 720,
-        Resolution::P1080 => 1080,
-        Resolution::P2160 => 2160,
-    }
-}
-
-/// Lower is a picture of `video` that suits the screen better, for releases equally close to it:
-/// the tallest that fits the screen, then the shortest taller than it, and of two as tall the
-/// wider. An unknown picture comes after every known one, and without a screen every picture ties.
-fn picture_fit(profile: &Profile, video: Option<&VideoFile>) -> (bool, u32, Reverse<u32>) {
-    match (profile.screen(), video) {
-        (None, _) => (false, 0, Reverse(0)),
-        (Some(screen), Some(video)) if video.height <= lines(screen.value) => {
-            (false, lines(screen.value) - video.height, Reverse(video.width))
-        }
-        (Some(screen), Some(video)) => (true, video.height - lines(screen.value), Reverse(video.width)),
-        (Some(_), None) => (true, u32::MAX, Reverse(0)),
     }
 }
 
@@ -211,19 +158,19 @@ struct PlayRank {
     unfit: bool,
     /// The name marks languages, and none is the system's or the original English.
     foreign: bool,
-    swarm: Swarm,
+    /// TRaSH Guides lists the release or its group as one to avoid.
+    avoid: bool,
     undated: bool,
-    standing: Reverse<u8>,
     /// Ahead of the screen's resolution: a remux that fits the screen still does not stream.
     off_band: bool,
     other_words: usize,
     span: u8,
     decoding: u8,
-    old_container: bool,
     closeness: u8,
-    picture: (bool, u32, Reverse<u32>),
+    /// How high TRaSH Guides ranks the group, among copies that suit the screen alike.
+    tier: Reverse<u8>,
     /// Most first. `Reverse` puts unknown after every count.
-    seeders: Reverse<Option<u32>>,
+    grabs: Reverse<Option<u64>>,
 }
 
 /// How much more than the film or episode a release holds: none, a season, several, or all.
@@ -236,59 +183,51 @@ fn breadth(span: Option<Span>) -> u8 {
     }
 }
 
-/// In a title's search the play order leads: not a cam, fits, not in another language, swarm,
-/// names the year, standing, bitrate, a plain name, span, how the player decodes it, its
-/// container, screen, picture, and seeders. The chain after it orders every search.
+/// In a title's search the play order leads: not a cam, fits, not in another language, not on a
+/// list to avoid, names the year, bitrate, a plain name, span, how the player decodes it, screen,
+/// group tier, and grabs. The chain after it orders every search.
 pub(crate) fn rank(candidates: &mut [Candidate], sort: Sort, profile: &Profile) {
     let fits = |c: &Candidate| fits(profile, c.release.size, c.quality, c.title.as_ref().and_then(|t| t.mbps));
     let is_video = |c: &Candidate| c.release.category == Some(Category::Video) || c.quality.resolution.is_some();
     let video_search = candidates.iter().filter(|c| is_video(c)).count() * 2 > candidates.len();
     let closeness_here = |c: &Candidate| if video_search { closeness(profile, c.resolution) } else { 0 };
     let play = |c: &Candidate| {
-        let opened = opened(profile.player, &c.videos);
-        let resolution = opened.map(|video| Resolution::of_width(video.width)).or(c.resolution);
         c.title.as_ref().map(|t| PlayRank {
             cam: c.release.flags.contains(&Flag::Cam),
             unfit: !fits(c),
             foreign: language_rank(profile, &c.languages) == 2,
-            swarm: t.swarm,
+            avoid: c.release.flags.contains(&Flag::Avoid),
             undated: t.undated,
-            standing: Reverse(standing(c)),
             off_band: t.mbps.is_some_and(|mbps| !band(c.quality.resolution).contains(&mbps)),
             other_words: t.other_words,
             span: breadth(c.release.span),
-            decoding: decoding(profile.player, codec(c, opened)),
-            old_container: old_container(opened),
-            closeness: closeness(profile, resolution),
-            picture: picture_fit(profile, opened),
-            seeders: Reverse(c.release.seeders),
+            decoding: decoding(profile.player, codec(c)),
+            closeness: closeness(profile, c.resolution),
+            tier: Reverse(c.tier),
+            grabs: Reverse(c.release.grabs),
         })
     };
     candidates.sort_by(|a, b| {
         let (ra, rb) = (&a.release, &b.release);
         let primary = play(a).cmp(&play(b)).then(match sort {
             Sort::Relevance => Ordering::Equal,
-            Sort::Seeds => known_first_desc(ra.seeders, rb.seeders),
+            Sort::Grabs => known_first_desc(ra.grabs, rb.grabs),
             Sort::Size => known_first_desc(ra.size, rb.size),
             Sort::Age => known_first_desc(ra.published, rb.published),
         });
         primary
             .then_with(|| b.relevance.cmp(&a.relevance))
             .then_with(|| fits(b).cmp(&fits(a)))
-            .then_with(|| standing(b).cmp(&standing(a)))
+            .then_with(|| ra.flags.contains(&Flag::Avoid).cmp(&rb.flags.contains(&Flag::Avoid)))
             .then_with(|| closeness_here(a).cmp(&closeness_here(b)))
+            .then_with(|| b.tier.cmp(&a.tier))
             .then_with(|| arch_rank(profile, &a.arches).cmp(&arch_rank(profile, &b.arches)))
             .then_with(|| language_rank(profile, &a.languages).cmp(&language_rank(profile, &b.languages)))
-            .then_with(|| known_first_desc(ra.seeders, rb.seeders))
+            .then_with(|| known_first_desc(ra.grabs, rb.grabs))
             .then_with(|| a.extra_words.cmp(&b.extra_words))
-            .then_with(|| known_first_desc(a.downloads, b.downloads))
             .then_with(|| terms::newer_first(&ra.name, &rb.name))
             .then_with(|| ra.id.to_ref().cmp(&rb.id.to_ref()))
     });
-}
-
-fn standing(c: &Candidate) -> u8 {
-    if c.release.flags.contains(&Flag::Official) { 2 } else { u8::from(c.lawful) }
 }
 
 fn known_first_desc<T: Ord>(a: Option<T>, b: Option<T>) -> Ordering {
@@ -401,17 +340,6 @@ mod tests {
         assert_eq!(codecs.map(|codec| decoding(browser(Some(reported)), codec)), [0, 1, 2, 2, 0]);
         assert_eq!(codecs.map(|codec| decoding(browser(None), codec)), [0, 0, 0, 2, 0]);
         assert_eq!(codecs.map(|codec| decoding(Player::External, codec)), [0; 5], "the player here opens any codec");
-    }
-
-    #[test]
-    fn an_ogg_avi_or_mpeg_file_is_in_an_older_container() {
-        let file = |name: &str| VideoFile { name: name.into(), size: 1, width: 1, height: 1, codec: None };
-        let names = ["a.mp4", "a.mkv", "a.webm", "a.mov", "a.ogv", "a.avi", "a.mpg", "a.wmv"];
-        assert_eq!(
-            names.map(|name| old_container(Some(&file(name)))),
-            [false, false, false, false, true, true, true, true]
-        );
-        assert!(!old_container(None), "a release whose files are not known");
     }
 
     #[test]

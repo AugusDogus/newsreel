@@ -3,13 +3,13 @@ use std::time::Duration;
 use torrential_core::Plays;
 use torrential_core::catalog::Episode;
 use torrential_core::filetype::{FileType, Kind};
-use torrential_core::job::TorrentFile;
+use torrential_core::job::ReleaseFile;
 use torrential_core::title;
 
-/// Folders that hold the subtitles for every video in the torrent.
+/// Folders that hold the subtitles for every video in the release.
 const SUBTITLE_FOLDERS: [&str; 4] = ["sub", "subs", "subtitle", "subtitles"];
 
-/// Plan for this share of the current rate, since a rate measured over a few seconds swings as peers come and go.
+/// Plan for this share of the current rate, since a rate measured over a few seconds swings as connections come and go.
 const MARGIN: f64 = 0.9;
 
 /// Video on disk before playback starts.
@@ -27,15 +27,15 @@ pub enum Start {
     Now,
     /// Whole seconds, rounded up.
     Wait(Duration),
-    /// Bytes are missing and no peer is sending any.
+    /// Bytes are missing and no server is sending any.
     Stalled,
 }
 
 /// The video a play in `plays` opens, as [`Plays::preferred`] chooses among the videos that are
 /// not samples, plus the subtitle files that belong with it.
-pub fn pick(files: &[TorrentFile], plays: Plays) -> Option<Playable> {
-    let videos: Vec<&TorrentFile> = files.iter().filter(|f| kind(&f.path) == Some(Kind::Video)).collect();
-    let features: Vec<&TorrentFile> = videos.iter().copied().filter(|f| !is_sample(&f.path)).collect();
+pub fn pick(files: &[ReleaseFile], plays: Plays) -> Option<Playable> {
+    let videos: Vec<&ReleaseFile> = files.iter().filter(|f| kind(&f.path) == Some(Kind::Video)).collect();
+    let features: Vec<&ReleaseFile> = videos.iter().copied().filter(|f| !is_sample(&f.path)).collect();
     let candidates = if features.is_empty() { &videos } else { &features };
     let video = *plays.preferred(candidates, |f| f.size, |f| &f.path)?;
     let subtitles = subtitles(files, video, features.len());
@@ -44,7 +44,7 @@ pub fn pick(files: &[TorrentFile], plays: Plays) -> Option<Playable> {
 
 /// The file a person chose to watch, plus the subtitle files that belong with it. When some of
 /// them carry the video's name, as each episode's do in a season, only those belong.
-pub fn around(files: &[TorrentFile], video: u32) -> Option<Playable> {
+pub fn around(files: &[ReleaseFile], video: u32) -> Option<Playable> {
     let video = files.iter().find(|f| f.index == video)?;
     let features = files.iter().filter(|f| kind(&f.path) == Some(Kind::Video) && !is_sample(&f.path)).count();
     let mut subtitles = subtitles(files, video, features);
@@ -57,21 +57,21 @@ pub fn around(files: &[TorrentFile], video: u32) -> Option<Playable> {
 }
 
 /// The file of `episode` in a pack, plus the subtitle files that belong with it: the largest
-/// video, not a sample, whose own name, folder, or torrent reads as that episode. A file of
+/// video, not a sample, whose own name, folder, or release reads as that episode. A file of
 /// several episodes, as `S01E01E02`, is only its first, since the second starts partway in.
-pub fn episode(files: &[TorrentFile], torrent: &str, episode: Episode) -> Option<Playable> {
+pub fn episode(files: &[ReleaseFile], release: &str, episode: Episode) -> Option<Playable> {
     let video = files
         .iter()
         .filter(|f| kind(&f.path) == Some(Kind::Video) && !is_sample(&f.path))
-        .filter(|f| title::episode(&f.path, torrent) == Some(episode))
+        .filter(|f| title::episode(&f.path, release) == Some(episode))
         .max_by_key(|f| f.size)?;
     around(files, video.index)
 }
 
-/// The subtitle files that belong with `video`, ordered by path, in a torrent with `features` videos.
-fn subtitles<'a>(files: &'a [TorrentFile], video: &TorrentFile, features: usize) -> Vec<&'a TorrentFile> {
+/// The subtitle files that belong with `video`, ordered by path, in a release with `features` videos.
+fn subtitles<'a>(files: &'a [ReleaseFile], video: &ReleaseFile, features: usize) -> Vec<&'a ReleaseFile> {
     let home = folder(&video.path);
-    let mut subtitles: Vec<&TorrentFile> = files
+    let mut subtitles: Vec<&ReleaseFile> = files
         .iter()
         .filter(|f| kind(&f.path) == Some(Kind::Subtitle))
         .filter(|f| features <= 1 || folder(&f.path) == home || in_subtitle_folder(&f.path))
@@ -118,9 +118,9 @@ mod tests {
     use super::*;
 
     fn picked<'a>(listing: &[(&'a str, u64)]) -> Option<(&'a str, Vec<&'a str>)> {
-        let files: Vec<TorrentFile> = (0..)
+        let files: Vec<ReleaseFile> = (0..)
             .zip(listing)
-            .map(|(index, &(path, size))| TorrentFile {
+            .map(|(index, &(path, size))| ReleaseFile {
                 index,
                 path: path.into(),
                 size,
@@ -193,9 +193,9 @@ mod tests {
             ("Night/Night.ogv", 469_976_138),
             ("Night/Night_512kb.mp4", 416_743_288),
         ];
-        let files: Vec<TorrentFile> = (0..)
+        let files: Vec<ReleaseFile> = (0..)
             .zip(night)
-            .map(|(index, (path, size))| TorrentFile {
+            .map(|(index, (path, size))| ReleaseFile {
                 index,
                 path: path.into(),
                 size,
@@ -225,9 +225,9 @@ mod tests {
             ("Bonus/Clip.mkv", 100_000_000),
             ("Bonus/English.srt", 10_000),
         ];
-        let files: Vec<TorrentFile> = (0..)
+        let files: Vec<ReleaseFile> = (0..)
             .zip(listing)
-            .map(|(index, (path, size))| TorrentFile {
+            .map(|(index, (path, size))| ReleaseFile {
                 index,
                 path: path.into(),
                 size,
@@ -245,10 +245,10 @@ mod tests {
         assert_eq!(chosen(9), None);
     }
 
-    fn listed(listing: &[(&str, u64)]) -> Vec<TorrentFile> {
+    fn listed(listing: &[(&str, u64)]) -> Vec<ReleaseFile> {
         (0..)
             .zip(listing)
-            .map(|(index, &(path, size))| TorrentFile {
+            .map(|(index, &(path, size))| ReleaseFile {
                 index,
                 path: path.into(),
                 size,
@@ -271,8 +271,8 @@ mod tests {
             ("Show.S01E04E05.mkv", 2_500_000_000),
             ("Extras/Making Of.mkv", 500_000_000),
         ]);
-        let found = |files: &[TorrentFile], torrent: &str, season: u32, number: u32| {
-            episode(files, torrent, Episode { season, episode: number }).map(|p| (p.video, p.subtitles))
+        let found = |files: &[ReleaseFile], release: &str, season: u32, number: u32| {
+            episode(files, release, Episode { season, episode: number }).map(|p| (p.video, p.subtitles))
         };
         let pack = "Show.S01.1080p.WEB-DL.x265";
         assert_eq!(found(&season, pack, 1, 1), Some((0, vec![2, 4])));

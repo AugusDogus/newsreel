@@ -6,7 +6,7 @@ use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex, Weak};
 use std::time::{Duration, Instant};
 
-use torrential_core::{Error, Slice, TorrentId};
+use torrential_core::{DownloadId, Error, Slice};
 
 use super::super::book::{Intent, JobEntry, Observed, Phase};
 use super::super::engine_port::EngineHandle;
@@ -19,13 +19,13 @@ use crate::log::log;
 const HOLD_UNDER: Duration = Duration::from_secs(60);
 /// Once every film being watched has this much on disk ahead of its player, the other downloads
 /// go. A film let go at this lead drains for a minute before it holds them back again, so the
-/// caps change at most about once a minute. Its peers take up to half a minute to come back
-/// once the others are held again, which `HOLD_UNDER` leaves room for.
+/// caps change at most about once a minute. A held-back download's connections take a while to
+/// pick up again once the others are held again, which `HOLD_UNDER` leaves room for.
 const FREE_OVER: Duration = Duration::from_secs(120);
 /// A film whose players have taken nothing and asked for nothing for this long is paused, and
 /// holds nothing back.
 const IDLE: Duration = Duration::from_secs(60);
-/// What a held-back download may take, so its peers stay connected.
+/// What a held-back download may take, so it keeps its place and its connections.
 const TRICKLE: NonZeroU32 = NonZeroU32::new(64 * 1024).unwrap();
 /// How long a film whose runtime is unknown is taken to play. Most films run longer, so their
 /// lead is counted short and the other downloads wait longer rather than less.
@@ -99,7 +99,7 @@ impl Lease {
     pub async fn follow(
         &self,
         engine: &EngineHandle,
-        id: TorrentId,
+        id: DownloadId,
         file: u32,
         size: u64,
         runtime: impl Fn() -> Option<Duration>,
@@ -189,15 +189,15 @@ fn watched(readings: &[Reading], ended: Option<Instant>, now: Instant) -> Option
 pub struct Streams {
     /// The answers streaming each download. A lease holds each reading for as long as it lasts,
     /// and a download stays until the owner notes that its last stream closed.
-    readers: BTreeMap<TorrentId, Vec<Weak<Mutex<Reading>>>>,
+    readers: BTreeMap<DownloadId, Vec<Weak<Mutex<Reading>>>>,
     /// When a player last read each download through an answer that has ended. A download stays
     /// while a lease holds it, or until that read is `IDLE` old.
-    ended: BTreeMap<TorrentId, Arc<Mutex<Option<Instant>>>>,
+    ended: BTreeMap<DownloadId, Arc<Mutex<Option<Instant>>>>,
     /// What plays across the engine, which a lease adds to.
     playing: Playing,
     others: Others,
     /// The downloads the engine holds to a trickle.
-    held: BTreeSet<TorrentId>,
+    held: BTreeSet<DownloadId>,
     decided_at: Option<Instant>,
 }
 
@@ -214,16 +214,16 @@ impl Streams {
     }
 }
 
-/// Whether `job` is taking pieces from peers.
+/// Whether `job` is taking articles from the servers.
 fn downloading(job: &JobEntry) -> bool {
     job.record.intent == Intent::Running
-        && matches!(job.observed, Observed::InEngine(Phase::Metadata | Phase::Checking | Phase::Downloading))
+        && matches!(job.observed, Observed::InEngine(Phase::Checking | Phase::Downloading))
 }
 
 impl Owner {
     /// Someone starts streaming `id`, until they drop the lease, unless the engine is stopping for
     /// an update.
-    pub(super) fn lease(&mut self, id: TorrentId) -> Result<Lease, Error> {
+    pub(super) fn lease(&mut self, id: DownloadId) -> Result<Lease, Error> {
         let playing = self.streams.playing.open()?;
         let first = !self.streamed_now(id);
         let reading = Arc::default();
@@ -235,12 +235,12 @@ impl Owner {
         Ok(Lease { reading, ended, _playing: playing })
     }
 
-    pub(super) fn streamed_now(&self, id: TorrentId) -> bool {
+    pub(super) fn streamed_now(&self, id: DownloadId) -> bool {
         self.streams.readers.get(&id).is_some_and(|readers| readers.iter().any(|reading| reading.strong_count() > 0))
     }
 
     /// The downloads whose last stream closed since this was last asked, which it forgets.
-    pub(super) fn forget_closed_streams(&mut self) -> Vec<TorrentId> {
+    pub(super) fn forget_closed_streams(&mut self) -> Vec<DownloadId> {
         let mut closed = Vec::new();
         self.streams.readers.retain(|id, readers| {
             readers.retain(|reading| reading.strong_count() > 0);
@@ -260,13 +260,13 @@ impl Owner {
             return;
         }
         streams.decided_at = Some(now);
-        let lead = |id: &TorrentId| -> Option<Duration> {
+        let lead = |id: &DownloadId| -> Option<Duration> {
             let readers = streams.readers.get(id).into_iter().flatten().filter_map(Weak::upgrade);
             let readings: Vec<Reading> = readers.map(|reading| *reading.lock().expect("no holder panics")).collect();
             let ended = streams.ended.get(id).and_then(|ended| *ended.lock().expect("no holder panics"));
             watched(&readings, ended, now)
         };
-        let downloading: Vec<(TorrentId, Option<Duration>)> =
+        let downloading: Vec<(DownloadId, Option<Duration>)> =
             self.jobs.values().filter(|job| downloading(job)).map(|job| (job.id(), lead(&job.id()))).collect();
         let before = streams.others;
         streams.others = decide(before, downloading.iter().filter_map(|(_, lead)| *lead));
@@ -281,7 +281,7 @@ impl Owner {
             )),
             _ => {}
         }
-        let held: BTreeSet<TorrentId> = match streams.others {
+        let held: BTreeSet<DownloadId> = match streams.others {
             Others::Free => BTreeSet::new(),
             Others::Held => downloading.iter().filter(|(_, lead)| lead.is_none()).map(|(id, _)| *id).collect(),
         };

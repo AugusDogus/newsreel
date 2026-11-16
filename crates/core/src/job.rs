@@ -5,20 +5,18 @@ use std::str::FromStr;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::error::Error;
-use crate::id::{InfoHash, TorrentId};
+use crate::id::DownloadId;
 use crate::watching::TitleLink;
 
-/// A download. Its ID is the torrent's ID, so a search result keeps its ID when downloaded.
+/// A download. Its ID is the SHA-1 of the release's NZB.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Job {
-    pub id: TorrentId,
-    pub info_hash: InfoHash,
-    /// Unknown until metadata arrives for a bare infohash.
-    pub name: Option<String>,
+    pub id: DownloadId,
+    pub name: String,
     pub dir: PathBuf,
-    /// `dir` joined with the torrent's name, once the name is known.
-    pub path: Option<PathBuf>,
+    /// `dir` joined with the release's name.
+    pub path: PathBuf,
     #[serde(flatten)]
     pub status: JobStatus,
     pub progress: Progress,
@@ -28,12 +26,7 @@ pub struct Job {
     /// The title the download was made for, when playing a title made it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<TitleLink>,
-    #[serde(default)]
     pub place: Place,
-    /// The network interface this download reaches peers through, named while it is missing or
-    /// down. Nothing arrives until it is back.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub waiting_for: Option<String>,
 }
 
 /// Where a download's files live, which says who deletes them.
@@ -54,13 +47,11 @@ pub enum Place {
 pub enum JobStatus {
     /// Waiting for a free download slot.
     Queued,
-    /// Fetching the file list from peers.
-    Metadata,
-    /// Hashing data already on disk.
+    /// Reading back data already on disk.
     Checking,
     Downloading,
     Paused,
-    /// Every selected piece passed its hash check and was written. Nothing uploads after this.
+    /// Every selected piece arrived intact and was written.
     Done {
         finished_at: i64,
     },
@@ -73,7 +64,6 @@ impl JobStatus {
     pub const fn name(&self) -> &'static str {
         match self {
             Self::Queued => "queued",
-            Self::Metadata => "metadata",
             Self::Checking => "checking",
             Self::Downloading => "downloading",
             Self::Paused => "paused",
@@ -91,38 +81,33 @@ impl JobStatus {
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Progress {
-    /// Bytes selected for download. `None` until metadata arrives.
-    pub size: Option<u64>,
-    /// Selected bytes in pieces that passed their hash check.
+    /// Bytes selected for download.
+    pub size: u64,
+    /// Selected bytes in pieces that arrived intact.
     pub verified: u64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub piece_map: Option<PieceMap>,
     /// Payload bytes per second.
     pub down_rate: u64,
-    pub up_rate: u64,
-    pub peers: u32,
-    pub seeds: u32,
+    /// NNTP connections fetching articles now.
+    pub connections: u32,
     /// Seconds to completion at the current rate. `None` until the rate has stayed
     /// above zero for ten seconds.
     pub eta: Option<u64>,
 }
 
 impl Progress {
-    pub fn fraction(&self) -> Option<f64> {
-        match self.size {
-            Some(0) => Some(1.0),
-            Some(size) => Some(self.verified as f64 / size as f64),
-            None => None,
-        }
+    pub fn fraction(&self) -> f64 {
+        if self.size == 0 { 1.0 } else { self.verified as f64 / self.size as f64 }
     }
 }
 
-/// Where a download's data has arrived. The torrent's pieces are cut into [`PieceMap::SLICES`]
-/// equal runs in torrent order, and each [`Slice`] says how much of its run passed the hash
-/// check. With fewer pieces than slices, one piece covers several slices.
+/// Where a download's data has arrived. The release's pieces are cut into [`PieceMap::SLICES`]
+/// equal runs in release order, and each [`Slice`] says how much of its run arrived intact.
+/// With fewer pieces than slices, one piece covers several slices.
 ///
-/// `None` until the engine first samples it, which needs the file list, and once the download
-/// is done, when every selected piece has arrived. A paused or failed download keeps the map
+/// `None` until the engine first samples it, and once the download is done, when every selected
+/// piece has arrived. A paused or failed download keeps the map
 /// from its last save.
 ///
 /// In JSON it is a string with one character per slice: `0` to `8` for the eighths of the run's
@@ -146,7 +131,7 @@ impl PieceMap {
 pub enum Slice {
     /// No piece in the run belongs to a selected file, so nothing will arrive there.
     Unwanted,
-    /// The share of the run's selected pieces that passed their hash check.
+    /// The share of the run's selected pieces that arrived intact.
     Wanted(Eighths),
 }
 
@@ -238,9 +223,9 @@ pub enum Selection {
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-pub struct TorrentFile {
+pub struct ReleaseFile {
     pub index: u32,
-    /// Relative to the torrent's folder, sanitized.
+    /// Relative to the release's folder, sanitized.
     pub path: String,
     pub size: u64,
     pub selected: bool,
@@ -253,7 +238,7 @@ pub struct TorrentFile {
 #[serde(rename_all = "snake_case")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub enum FileRisk {
-    /// A program or script inside a torrent that otherwise holds media.
+    /// A program or script inside a release that otherwise holds media.
     Executable,
 }
 
@@ -298,27 +283,22 @@ mod tests {
 
     #[test]
     fn a_job_names_a_title_only_when_playing_one_made_it() {
-        let id: TorrentId = "9b521219bc48550140a666f74a29048ed78e933b".parse().unwrap();
+        let id: DownloadId = "9b521219bc48550140a666f74a29048ed78e933b".parse().unwrap();
         let job = Job {
             id,
-            info_hash: InfoHash::V1(*id.as_bytes()),
-            name: Some("Night.of.the.Living.Dead.1968.1080p.BluRay.x264".into()),
+            name: "Night.of.the.Living.Dead.1968.1080p.BluRay.x264".into(),
             dir: "/downloads".into(),
-            path: None,
+            path: "/downloads/Night.of.the.Living.Dead.1968.1080p.BluRay.x264".into(),
             status: JobStatus::Queued,
             progress: Progress::default(),
             selection: Selection::All,
             added_at: 7,
             title: None,
             place: Place::Folder,
-            waiting_for: None,
         };
         let json = serde_json::to_value(&job).unwrap();
         let keys: std::collections::BTreeSet<&str> = json.as_object().unwrap().keys().map(String::as_str).collect();
-        assert_eq!(
-            keys,
-            ["added_at", "dir", "id", "info_hash", "name", "path", "place", "progress", "selection", "state"].into()
-        );
+        assert_eq!(keys, ["added_at", "dir", "id", "name", "path", "place", "progress", "selection", "state"].into());
         assert_eq!(json["place"], "folder");
         assert_eq!(serde_json::from_value::<Job>(json).unwrap(), job);
 
@@ -330,14 +310,8 @@ mod tests {
     }
 
     #[test]
-    fn a_job_from_an_engine_that_knows_no_places_is_in_a_folder() {
-        let id: TorrentId = "9b521219bc48550140a666f74a29048ed78e933b".parse().unwrap();
-        let mut json = serde_json::json!({
-            "id": id, "info_hash": InfoHash::V1(*id.as_bytes()), "name": null, "dir": "/downloads", "path": null,
-            "state": "queued", "progress": Progress::default(), "selection": Selection::All, "added_at": 7,
-        });
-        assert_eq!(serde_json::from_value::<Job>(json.clone()).unwrap().place, Place::Folder);
-        json["place"] = "plays".into();
-        assert_eq!(serde_json::from_value::<Job>(json).unwrap().place, Place::Plays);
+    fn an_empty_selection_is_complete() {
+        assert_eq!(Progress::default().fraction(), 1.0);
+        assert_eq!(Progress { size: 200, verified: 50, ..Progress::default() }.fraction(), 0.25);
     }
 }

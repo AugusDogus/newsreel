@@ -12,7 +12,7 @@ const WHOLE: Arrived[] = [{ from: 0, to: 1, share: 1 }];
 
 /**
  * Which parts of `file` are on disk, read from the job's piece map. The map covers the whole
- * torrent in `SLICES` equal runs, so a small file inside a large torrent reads coarsely.
+ * release in `SLICES` equal runs, so a small file inside a large release reads coarsely.
  */
 export function arrived(job: Job, file: StreamedFile, totalSize: number): Arrived[] {
   if (job.state === "done") return WHOLE;

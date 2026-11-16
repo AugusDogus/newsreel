@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-use torrential_core::{Error, InfoHash, PieceMap, Release, Selection, TitleLink, TorrentId};
+use torrential_core::{DownloadId, Error, PieceMap, Release, ResultId, Selection, TitleLink};
 
 use super::admission::Cap;
 use super::book::{Home, Identity, Intent, JobRecord, Linked, Play, PlayName};
@@ -11,7 +11,7 @@ use super::search_port::SavedLink;
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct Tombstone {
-    pub id: TorrentId,
+    pub id: DownloadId,
     pub name: Option<String>,
     pub path: Option<PathBuf>,
     pub removed_at: i64,
@@ -19,14 +19,14 @@ pub struct Tombstone {
 
 pub const TOMBSTONE_SECS: i64 = 86_400;
 pub const RESULTS_SECS: i64 = 7 * 86_400;
-pub const METAINFO_SECS: i64 = RESULTS_SECS;
-pub const METAINFO_BYTES: i64 = 64 << 20;
+pub const LAYOUT_SECS: i64 = RESULTS_SECS;
+pub const LAYOUT_BYTES: i64 = 64 << 20;
 
 /// The deletion of a play's folder in the plays folder, on record until it is done.
 #[derive(Clone, PartialEq, Debug)]
 pub struct Recorded {
     pub key: i64,
-    pub job: TorrentId,
+    pub job: DownloadId,
     pub play: PlayName,
     /// The folder torrential made for the play, the only one this deletes.
     pub folder: Identity,
@@ -37,7 +37,7 @@ pub struct Recorded {
 #[derive(Clone, PartialEq, Debug)]
 pub struct StoredJob {
     pub record: JobRecord,
-    pub metainfo: Option<Vec<u8>>,
+    pub layout: Vec<u8>,
 }
 
 pub struct Store {
@@ -66,10 +66,10 @@ impl Store {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT j.id, j.info_hash, j.name, j.dir, j.selection, j.max_size, j.magnet, j.intent, j.finished_at, \
-                 j.error, j.added_at, j.verified, j.piece_map, j.files_verified, m.bytes, j.max_size_from_setup, \
+                "SELECT j.id, j.name, j.dir, j.selection, j.max_size, j.intent, j.finished_at, j.error, j.added_at, \
+                 j.verified, j.piece_map, j.files_verified, m.bytes, j.max_size_from_setup, \
                  t.title, t.span, t.release, t.played, p.watched_at, p.by_hand, p.device, p.inode FROM jobs j \
-                 LEFT JOIN metainfo m ON m.id = j.id \
+                 LEFT JOIN layout m ON m.id = j.id \
                  LEFT JOIN job_titles t ON t.job = j.id \
                  LEFT JOIN plays p ON p.job = j.id \
                  ORDER BY j.added_at",
@@ -80,31 +80,29 @@ impl Store {
                 Ok((
                     r.get::<_, String>(0)?,
                     r.get::<_, String>(1)?,
-                    r.get::<_, Option<String>>(2)?,
-                    r.get::<_, Vec<u8>>(3)?,
-                    r.get::<_, String>(4)?,
-                    r.get::<_, i64>(5)?,
-                    r.get::<_, Option<String>>(6)?,
-                    r.get::<_, String>(7)?,
-                    r.get::<_, Option<i64>>(8)?,
-                    r.get::<_, Option<String>>(9)?,
-                    r.get::<_, i64>(10)?,
-                    r.get::<_, i64>(11)?,
-                    r.get::<_, Option<String>>(12)?,
-                    r.get::<_, Option<String>>(13)?,
-                    r.get::<_, Option<Vec<u8>>>(14)?,
-                    r.get::<_, bool>(15)?,
+                    r.get::<_, Vec<u8>>(2)?,
+                    r.get::<_, String>(3)?,
+                    r.get::<_, i64>(4)?,
+                    r.get::<_, String>(5)?,
+                    r.get::<_, Option<i64>>(6)?,
+                    r.get::<_, Option<String>>(7)?,
+                    r.get::<_, i64>(8)?,
+                    r.get::<_, i64>(9)?,
+                    r.get::<_, Option<String>>(10)?,
+                    r.get::<_, Option<String>>(11)?,
+                    r.get::<_, Option<Vec<u8>>>(12)?,
+                    r.get::<_, bool>(13)?,
                     (
+                        r.get::<_, Option<String>>(14)?,
+                        r.get::<_, Option<String>>(15)?,
                         r.get::<_, Option<String>>(16)?,
-                        r.get::<_, Option<String>>(17)?,
-                        r.get::<_, Option<String>>(18)?,
-                        r.get::<_, Option<bool>>(19)?,
+                        r.get::<_, Option<bool>>(17)?,
                     ),
                     (
+                        r.get::<_, Option<i64>>(18)?,
+                        r.get::<_, Option<bool>>(19)?,
                         r.get::<_, Option<i64>>(20)?,
-                        r.get::<_, Option<bool>>(21)?,
-                        r.get::<_, Option<i64>>(22)?,
-                        r.get::<_, Option<i64>>(23)?,
+                        r.get::<_, Option<i64>>(21)?,
                     ),
                 ))
             })
@@ -113,12 +111,10 @@ impl Store {
         for row in rows {
             let (
                 id,
-                hash,
                 name,
                 dir,
                 selection,
                 max_size,
-                magnet,
                 intent,
                 finished_at,
                 error,
@@ -143,12 +139,10 @@ impl Store {
             };
             let record = JobRecord {
                 id: id.parse().map_err(|_| bad("id"))?,
-                info_hash: serde_json::from_str(&hash).map_err(|_| bad("info hash"))?,
                 name,
                 dir: path_from(dir),
                 selection: serde_json::from_str::<Selection>(&selection).map_err(|_| bad("selection"))?,
                 cap: Cap { bytes: max_size as u64, from_setup },
-                magnet,
                 added_at,
                 intent,
                 verified: verified as u64,
@@ -165,26 +159,25 @@ impl Store {
                     _ => Home::Folder,
                 },
             };
-            jobs.push(StoredJob { record, metainfo: bytes });
+            let layout = bytes.ok_or_else(|| bad("manifest, which is missing"))?;
+            jobs.push(StoredJob { record, layout });
         }
         Ok(jobs)
     }
 
-    pub fn insert(&mut self, record: &JobRecord, metainfo: Option<&[u8]>, now: i64) -> Result<(), Error> {
+    pub fn insert(&mut self, record: &JobRecord, layout: &[u8], now: i64) -> Result<(), Error> {
         let (intent, finished_at, error) = intent_columns(&record.intent);
         self.write(|tx| {
             tx.execute(
-                "INSERT INTO jobs (id, info_hash, name, dir, selection, max_size, magnet, intent, finished_at, error, added_at, verified, \
+                "INSERT INTO jobs (id, name, dir, selection, max_size, intent, finished_at, error, added_at, verified, \
                  piece_map, files_verified, max_size_from_setup) \
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     record.id.to_hex(),
-                    json(&record.info_hash),
                     record.name,
                     path_bytes(&record.dir),
                     json(&record.selection),
                     record.cap.bytes as i64,
-                    record.magnet,
                     intent,
                     finished_at,
                     error,
@@ -195,10 +188,7 @@ impl Store {
                     record.cap.from_setup,
                 ],
             )?;
-            insert_aliases(tx, record.id, &record.info_hash)?;
-            if let Some(bytes) = metainfo {
-                upsert_metainfo(tx, record.id, bytes, now)?;
-            }
+            upsert_layout(tx, record.id, layout, now)?;
             if let Some(linked) = &record.title {
                 insert_link(tx, record.id, &linked.link, now)?;
             }
@@ -219,7 +209,7 @@ impl Store {
         })
     }
 
-    pub fn set_intent(&mut self, id: TorrentId, intent: &Intent) -> Result<(), Error> {
+    pub fn set_intent(&mut self, id: DownloadId, intent: &Intent) -> Result<(), Error> {
         let (intent, finished_at, error) = intent_columns(intent);
         self.write(|tx| {
             tx.execute(
@@ -232,7 +222,7 @@ impl Store {
 
     pub fn record_check(
         &mut self,
-        id: TorrentId,
+        id: DownloadId,
         intent: Option<&Intent>,
         verified: u64,
         piece_map: Option<PieceMap>,
@@ -254,13 +244,13 @@ impl Store {
         })
     }
 
-    pub fn set_selection(&mut self, id: TorrentId, selection: &Selection) -> Result<(), Error> {
+    pub fn set_selection(&mut self, id: DownloadId, selection: &Selection) -> Result<(), Error> {
         self.write(|tx| {
             tx.execute("UPDATE jobs SET selection = ?2 WHERE id = ?1", params![id.to_hex(), json(selection)]).map(drop)
         })
     }
 
-    pub fn set_cap(&mut self, id: TorrentId, cap: Cap) -> Result<(), Error> {
+    pub fn set_cap(&mut self, id: DownloadId, cap: Cap) -> Result<(), Error> {
         self.write(|tx| {
             tx.execute(
                 "UPDATE jobs SET max_size = ?2, max_size_from_setup = ?3 WHERE id = ?1",
@@ -270,36 +260,45 @@ impl Store {
         })
     }
 
-    pub fn learn(
-        &mut self,
-        id: TorrentId,
-        name: &str,
-        info_hash: &InfoHash,
-        bytes: &[u8],
-        now: i64,
-    ) -> Result<(), Error> {
+    pub fn cache_layout(&mut self, id: DownloadId, bytes: &[u8], now: i64) -> Result<(), Error> {
+        self.write(|tx| upsert_layout(tx, id, bytes, now))
+    }
+
+    /// Records that the NZB behind search result `result` is download `download`.
+    pub fn save_became(&mut self, result: ResultId, download: DownloadId, now: i64) -> Result<(), Error> {
         self.write(|tx| {
             tx.execute(
-                "UPDATE jobs SET name = ?2, info_hash = ?3 WHERE id = ?1",
-                params![id.to_hex(), name, json(info_hash)],
+                "INSERT INTO became (result, download, saved_at) VALUES (?1, ?2, ?3) \
+                 ON CONFLICT (result) DO UPDATE SET download = excluded.download, saved_at = excluded.saved_at",
+                params![result.to_hex(), download.to_hex(), now],
             )?;
-            insert_aliases(tx, id, info_hash)?;
-            upsert_metainfo(tx, id, bytes, now)
+            tx.execute("DELETE FROM became WHERE saved_at < ?1", [now - LAYOUT_SECS]).map(drop)
         })
     }
 
-    pub fn cache_metainfo(&mut self, id: TorrentId, bytes: &[u8], now: i64) -> Result<(), Error> {
-        self.write(|tx| upsert_metainfo(tx, id, bytes, now))
+    /// The downloads that search results whose ID starts with `prefix` became.
+    pub fn became(&self, prefix: &str) -> Result<Vec<DownloadId>, Error> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT download FROM became WHERE substr(result, 1, length(?1)) = ?1")
+            .map_err(|e| self.fail(e))?;
+        let rows = stmt.query_map([prefix], |r| r.get::<_, String>(0)).map_err(|e| self.fail(e))?;
+        let mut ids = Vec::new();
+        for row in rows {
+            let id = row.map_err(|e| self.fail(e))?;
+            ids.push(id.parse().map_err(|_| corrupt(&self.path, "a search result names an unreadable download id"))?);
+        }
+        Ok(ids)
     }
 
-    pub fn metainfo(&self, id: TorrentId) -> Result<Option<Vec<u8>>, Error> {
+    pub fn layout(&self, id: DownloadId) -> Result<Option<Vec<u8>>, Error> {
         self.conn
-            .query_row("SELECT bytes FROM metainfo WHERE id = ?1", [id.to_hex()], |r| r.get(0))
+            .query_row("SELECT bytes FROM layout WHERE id = ?1", [id.to_hex()], |r| r.get(0))
             .optional()
             .map_err(|e| self.fail(e))
     }
 
-    pub fn resume(&self, id: TorrentId) -> Result<Option<Vec<u8>>, Error> {
+    pub fn resume(&self, id: DownloadId) -> Result<Option<Vec<u8>>, Error> {
         self.conn
             .query_row("SELECT bytes FROM resume WHERE job = ?1", [id.to_hex()], |r| r.get(0))
             .optional()
@@ -308,7 +307,7 @@ impl Store {
 
     pub fn save_resume(
         &mut self,
-        id: TorrentId,
+        id: DownloadId,
         bytes: &[u8],
         verified: u64,
         piece_map: Option<PieceMap>,
@@ -318,7 +317,7 @@ impl Store {
         self.write(|tx| save_resume(tx, id, bytes, verified, piece_map, files, now))
     }
 
-    pub fn finish(&mut self, id: TorrentId, finished_at: i64, bytes: &[u8], verified: u64) -> Result<(), Error> {
+    pub fn finish(&mut self, id: DownloadId, finished_at: i64, bytes: &[u8], verified: u64) -> Result<(), Error> {
         self.write(|tx| {
             save_resume(tx, id, bytes, verified, None, None, finished_at)?;
             tx.execute(
@@ -355,7 +354,7 @@ impl Store {
                 params![id, tombstone.name, tombstone.path.as_deref().map(path_bytes), tombstone.removed_at],
             )?;
             tx.execute("DELETE FROM tombstones WHERE removed_at < ?1", [tombstone.removed_at - TOMBSTONE_SECS])?;
-            evict_metainfo(tx, tombstone.removed_at)?;
+            evict_layout(tx, tombstone.removed_at)?;
             Ok(key)
         })
     }
@@ -429,28 +428,24 @@ impl Store {
     }
 
     /// Notes that someone pressed play on a play, or streamed it, at `at`.
-    pub fn watched(&mut self, id: TorrentId, at: SystemTime) -> Result<(), Error> {
+    pub fn watched(&mut self, id: DownloadId, at: SystemTime) -> Result<(), Error> {
         self.write(|tx| {
             tx.execute("UPDATE plays SET watched_at = ?2 WHERE job = ?1", params![id.to_hex(), unix(at)]).map(drop)
         })
     }
 
     /// Notes that the person asked for a play by hand, so it never leaves the plays folder by itself.
-    pub fn by_hand(&mut self, id: TorrentId) -> Result<(), Error> {
+    pub fn by_hand(&mut self, id: DownloadId) -> Result<(), Error> {
         self.write(|tx| tx.execute("UPDATE plays SET by_hand = 1 WHERE job = ?1", [id.to_hex()]).map(drop))
     }
 
     /// Links a download that already existed to the title a play joined it for.
-    pub fn link(&mut self, id: TorrentId, link: &TitleLink, now: i64) -> Result<(), Error> {
+    pub fn link(&mut self, id: DownloadId, link: &TitleLink, now: i64) -> Result<(), Error> {
         self.write(|tx| insert_link(tx, id, link, now))
     }
 
-    pub fn played(&mut self, id: TorrentId) -> Result<(), Error> {
+    pub fn played(&mut self, id: DownloadId) -> Result<(), Error> {
         self.write(|tx| tx.execute("UPDATE job_titles SET played = 1 WHERE job = ?1", [id.to_hex()]).map(drop))
-    }
-
-    pub fn remove_duplicate(&mut self, id: TorrentId) -> Result<(), Error> {
-        self.write(|tx| tx.execute("DELETE FROM jobs WHERE id = ?1", [id.to_hex()]).map(drop))
     }
 
     pub fn tombstones(&self, now: i64) -> Result<Vec<Tombstone>, Error> {
@@ -474,23 +469,6 @@ impl Store {
             });
         }
         Ok(out)
-    }
-
-    pub fn alias_owners(&self, info_hash: &InfoHash) -> Result<Vec<TorrentId>, Error> {
-        let mut stmt =
-            self.conn.prepare("SELECT DISTINCT job FROM aliases WHERE hash = ?1").map_err(|e| self.fail(e))?;
-        let mut owners = Vec::new();
-        for key in alias_keys(info_hash) {
-            let rows = stmt.query_map([key], |r| r.get::<_, String>(0)).map_err(|e| self.fail(e))?;
-            for row in rows {
-                let id = row.map_err(|e| self.fail(e))?;
-                let id = id.parse().map_err(|_| corrupt(&self.path, "an alias names an unreadable job id"))?;
-                if !owners.contains(&id) {
-                    owners.push(id);
-                }
-            }
-        }
-        Ok(owners)
     }
 
     pub fn record_results(&mut self, saved: &[(Release, Option<SavedLink>)], now: i64) -> Result<(), Error> {
@@ -577,7 +555,7 @@ fn stop_plays(tx: &Transaction, stopped: &Error) -> rusqlite::Result<()> {
     .map(drop)
 }
 
-fn insert_link(tx: &Transaction, id: TorrentId, link: &TitleLink, now: i64) -> rusqlite::Result<()> {
+fn insert_link(tx: &Transaction, id: DownloadId, link: &TitleLink, now: i64) -> rusqlite::Result<()> {
     tx.execute(
         "INSERT OR REPLACE INTO job_titles (job, title, span, release, played, linked_at) \
          VALUES (?1, ?2, ?3, ?4, 0, ?5)",
@@ -601,43 +579,31 @@ fn linked(columns: LinkColumns) -> Result<Option<Linked>, ()> {
     Ok(Some(Linked { link, played }))
 }
 
-fn alias_keys(info_hash: &InfoHash) -> Vec<String> {
-    let hex = |b: &[u8]| b.iter().map(|x| format!("{x:02x}")).collect::<String>();
-    [info_hash.v1().map(|h| hex(&h)), info_hash.v2().map(|h| hex(&h))].into_iter().flatten().collect()
-}
-
-fn insert_aliases(tx: &Transaction, id: TorrentId, info_hash: &InfoHash) -> rusqlite::Result<()> {
-    for hash in alias_keys(info_hash) {
-        tx.execute("INSERT OR IGNORE INTO aliases (hash, job) VALUES (?1, ?2)", [hash, id.to_hex()])?;
-    }
-    Ok(())
-}
-
-fn upsert_metainfo(tx: &Transaction, id: TorrentId, bytes: &[u8], now: i64) -> rusqlite::Result<()> {
+fn upsert_layout(tx: &Transaction, id: DownloadId, bytes: &[u8], now: i64) -> rusqlite::Result<()> {
     tx.execute(
-        "INSERT OR REPLACE INTO metainfo (id, bytes, saved_at) VALUES (?1, ?2, ?3)",
+        "INSERT OR REPLACE INTO layout (id, bytes, saved_at) VALUES (?1, ?2, ?3)",
         params![id.to_hex(), bytes, now],
     )?;
-    evict_metainfo(tx, now)
+    evict_layout(tx, now)
 }
 
-fn evict_metainfo(tx: &Transaction, now: i64) -> rusqlite::Result<()> {
-    tx.execute("DELETE FROM metainfo WHERE id NOT IN (SELECT id FROM jobs) AND saved_at < ?1", [now - METAINFO_SECS])?;
+fn evict_layout(tx: &Transaction, now: i64) -> rusqlite::Result<()> {
+    tx.execute("DELETE FROM layout WHERE id NOT IN (SELECT id FROM jobs) AND saved_at < ?1", [now - LAYOUT_SECS])?;
     tx.execute(
-        "DELETE FROM metainfo WHERE id IN (\
+        "DELETE FROM layout WHERE id IN (\
            SELECT id FROM (\
              SELECT id, sum(length(bytes)) OVER (ORDER BY saved_at DESC, id) AS newer \
-             FROM metainfo WHERE id NOT IN (SELECT id FROM jobs)\
+             FROM layout WHERE id NOT IN (SELECT id FROM jobs)\
            ) WHERE newer > ?1\
          )",
-        [METAINFO_BYTES],
+        [LAYOUT_BYTES],
     )
     .map(drop)
 }
 
 fn save_resume(
     tx: &Transaction,
-    id: TorrentId,
+    id: DownloadId,
     bytes: &[u8],
     verified: u64,
     piece_map: Option<PieceMap>,
@@ -669,12 +635,10 @@ fn at(seconds: i64) -> SystemTime {
 #[cfg(test)]
 mod tests {
     use std::path::Path;
-    use std::sync::Arc;
 
     use super::*;
     use crate::daemon::db;
-    use crate::daemon::devices::Devices;
-    use torrential_core::{ErrorCode, ReleaseId};
+    use torrential_core::ErrorCode;
 
     fn open(path: &Path) -> Store {
         Store::open(&db::connect(path).unwrap()).unwrap()
@@ -682,13 +646,11 @@ mod tests {
 
     fn record(n: u8) -> JobRecord {
         JobRecord {
-            id: TorrentId::from_bytes([n; 20]),
-            info_hash: InfoHash::Hybrid { v1: [n; 20], v2: [n + 1; 32] },
-            name: Some(format!("job {n}")),
+            id: DownloadId::from_bytes([n; 20]),
+            name: format!("job {n}"),
             dir: PathBuf::from("/dl"),
             selection: Selection::Patterns(vec!["*.mkv".into()]),
             cap: Cap { bytes: 7, from_setup: true },
-            magnet: Some("magnet:?xt=urn:btih:x".into()),
             added_at: 100,
             intent: Intent::Running,
             verified: 0,
@@ -704,27 +666,27 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("state.db");
         let mut store = open(&path);
-        store.insert(&record(1), Some(b"torrent"), 100).unwrap();
+        store.insert(&record(1), b"manifest", 100).unwrap();
         store
             .set_intent(
-                TorrentId::from_bytes([1; 20]),
+                DownloadId::from_bytes([1; 20]),
                 &Intent::Failed { error: Error::new(ErrorCode::DiskFull, "full") },
             )
             .unwrap();
-        store.insert(&record(3), None, 100).unwrap();
-        store.finish(TorrentId::from_bytes([3; 20]), 200, b"resume", 42).unwrap();
+        store.insert(&record(3), b"manifest", 100).unwrap();
+        store.finish(DownloadId::from_bytes([3; 20]), 200, b"resume", 42).unwrap();
         let map: PieceMap = format!("{}{}", "8".repeat(32), "-".repeat(32)).parse().unwrap();
-        store.insert(&record(5), None, 100).unwrap();
-        store.save_resume(TorrentId::from_bytes([5; 20]), b"resume", 9, Some(map), Some(&[4, 5]), 150).unwrap();
+        store.insert(&record(5), b"manifest", 100).unwrap();
+        store.save_resume(DownloadId::from_bytes([5; 20]), b"resume", 9, Some(map), Some(&[4, 5]), 150).unwrap();
         drop(store);
         let store = open(&path);
         let jobs = store.jobs().unwrap();
         assert_eq!(jobs[0].record.intent, Intent::Failed { error: Error::new(ErrorCode::DiskFull, "full") });
-        assert_eq!(jobs[0].metainfo.as_deref(), Some(&b"torrent"[..]));
+        assert_eq!(jobs[0].layout, b"manifest");
         assert_eq!(jobs[1].record, JobRecord { intent: Intent::Done { finished_at: 200 }, verified: 42, ..record(3) });
         let saved = JobRecord { verified: 9, piece_map: Some(map), files_verified: Some(vec![4, 5]), ..record(5) };
         assert_eq!(jobs[2].record, saved);
-        assert_eq!(store.resume(TorrentId::from_bytes([3; 20])).unwrap().as_deref(), Some(&b"resume"[..]));
+        assert_eq!(store.resume(DownloadId::from_bytes([3; 20])).unwrap().as_deref(), Some(&b"resume"[..]));
     }
 
     #[test]
@@ -735,22 +697,22 @@ mod tests {
         let link = TitleLink {
             title: "tt9999901".parse().unwrap(),
             span: "s1".parse().unwrap(),
-            release: Some(ReleaseId::Torrent(TorrentId::from_bytes([1; 20]))),
+            release: Some(ResultId::from_bytes([1; 20])),
         };
         let made = Linked { link: link.clone(), played: false };
-        store.insert(&JobRecord { title: Some(made.clone()), ..record(1) }, None, 100).unwrap();
-        store.insert(&record(3), None, 100).unwrap();
-        store.link(TorrentId::from_bytes([3; 20]), &link, 110).unwrap();
-        store.played(TorrentId::from_bytes([3; 20])).unwrap();
+        store.insert(&JobRecord { title: Some(made.clone()), ..record(1) }, b"release", 100).unwrap();
+        store.insert(&record(3), b"release", 100).unwrap();
+        store.link(DownloadId::from_bytes([3; 20]), &link, 110).unwrap();
+        store.played(DownloadId::from_bytes([3; 20])).unwrap();
         drop(store);
         let mut store = open(&path);
         let titles: Vec<Option<Linked>> = store.jobs().unwrap().into_iter().map(|j| j.record.title).collect();
         assert_eq!(titles, [Some(made), Some(Linked { link, played: true })]);
 
-        let gone = Tombstone { id: TorrentId::from_bytes([1; 20]), name: None, path: None, removed_at: 120 };
+        let gone = Tombstone { id: DownloadId::from_bytes([1; 20]), name: None, path: None, removed_at: 120 };
         store.remove(&gone, None).unwrap();
-        let left: Vec<TorrentId> = store.jobs().unwrap().into_iter().map(|j| j.record.id).collect();
-        assert_eq!(left, [TorrentId::from_bytes([3; 20])]);
+        let left: Vec<DownloadId> = store.jobs().unwrap().into_iter().map(|j| j.record.id).collect();
+        assert_eq!(left, [DownloadId::from_bytes([3; 20])]);
         let links: i64 = store.conn.query_row("SELECT count(*) FROM job_titles", [], |r| r.get(0)).unwrap();
         assert_eq!(links, 1);
     }
@@ -759,8 +721,8 @@ mod tests {
     fn a_failed_check_replaces_the_progress_and_drops_the_resume_data_it_contradicts() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = open(&dir.path().join("state.db"));
-        let id = TorrentId::from_bytes([6; 20]);
-        store.insert(&record(6), None, 100).unwrap();
+        let id = DownloadId::from_bytes([6; 20]);
+        store.insert(&record(6), b"manifest", 100).unwrap();
         store.finish(id, 200, b"every piece", 42).unwrap();
         let failed = Intent::Failed { error: Error::new(ErrorCode::VerificationFailed, "1 damaged piece") };
         store.record_check(id, Some(&failed), 30, None, &[20, 10]).unwrap();
@@ -771,23 +733,12 @@ mod tests {
     }
 
     #[test]
-    fn both_hashes_of_a_hybrid_resolve_to_one_job() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut store = open(&dir.path().join("state.db"));
-        store.insert(&record(1), None, 100).unwrap();
-        let id = TorrentId::from_bytes([1; 20]);
-        assert_eq!(store.alias_owners(&InfoHash::V1([1; 20])).unwrap(), [id]);
-        assert_eq!(store.alias_owners(&InfoHash::V2([2; 32])).unwrap(), [id]);
-        assert_eq!(store.alias_owners(&InfoHash::V1([3; 20])).unwrap(), []);
-    }
-
-    #[test]
     fn removal_leaves_a_short_tombstone() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = open(&dir.path().join("state.db"));
-        store.insert(&record(1), None, 100).unwrap();
+        store.insert(&record(1), b"manifest", 100).unwrap();
         let tomb = Tombstone {
-            id: TorrentId::from_bytes([1; 20]),
+            id: DownloadId::from_bytes([1; 20]),
             name: Some("job 1".into()),
             path: Some("/dl/job 1".into()),
             removed_at: 1_000,
@@ -809,8 +760,8 @@ mod tests {
             home: Home::Plays(Play { watched_at: at(100), by_hand: false, folder }),
             ..record(1)
         };
-        store.insert(&play, None, 100).unwrap();
-        store.insert(&record(2), None, 100).unwrap();
+        store.insert(&play, b"release", 100).unwrap();
+        store.insert(&record(2), b"release", 100).unwrap();
         store.watched(play.id, at(250)).unwrap();
         store.by_hand(play.id).unwrap();
         let homes: Vec<Home> = store.jobs().unwrap().into_iter().map(|j| j.record.home).collect();
@@ -837,8 +788,8 @@ mod tests {
         store.use_plays_folder(first, &stopped).unwrap();
         let home = Home::Plays(Play { watched_at: at(100), by_hand: false, folder: Identity { device: 1, inode: 9 } });
         let done = Intent::Done { finished_at: 150 };
-        store.insert(&JobRecord { home, ..record(1) }, None, 100).unwrap();
-        store.insert(&JobRecord { home, intent: done.clone(), ..record(2) }, None, 100).unwrap();
+        store.insert(&JobRecord { home, ..record(1) }, b"release", 100).unwrap();
+        store.insert(&JobRecord { home, intent: done.clone(), ..record(2) }, b"release", 100).unwrap();
         store.use_plays_folder(first, &stopped).unwrap();
         let jobs = |store: &Store| -> Vec<(Home, Intent)> {
             store.jobs().unwrap().into_iter().map(|job| (job.record.home, job.record.intent)).collect()
@@ -854,54 +805,22 @@ mod tests {
     fn cached_file_lists_expire_and_fit_a_budget_but_a_downloads_stays() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = open(&dir.path().join("state.db"));
-        let id = TorrentId::from_bytes;
+        let id = DownloadId::from_bytes;
         let largest = vec![7; 16 << 20];
         let t0 = 1_000_000;
-        let later = t0 + METAINFO_SECS + 1;
+        let later = t0 + LAYOUT_SECS + 1;
 
-        store.insert(&record(1), Some(b"tracked"), t0).unwrap();
-        store.insert(&record(3), Some(b"removed"), t0).unwrap();
-        store.cache_metainfo(id([2; 20]), b"old", t0).unwrap();
-        store.cache_metainfo(id([4; 20]), b"recent", later).unwrap();
+        store.insert(&record(1), b"tracked", t0).unwrap();
+        store.insert(&record(3), b"removed", t0).unwrap();
+        store.cache_layout(id([2; 20]), b"old", t0).unwrap();
+        store.cache_layout(id([4; 20]), b"recent", later).unwrap();
         for n in 5..10 {
-            store.cache_metainfo(id([n; 20]), &largest, later + i64::from(n)).unwrap();
+            store.cache_layout(id([n; 20]), &largest, later + i64::from(n)).unwrap();
         }
         store.remove(&Tombstone { id: id([3; 20]), name: None, path: None, removed_at: later + 10 }, None).unwrap();
 
-        let kept: Vec<u8> = (1..10).filter(|n| store.metainfo(id([*n; 20])).unwrap().is_some()).collect();
+        let kept: Vec<u8> = (1..10).filter(|n| store.layout(id([*n; 20])).unwrap().is_some()).collect();
         assert_eq!(kept, [1, 6, 7, 8, 9]);
-        assert_eq!(store.jobs().unwrap()[0].metainfo.as_deref(), Some(&b"tracked"[..]));
-    }
-
-    #[tokio::test]
-    async fn a_database_from_0_4_0_gains_devices_and_plays_and_keeps_its_downloads() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("state.db");
-        let mut old = Store::open(&db::connect_with(&path, &db::MIGRATIONS[..6]).unwrap()).unwrap();
-        old.insert(&record(1), Some(b"torrent"), 100).unwrap();
-        drop(old);
-
-        let db = db::connect(&path).unwrap();
-        let mut store = Store::open(&db).unwrap();
-        let version: i64 = store.conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
-        assert_eq!(version, 9);
-        assert!(dir.path().join("state.v6.bak").is_file());
-        let jobs = store.jobs().unwrap();
-        assert_eq!(jobs[0].record, record(1));
-        assert_eq!(jobs[0].metainfo.as_deref(), Some(&b"torrent"[..]));
-
-        let folder = Identity { device: 1, inode: 9 };
-        let play = JobRecord { home: Home::Plays(Play { watched_at: at(200), by_hand: false, folder }), ..record(3) };
-        store.insert(&play, None, 200).unwrap();
-        let tomb = Tombstone { id: play.id, name: None, path: None, removed_at: 300 };
-        let name = PlayName::parse("0303030303030303-0").unwrap();
-        let key = store.remove(&tomb, Some((&name, folder, 300))).unwrap().unwrap();
-        assert_eq!(store.deletions().unwrap(), [Recorded { key, job: play.id, play: name, folder, bytes: 300 }]);
-
-        let devices = Arc::new(Devices::open(&db, crate::config::Exposure::default()).unwrap());
-        let code = devices.add(47919, 1_800_000_000).unwrap().offer.unwrap().code;
-        let phone = std::net::IpAddr::from([192, 168, 1, 40]);
-        let (device, _) = devices.pair(&code, Some("iPhone"), phone, 1_800_000_000).unwrap();
-        assert_eq!(Devices::open(&db, crate::config::Exposure::default()).unwrap().list(47919).devices, [device]);
+        assert_eq!(store.jobs().unwrap()[0].layout, b"tracked");
     }
 }

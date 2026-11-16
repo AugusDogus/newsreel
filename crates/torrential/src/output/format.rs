@@ -14,14 +14,11 @@ pub fn size(bytes: Option<u64>) -> String {
 }
 
 pub fn percent(progress: &Progress) -> String {
-    match progress.size {
-        None => UNKNOWN.to_string(),
-        Some(size) if progress.verified >= size => "100%".to_string(),
-        Some(size) => {
-            let tenths = progress.verified as u128 * 1000 / size as u128;
-            format!("{}.{}%", tenths / 10, tenths % 10)
-        }
+    if progress.verified >= progress.size {
+        return "100%".to_string();
     }
+    let tenths = progress.verified as u128 * 1000 / progress.size as u128;
+    format!("{}.{}%", tenths / 10, tenths % 10)
 }
 
 pub fn rate(bytes_per_sec: u64) -> String {
@@ -72,7 +69,7 @@ mod tests {
         for case in vectors["percent"].as_array().unwrap() {
             let progress = Progress {
                 verified: case["done"].as_u64().unwrap(),
-                size: case["size"].as_u64(),
+                size: case["size"].as_u64().unwrap(),
                 ..Progress::default()
             };
             assert_eq!(percent(&progress), case["cli"], "{case}");
@@ -82,10 +79,10 @@ mod tests {
     #[test]
     fn percent_never_rounds_up_to_done() {
         let p = |verified, size| Progress { verified, size, ..Progress::default() };
-        assert_eq!(percent(&p(341, Some(1000))), "34.1%");
-        assert_eq!(percent(&p(9_999, Some(10_000))), "99.9%");
-        assert_eq!(percent(&p(10_000, Some(10_000))), "100%");
-        assert_eq!(percent(&p(0, None)), "?");
+        assert_eq!(percent(&p(341, 1000)), "34.1%");
+        assert_eq!(percent(&p(9_999, 10_000)), "99.9%");
+        assert_eq!(percent(&p(10_000, 10_000)), "100%");
+        assert_eq!(percent(&p(0, 0)), "100%", "nothing selected is nothing left");
     }
 
     #[test]

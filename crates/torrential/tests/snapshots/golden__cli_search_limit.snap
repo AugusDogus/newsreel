@@ -12,7 +12,7 @@ expression: value
         "text": "ubuntu",
         "sources": [],
         "category": null,
-        "min_seeds": null,
+        "min_grabs": null,
         "max_size": null,
         "sort": "relevance",
         "limit": 3,
@@ -51,11 +51,10 @@ expression: value
       },
       "releases": [
         {
-          "id": "e3a1f06d2b1c8a4f5e6d7c8b9a0f1e2d3c4b5a69",
+          "id": "ue3a1f06d2b1c8a4f5e6d7c8b9a0f1e2d3c4b5a69",
           "name": "ubuntu-24.04.5-desktop-amd64.iso",
           "size": 6345887744,
-          "seeders": 1873,
-          "leechers": null,
+          "grabs": 1873,
           "published": null,
           "category": "software",
           "quality": {
@@ -65,54 +64,46 @@ expression: value
           },
           "flags": [],
           "sources": [
-            "knaben"
+            "geek"
           ],
-          "magnet": "magnet:?xt=urn:btih:e3a1f06d2b1c8a4f5e6d7c8b9a0f1e2d3c4b5a69&dn=ubuntu-24.04.5-desktop-amd64.iso&xl=6345887744",
-          "torrent_url": null,
-          "info_url": null
+          "nzb_url": "fake://e3a1f06d2b1c8a4f5e6d7c8b9a0f1e2d3c4b5a69"
         }
       ],
       "total": 1,
       "hidden_adult": 0,
       "sources": [
         {
-          "source": "archlinux.org",
+          "source": "hydra",
           "outcome": "ok",
           "results": 0,
           "elapsed_ms": "[redacted]"
         },
         {
-          "source": "archive.org",
-          "outcome": "ok",
-          "results": 0,
-          "elapsed_ms": "[redacted]"
-        },
-        {
-          "source": "apibay",
-          "outcome": "http",
-          "status": 503,
-          "elapsed_ms": "[redacted]"
-        },
-        {
-          "source": "knaben",
+          "source": "geek",
           "outcome": "ok",
           "results": 1,
           "elapsed_ms": "[redacted]"
         },
         {
-          "source": "torrents-csv",
+          "source": "dognzb",
+          "outcome": "http",
+          "status": 503,
+          "elapsed_ms": "[redacted]"
+        },
+        {
+          "source": "planet",
           "outcome": "ok",
           "results": 0,
           "elapsed_ms": "[redacted]"
         },
         {
-          "source": "nyaa",
+          "source": "slowznab",
           "outcome": "timeout",
           "elapsed_ms": "[redacted]"
         }
       ],
       "elapsed_ms": "[redacted]"
     },
-    "next": "torrential files e3a1f0"
+    "next": "torrential files ue3a1f0"
   }
 }

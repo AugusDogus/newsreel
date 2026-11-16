@@ -38,13 +38,13 @@ fn play(mut conn: Conn, args: TvPlayArgs, mode: Mode, cwd: &Path) -> Result<u8, 
         (Some(video), _) => Target::Title(video.clone()),
         (None, [reference]) => Target::parse(reference, cwd)?,
         (None, _) => {
-            return Err(Error::new(ErrorCode::Usage, format!("{} names no title or torrent", words.join(" ")))
+            return Err(Error::new(ErrorCode::Usage, format!("{} names no title or release", words.join(" ")))
                 .with_hint("name a title ID such as tt0063350, or a download ID from torrential status"));
         }
     };
     match (&video, &source, file) {
         (None, Some(_), _) => return Err(titles::for_a_title("--source")),
-        (Some(video), _, Some(_)) => return Err(torrential_core::target::not_a_torrent(video, "--file")),
+        (Some(video), _, Some(_)) => return Err(torrential_core::target::not_a_release(video, "--file")),
         _ => {}
     }
     let request = Request::Cast(CastRequest { tv, target, source, file, video: None, subtitle, start_at: at });

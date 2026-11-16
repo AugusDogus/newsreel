@@ -1,5 +1,4 @@
-//! Torznab indexers the engine searches beside its built-in sources: Jackett, Prowlarr, or
-//! bitmagnet endpoints that reach trackers torrential does not, private ones among them.
+//! The Newznab indexers the engine searches: NZBHydra, Prowlarr, or an indexer's own API.
 
 use std::fmt;
 
@@ -29,12 +28,12 @@ impl fmt::Debug for ApiKey {
     }
 }
 
-/// A `sources.torznab` entry, as `torrential indexers` lists it.
+/// A `sources.newznab` entry, as `torrential indexers` lists it.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Indexer {
     /// The `--source` name.
     pub name: String,
-    /// The Torznab endpoint, which never holds the key.
+    /// The Newznab endpoint, which never holds the key.
     pub url: String,
     pub key: KeyFrom,
     /// What it answered to `t=caps` just now.
@@ -56,7 +55,7 @@ pub enum KeyFrom {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "state")]
 pub enum Check {
-    /// It answered as a Torznab indexer, with these top-level categories.
+    /// It answered as a Newznab indexer, with these top-level categories.
     Answers { categories: Vec<IndexerCategory> },
     /// It did not, and why, in plain words.
     Fails { reason: String },
@@ -94,24 +93,24 @@ mod tests {
     fn a_list_reads_as_plain_json() {
         let list = IndexerList {
             indexers: vec![Indexer {
-                name: "filelist".into(),
+                name: "nzbgeek".into(),
                 url: "http://127.0.0.1:9696/3/api".into(),
                 key: KeyFrom::Env("PROWLARR_KEY".into()),
                 check: Check::Answers { categories: vec![IndexerCategory { id: 5000, name: "TV".into() }] },
             }],
-            added: vec!["filelist".into()],
+            added: vec!["nzbgeek".into()],
         };
         let json = serde_json::to_value(&list).unwrap();
         assert_eq!(
             json,
             serde_json::json!({
                 "indexers": [{
-                    "name": "filelist",
+                    "name": "nzbgeek",
                     "url": "http://127.0.0.1:9696/3/api",
                     "key": {"env": "PROWLARR_KEY"},
                     "check": {"state": "answers", "categories": [{"id": 5000, "name": "TV"}]},
                 }],
-                "added": ["filelist"],
+                "added": ["nzbgeek"],
             })
         );
         assert_eq!(serde_json::from_value::<IndexerList>(json).unwrap(), list);

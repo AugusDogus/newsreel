@@ -2,14 +2,14 @@
 source: crates/torrential/src/client/tests.rs
 expression: "both(&doc, &Response::Search { result })"
 ---
-ID	SEEDS	SIZE	QUALITY	AGE	SOURCE	FLAGS	NAME
-9b5212	412	1.5 GiB	-	17d	archlinux+1	official	archlinux-2026.10.01-x86_64.iso
-51e0c7	37	1.4 GiB	-	47d	knaben	-	archlinux-2026.09.01-x86_64.iso
-ud4d4d4	?	?	-	?	jackett	-	Arch Linux 2026.10.01 x86_64 ISO + checksums
-9b5213	3	2.0 GiB	-	3y	knaben	-	arch linux ISOgpj.exe
-# 4 of 14 results · 2 of 4 sources ok · apibay: HTTP 503 · nyaa: timed out · 1.4s · 1 adult hidden: --adult · more: --limit 14
+ID	GRABS	SIZE	QUALITY	AGE	SOURCE	FLAGS	NAME
+u9b5212	412	1.5 GiB	-	17d	geek+1	-	archlinux-2026.10.01-x86_64.iso
+u51e0c7	37	1.4 GiB	-	47d	hydra	-	archlinux-2026.09.01-x86_64.iso
+ud4d4d4	?	?	-	?	planet	-	Arch Linux 2026.10.01 x86_64 ISO + checksums
+u9b5213	3	2.0 GiB	-	3y	hydra	-	arch linux ISOgpj.exe
+# 4 of 14 results · 2 of 4 sources ok · dognzb: HTTP 503 · slowznab: timed out · 1.4s · 1 adult hidden: --adult · more: --limit 14
 # ranked for this Mac: arm64
-next: torrential files 9b5212
+next: torrential files u9b5212
 
 --- json
 {
@@ -20,7 +20,7 @@ next: torrential files 9b5212
       "text": "arch linux iso",
       "sources": [],
       "category": null,
-      "min_seeds": null,
+      "min_grabs": null,
       "max_size": null,
       "sort": "relevance",
       "limit": 10,
@@ -59,11 +59,10 @@ next: torrential files 9b5212
     },
     "releases": [
       {
-        "id": "9b521219bc48550140a666f74a29048ed78e933b",
+        "id": "u9b521219bc48550140a666f74a29048ed78e933b",
         "name": "archlinux-2026.10.01-x86_64.iso",
         "size": 1640497152,
-        "seeders": 412,
-        "leechers": null,
+        "grabs": 412,
         "published": 1790845923,
         "category": null,
         "quality": {
@@ -71,23 +70,18 @@ next: torrential files 9b5212
           "codec": null,
           "hdr": false
         },
-        "flags": [
-          "official"
-        ],
+        "flags": [],
         "sources": [
-          "archlinux",
-          "knaben"
+          "geek",
+          "hydra"
         ],
-        "magnet": "magnet:?xt=urn:btih:9b521219bc48550140a666f74a29048ed78e933b",
-        "torrent_url": null,
-        "info_url": null
+        "nzb_url": null
       },
       {
-        "id": "51e0c70000000000000000000000000000000000",
+        "id": "u51e0c70000000000000000000000000000000000",
         "name": "archlinux-2026.09.01-x86_64.iso",
         "size": 1503238553,
-        "seeders": 37,
-        "leechers": null,
+        "grabs": 37,
         "published": 1788253923,
         "category": null,
         "quality": {
@@ -97,18 +91,15 @@ next: torrential files 9b5212
         },
         "flags": [],
         "sources": [
-          "knaben"
+          "hydra"
         ],
-        "magnet": null,
-        "torrent_url": null,
-        "info_url": null
+        "nzb_url": null
       },
       {
         "id": "ud4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4",
         "name": "Arch Linux 2026.10.01 x86_64 ISO + checksums",
         "size": null,
-        "seeders": null,
-        "leechers": null,
+        "grabs": null,
         "published": null,
         "category": null,
         "quality": {
@@ -118,18 +109,15 @@ next: torrential files 9b5212
         },
         "flags": [],
         "sources": [
-          "jackett"
+          "planet"
         ],
-        "magnet": null,
-        "torrent_url": null,
-        "info_url": null
+        "nzb_url": null
       },
       {
-        "id": "9b52130000000000000000000000000000000000",
+        "id": "u9b52130000000000000000000000000000000000",
         "name": "arch\u001b[31m linux\tISO‮gpj.exe",
         "size": 2147483648,
-        "seeders": 3,
-        "leechers": null,
+        "grabs": 3,
         "published": 1697706723,
         "category": null,
         "quality": {
@@ -139,41 +127,39 @@ next: torrential files 9b5212
         },
         "flags": [],
         "sources": [
-          "knaben"
+          "hydra"
         ],
-        "magnet": null,
-        "torrent_url": null,
-        "info_url": null
+        "nzb_url": null
       }
     ],
     "total": 14,
     "hidden_adult": 1,
     "sources": [
       {
-        "source": "archlinux",
+        "source": "geek",
         "outcome": "ok",
         "results": 1,
         "elapsed_ms": 300
       },
       {
-        "source": "knaben",
+        "source": "hydra",
         "outcome": "ok",
         "results": 12,
         "elapsed_ms": 300
       },
       {
-        "source": "apibay",
+        "source": "dognzb",
         "outcome": "http",
         "status": 503,
         "elapsed_ms": 300
       },
       {
-        "source": "nyaa",
+        "source": "slowznab",
         "outcome": "timeout",
         "elapsed_ms": 300
       }
     ],
     "elapsed_ms": 1432
   },
-  "next": "torrential files 9b5212"
+  "next": "torrential files u9b5212"
 }

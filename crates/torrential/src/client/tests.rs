@@ -7,12 +7,12 @@ use std::time::Duration;
 
 use torrential_core::error::Details;
 use torrential_core::protocol::{
-    Change, ChangeResult, DownloadPlan, FilesReply, GetOutcome, GetReply, Kept, MetadataSource, PlayReply, Response,
+    Change, ChangeResult, DownloadPlan, FileListSource, FilesReply, GetOutcome, GetReply, Kept, PlayReply, Response,
     Stream, TitlePlayed,
 };
 use torrential_core::{
-    Error, ErrorCode, FileRisk, Flag, InfoHash, Job, JobStatus, LocatorId, Progress, Release, ReleaseId, SearchQuery,
-    SearchResult, Selection, SourceOutcome, SourceReport, TorrentFile, TorrentId,
+    DownloadId, Error, ErrorCode, FileRisk, Job, JobStatus, Progress, Release, ReleaseFile, ResultId, SearchQuery,
+    SearchResult, Selection, SourceOutcome, SourceReport,
 };
 
 use super::changes::changes;
@@ -33,8 +33,12 @@ const DAY: i64 = 86_400;
 const GIB: u64 = 1024 * 1024 * 1024;
 const ARCH: &str = "9b521219bc48550140a666f74a29048ed78e933b";
 
-fn tid(hex: &str) -> TorrentId {
+fn tid(hex: &str) -> DownloadId {
     format!("{hex}{}", "0".repeat(40 - hex.len())).parse().unwrap()
+}
+
+fn rid(hex: &str) -> ResultId {
+    ResultId::from_bytes(*tid(hex).as_bytes())
 }
 
 fn both(doc: &Doc, payload: &impl serde::Serialize) -> String {
@@ -44,22 +48,18 @@ fn both(doc: &Doc, payload: &impl serde::Serialize) -> String {
     format!("{}\n--- json\n{}\n", render(Mode::Plain, doc, payload), serde_json::to_string_pretty(&value).unwrap())
 }
 
-fn release(id: ReleaseId, name: &str) -> Release {
+fn release(id: ResultId, name: &str) -> Release {
     Release {
         id,
         name: name.into(),
         size: None,
-        seeders: None,
-        leechers: None,
+        grabs: None,
         published: None,
         category: None,
         flags: BTreeSet::new(),
-        sources: vec!["knaben".into()],
-        magnet: None,
-        torrent_url: None,
-        info_url: None,
+        sources: vec!["hydra".into()],
+        nzb_url: None,
         span: None,
-        swarm: None,
         failed: None,
     }
 }
@@ -90,37 +90,35 @@ fn report(source: &str, outcome: SourceOutcome) -> SourceReport {
 fn search_with_a_failed_source() {
     let arch = Release {
         size: Some(1_640_497_152),
-        seeders: Some(412),
+        grabs: Some(412),
         published: Some(NOW - 17 * DAY),
-        flags: [Flag::Official].into(),
-        sources: vec!["archlinux".into(), "knaben".into()],
-        magnet: Some(format!("magnet:?xt=urn:btih:{ARCH}")),
-        ..release(ReleaseId::Torrent(ARCH.parse().unwrap()), "archlinux-2026.10.01-x86_64.iso")
+        sources: vec!["geek".into(), "hydra".into()],
+        ..release(rid(ARCH), "archlinux-2026.10.01-x86_64.iso")
     };
     let older = Release {
         size: Some(1_503_238_553),
-        seeders: Some(37),
+        grabs: Some(37),
         published: Some(NOW - 47 * DAY),
-        ..release(ReleaseId::Torrent(tid("51e0c7")), "archlinux-2026.09.01-x86_64.iso")
+        ..release(rid("51e0c7"), "archlinux-2026.09.01-x86_64.iso")
     };
     let unknown = Release {
-        sources: vec!["jackett".into()],
-        ..release(ReleaseId::Locator(LocatorId::from_bytes([0xd4; 20])), "Arch Linux 2026.10.01 x86_64 ISO + checksums")
+        sources: vec!["planet".into()],
+        ..release(ResultId::from_bytes([0xd4; 20]), "Arch Linux 2026.10.01 x86_64 ISO + checksums")
     };
     let hostile = Release {
-        seeders: Some(3),
+        grabs: Some(3),
         size: Some(2 * GIB),
         published: Some(NOW - 3 * 365 * DAY),
-        ..release(ReleaseId::Torrent(tid("9b5213")), "arch\u{1b}[31m linux\tISO\u{202e}gpj.exe")
+        ..release(rid("9b5213"), "arch\u{1b}[31m linux\tISO\u{202e}gpj.exe")
     };
     let mut result = search_result(
         vec![arch, older, unknown, hostile],
         14,
         vec![
-            report("archlinux", SourceOutcome::Ok { results: 1 }),
-            report("knaben", SourceOutcome::Ok { results: 12 }),
-            report("apibay", SourceOutcome::Http { status: 503 }),
-            report("nyaa", SourceOutcome::Timeout),
+            report("geek", SourceOutcome::Ok { results: 1 }),
+            report("hydra", SourceOutcome::Ok { results: 12 }),
+            report("dognzb", SourceOutcome::Http { status: 503 }),
+            report("slowznab", SourceOutcome::Timeout),
         ],
     );
     result.hidden_adult = 1;
@@ -132,10 +130,10 @@ fn search_with_a_failed_source() {
 fn search_for_a_film_shows_the_quality_its_names_give() {
     let film = |hex: &str, name: &str, size: u64| Release {
         size: Some(size),
-        seeders: Some(40),
+        grabs: Some(40),
         published: Some(NOW - 30 * DAY),
         category: Some(torrential_core::Category::Video),
-        ..release(ReleaseId::Torrent(tid(hex)), name)
+        ..release(rid(hex), name)
     };
     let mut result = search_result(
         vec![
@@ -144,7 +142,7 @@ fn search_for_a_film_shows_the_quality_its_names_give() {
             film("082e09", "Night Of The Living Dead 720p 1968 x264", 1_112_690_010),
         ],
         3,
-        vec![report("archive.org", SourceOutcome::Ok { results: 3 })],
+        vec![report("geek", SourceOutcome::Ok { results: 3 })],
     );
     result.query = SearchQuery { profile: mac(), ..SearchQuery::new("night of the living dead 1968") };
     let doc = search(&result, NOW);
@@ -154,16 +152,14 @@ fn search_for_a_film_shows_the_quality_its_names_give() {
 #[test]
 fn film_and_software_searches_say_what_they_ranked_for() {
     use torrential_core::{Category, Preferences, Profile, Screen};
-    let film = Release {
-        category: Some(Category::Video),
-        ..release(ReleaseId::Torrent(tid("082e09")), "Night Of The Living Dead 720p 1968")
-    };
-    let iso = release(ReleaseId::Torrent(ARCH.parse().unwrap()), "archlinux-2026.10.01-x86_64.iso");
-    let book = release(ReleaseId::Torrent(tid("5c7c3c")), "Ubuntu Linux Bible, 11th Edition [PDF]");
+    let film =
+        Release { category: Some(Category::Video), ..release(rid("082e09"), "Night Of The Living Dead 720p 1968") };
+    let iso = release(rid(ARCH), "archlinux-2026.10.01-x86_64.iso");
+    let book = release(rid("5c7c3c"), "Ubuntu Linux Bible, 11th Edition [PDF]");
     let detected = mac();
     let tv = Preferences { screen: Some(Screen::Tv4k), max_size: Some(8_000_000_000), ..Preferences::default() };
     let summary = |releases: Vec<Release>, category: Option<Category>, profile: &Profile| {
-        let mut result = search_result(releases, 1, vec![report("archive.org", SourceOutcome::Ok { results: 1 })]);
+        let mut result = search_result(releases, 1, vec![report("geek", SourceOutcome::Ok { results: 1 })]);
         result.query.category = category;
         result.query.profile = profile.clone();
         search(&result, NOW).summary[1..].to_vec()
@@ -187,20 +183,20 @@ fn film_and_software_searches_say_what_they_ranked_for() {
 
 #[test]
 fn search_next_opens_the_top_result() {
-    let top = release(ReleaseId::Torrent(ARCH.parse().unwrap()), "archlinux-2026.10.01-x86_64.iso");
-    let other = release(ReleaseId::Torrent(tid("51e0c7")), "archlinux-2026.09.01-x86_64.iso");
-    let result = search_result(vec![top, other], 2, vec![report("knaben", SourceOutcome::Ok { results: 2 })]);
-    assert_eq!(search(&result, NOW).next.as_deref(), Some("torrential files 9b5212"));
+    let top = release(rid(ARCH), "archlinux-2026.10.01-x86_64.iso");
+    let other = release(rid("51e0c7"), "archlinux-2026.09.01-x86_64.iso");
+    let result = search_result(vec![top, other], 2, vec![report("hydra", SourceOutcome::Ok { results: 2 })]);
+    assert_eq!(search(&result, NOW).next.as_deref(), Some("torrential files u9b5212"));
 }
 
 #[test]
 fn a_search_with_no_results_drops_its_filters_or_skips_the_cache() {
-    let cached = vec![report("knaben", SourceOutcome::Cached { results: 0 })];
+    let cached = vec![report("hydra", SourceOutcome::Cached { results: 0 })];
     let mut filtered = search_result(Vec::new(), 0, cached.clone());
-    filtered.query.sources = vec!["knaben".into()];
-    filtered.query.min_seeds = Some(50);
+    filtered.query.sources = vec!["hydra".into()];
+    filtered.query.min_grabs = Some(50);
     let doc = search(&filtered, NOW);
-    assert_eq!(doc.summary, ["no results · 1 of 1 source ok · 1.4s", "filtered by --source knaben --min-seeds 50"]);
+    assert_eq!(doc.summary, ["no results · 1 of 1 source ok · 1.4s", "filtered by --source hydra --min-grabs 50"]);
     assert_eq!(doc.next.as_deref(), Some("torrential search arch linux iso"));
 
     let doc = search(&search_result(Vec::new(), 0, cached), NOW);
@@ -208,8 +204,8 @@ fn a_search_with_no_results_drops_its_filters_or_skips_the_cache() {
     assert_eq!(doc.next.as_deref(), Some("torrential search arch linux iso --fresh"));
 }
 
-fn file(index: u32, path: &str, size: u64) -> TorrentFile {
-    TorrentFile { index, path: path.into(), size, selected: false, verified: 0, risk: None }
+fn file(index: u32, path: &str, size: u64) -> ReleaseFile {
+    ReleaseFile { index, path: path.into(), size, selected: false, verified: 0, risk: None }
 }
 
 fn film_files() -> FilesReply {
@@ -217,7 +213,7 @@ fn film_files() -> FilesReply {
     installer.risk = Some(FileRisk::Executable);
     FilesReply {
         id: "6bc1af".to_string() + &"0".repeat(34),
-        name: Some("night_of_the_living_dead_dvd".into()),
+        name: "night_of_the_living_dead_dvd".into(),
         total_size: 5_046_586_573,
         files: vec![
             file(0, "Night.asr.srt", 52_633),
@@ -225,13 +221,13 @@ fn film_files() -> FilesReply {
             file(2, "VTS_01_1.mp4", 262_668_288),
             installer,
         ],
-        metadata_source: MetadataSource::TorrentUrl,
+        source: FileListSource::NzbUrl,
         elapsed_ms: 412,
     }
 }
 
 #[test]
-fn files_from_a_torrent_url_mark_executables() {
+fn files_from_an_nzb_url_mark_executables() {
     let reply = film_files();
     insta::assert_snapshot!(both(&files(&reply, None), &Response::Files { files: reply }));
 }
@@ -255,7 +251,7 @@ fn a_match_summary_counts_the_matches_and_their_size() {
     let doc = files(&reply, Some(&matched));
     assert_eq!(
         doc.summary,
-        ["1 of 4 files in night_of_the_living_dead_dvd match · 569 MiB · file list from the .torrent URL in 0.4s"]
+        ["1 of 4 files in night_of_the_living_dead_dvd match · 569 MiB · file list from the NZB URL in 0.4s"]
     );
     assert_eq!(doc.next.as_deref(), Some("torrential get 6bc1af --files night.mp4"));
     let mut reply = film_files();
@@ -268,46 +264,45 @@ fn a_match_summary_counts_the_matches_and_their_size() {
 
 #[test]
 fn files_of_a_download_show_progress_per_file() {
-    let selected = |f: TorrentFile, verified| TorrentFile { selected: true, verified, ..f };
+    let selected = |f: ReleaseFile, verified| ReleaseFile { selected: true, verified, ..f };
     let reply = FilesReply {
         id: ARCH.into(),
-        name: Some("debian-13.1.0-amd64-DVD".into()),
+        name: "debian-13.1.0-amd64-DVD".into(),
         total_size: 12 * GIB,
         files: vec![
             selected(file(0, "debian-13.1.0-amd64-DVD-1.iso", 4 * GIB), 4 * GIB),
             selected(file(1, "debian-13.1.0-amd64-DVD-2.iso", 4 * GIB), GIB),
             file(2, "debian-13.1.0-amd64-DVD-3.iso", 4 * GIB),
         ],
-        metadata_source: MetadataSource::Download,
+        source: FileListSource::Download,
         elapsed_ms: 3,
     };
     insta::assert_snapshot!(both(&files(&reply, None), &Response::Files { files: reply }));
 }
 
 #[test]
-fn a_one_file_torrent_counts_one_file() {
+fn a_one_file_release_counts_one_file() {
     let reply = FilesReply {
         id: ARCH.into(),
-        name: Some("archlinux-2026.10.01-x86_64.iso".into()),
+        name: "archlinux-2026.10.01-x86_64.iso".into(),
         total_size: GIB,
         files: vec![file(0, "archlinux-2026.10.01-x86_64.iso", GIB)],
-        metadata_source: MetadataSource::Peers,
+        source: FileListSource::Cache,
         elapsed_ms: 900,
     };
     assert_eq!(
         files(&reply, None).summary,
-        ["1 file in archlinux-2026.10.01-x86_64.iso · 1.0 GiB · file list from peers in 0.9s"]
+        ["1 file in archlinux-2026.10.01-x86_64.iso · 1.0 GiB · file list from cache in 0.9s"]
     );
 }
 
-fn job(hex: &str, name: Option<&str>, status: JobStatus, progress: Progress) -> Job {
+fn job(hex: &str, name: &str, status: JobStatus, progress: Progress) -> Job {
     let id = tid(hex);
     let dir = PathBuf::from("/Users/ada/Downloads/torrential");
     Job {
         id,
-        info_hash: InfoHash::V1(*id.as_bytes()),
-        name: name.map(String::from),
-        path: name.map(|n| dir.join(n)),
+        name: name.into(),
+        path: dir.join(name),
         dir,
         status,
         progress,
@@ -315,19 +310,16 @@ fn job(hex: &str, name: Option<&str>, status: JobStatus, progress: Progress) -> 
         added_at: NOW - 3600,
         title: None,
         place: torrential_core::Place::Folder,
-        waiting_for: None,
     }
 }
 
 fn downloading() -> Progress {
     Progress {
-        size: Some(1_640_497_152),
+        size: 1_640_497_152,
         verified: 50_855_411,
         piece_map: None,
         down_rate: 32_715_571,
-        up_rate: 120_000,
-        peers: 48,
-        seeds: 31,
+        connections: 48,
         eta: Some(49),
     }
 }
@@ -352,7 +344,7 @@ fn plan(conflicts: Vec<PathBuf>) -> DownloadPlan {
 #[cfg(unix)]
 #[test]
 fn a_dry_run_shows_the_size_cap_beside_the_size_and_free_space() {
-    let film = job("6bc1af", Some("night_of_the_living_dead_dvd"), JobStatus::Checking, Progress::default());
+    let film = job("6bc1af", "night_of_the_living_dead_dvd", JobStatus::Checking, Progress::default());
     let reply = get_reply(GetOutcome::Planned, film, Some(DownloadPlan { max_size: Some(8 * GIB), ..plan(vec![]) }));
     let fields: Vec<String> = match get(&reply, None).body {
         Body::Fields { fields, .. } => fields.into_iter().map(|(k, v)| format!("{k}: {}", v.text)).collect(),
@@ -376,21 +368,25 @@ fn a_dry_run_shows_the_size_cap_beside_the_size_and_free_space() {
 fn get_outcomes() {
     let movies = |mut j: Job| {
         j.dir = "/Users/ada/Movies".into();
-        j.path = j.name.as_ref().map(|n| j.dir.join(n));
+        j.path = j.dir.join(&j.name);
         j.selection = Selection::Patterns(vec!["Night.mp4".into(), "*.srt".into()]);
         j
     };
-    let film = || movies(job("6bc1af", Some("night_of_the_living_dead_dvd"), JobStatus::Checking, Progress::default()));
+    let film = || movies(job("6bc1af", "night_of_the_living_dead_dvd", JobStatus::Checking, Progress::default()));
     let cases = [
         (
-            "started from a magnet",
-            get_reply(GetOutcome::Started, job(ARCH, None, JobStatus::Metadata, Progress::default()), None),
+            "started from an NZB",
+            get_reply(
+                GetOutcome::Started,
+                job(ARCH, "archlinux-2026.10.01-x86_64.iso", JobStatus::Checking, Progress::default()),
+                None,
+            ),
         ),
         (
             "queued",
             get_reply(
                 GetOutcome::Queued,
-                movies(job("6bc1af", Some("night_of_the_living_dead_dvd"), JobStatus::Queued, Progress::default())),
+                movies(job("6bc1af", "night_of_the_living_dead_dvd", JobStatus::Queued, Progress::default())),
                 Some(plan(vec![])),
             ),
         ),
@@ -398,7 +394,7 @@ fn get_outcomes() {
             "existing",
             get_reply(
                 GetOutcome::Existing,
-                job(ARCH, Some("archlinux-2026.10.01-x86_64.iso"), JobStatus::Downloading, downloading()),
+                job(ARCH, "archlinux-2026.10.01-x86_64.iso", JobStatus::Downloading, downloading()),
                 None,
             ),
         ),
@@ -406,7 +402,7 @@ fn get_outcomes() {
             "existing and done",
             get_reply(
                 GetOutcome::Existing,
-                job(ARCH, Some("archlinux-2026.10.01-x86_64.iso"), JobStatus::Done { finished_at: NOW }, downloading()),
+                job(ARCH, "archlinux-2026.10.01-x86_64.iso", JobStatus::Done { finished_at: NOW }, downloading()),
                 None,
             ),
         ),
@@ -441,24 +437,19 @@ fn get_outcomes() {
 }
 
 fn fleet() -> Vec<Job> {
-    let full = |size| Progress { size: Some(size), verified: size, ..Progress::default() };
+    let full = |size| Progress { size, verified: size, ..Progress::default() };
     vec![
-        job(ARCH, Some("archlinux-2026.10.01-x86_64.iso"), JobStatus::Downloading, downloading()),
+        job(ARCH, "archlinux-2026.10.01-x86_64.iso", JobStatus::Downloading, downloading()),
         job(
             "c32cdd",
-            Some("stackexchange"),
+            "stackexchange",
             JobStatus::Checking,
-            Progress { size: Some(99_535_000_000), verified: 79_130_000_000, ..Progress::default() },
+            Progress { size: 99_535_000_000, verified: 79_130_000_000, ..Progress::default() },
         ),
-        job(
-            "6bc1af",
-            Some("night_of_the_living_dead_dvd"),
-            JobStatus::Done { finished_at: NOW - 600 },
-            full(596_452_175),
-        ),
+        job("6bc1af", "night_of_the_living_dead_dvd", JobStatus::Done { finished_at: NOW - 600 }, full(596_452_175)),
         job(
             "e3a1f0",
-            Some("ubuntu-24.04.5-desktop-amd64.iso"),
+            "ubuntu-24.04.5-desktop-amd64.iso",
             JobStatus::Error {
                 error: torrential_daemon::daemon::admission::check_disk(
                     torrential_daemon::disk::Space { device: 1, total: 250 * GIB, free: 3 * GIB },
@@ -467,20 +458,20 @@ fn fleet() -> Vec<Job> {
                 )
                 .unwrap_err(),
             },
-            Progress { size: Some(6_345_887_744), ..Progress::default() },
+            Progress { size: 6_345_887_744, ..Progress::default() },
         ),
-        job("d40a19", None, JobStatus::Metadata, Progress { peers: 4, ..Progress::default() }),
+        job("d40a19", "Sintel.2010.1080p.mkv", JobStatus::Checking, Progress { connections: 4, ..Progress::default() }),
         job(
             "51e0c7",
-            Some("archlinux-2026.09.01-x86_64.iso"),
+            "archlinux-2026.09.01-x86_64.iso",
             JobStatus::Queued,
-            Progress { size: Some(1_503_238_553), ..Progress::default() },
+            Progress { size: 1_503_238_553, ..Progress::default() },
         ),
         job(
             "a282c6",
-            Some("Night Of The Living Dead"),
+            "Night Of The Living Dead",
             JobStatus::Paused,
-            Progress { size: Some(2_899_102_924), verified: 1_000_000_000, ..Progress::default() },
+            Progress { size: 2_899_102_924, verified: 1_000_000_000, ..Progress::default() },
         ),
     ]
 }
@@ -611,8 +602,8 @@ fn wait_transcript(mode: Mode, end: WaitEnd, frames: &[(u64, Job)], elapsed: u64
 #[cfg(unix)]
 #[test]
 fn wait_until_done_timeout_error_and_stop() {
-    let arch = |status, progress| job(ARCH, Some("archlinux-2026.10.01-x86_64.iso"), status, progress);
-    let done = Progress { size: Some(1_640_497_152), verified: 1_640_497_152, ..Progress::default() };
+    let arch = |status, progress| job(ARCH, "archlinux-2026.10.01-x86_64.iso", status, progress);
+    let done = Progress { size: 1_640_497_152, verified: 1_640_497_152, ..Progress::default() };
     let later = Progress { verified: 1_240_000_000, eta: Some(12), ..downloading() };
     let failed = JobStatus::Error {
         error: Error::new(
@@ -640,16 +631,10 @@ fn wait_until_done_timeout_error_and_stop() {
         (
             "error",
             WaitEnd::Failed { id: "9b5212".into() },
-            vec![(0, arch(JobStatus::Metadata, Progress::default())), (3, arch(failed, Progress::default()))],
+            vec![(0, arch(JobStatus::Checking, Progress::default())), (3, arch(failed, Progress::default()))],
             3,
         ),
         ("stopped", WaitEnd::Stopped { id: "9b5212".into() }, vec![(0, arch(JobStatus::Paused, later))], 0),
-        (
-            "metadata",
-            WaitEnd::Metadata,
-            vec![(0, arch(JobStatus::Metadata, Progress::default())), (2, arch(JobStatus::Downloading, downloading()))],
-            2,
-        ),
     ];
     let mut out = String::new();
     for (name, end, frames, elapsed) in cases {
@@ -715,12 +700,8 @@ fn doctor_report() {
             detail: "not running; the next command starts it".into(),
         },
         Check { check: Checked::Sources, status: CheckStatus::Fail, detail: "1 of 2 responded".into() },
-        Check {
-            check: Checked::Source("archive.org".into()),
-            status: CheckStatus::Ok,
-            detail: "12 results, 380 ms".into(),
-        },
-        Check { check: Checked::Source("knaben".into()), status: CheckStatus::Fail, detail: "HTTP 503, 211 ms".into() },
+        Check { check: Checked::Source("geek".into()), status: CheckStatus::Ok, detail: "12 results, 380 ms".into() },
+        Check { check: Checked::Source("dognzb".into()), status: CheckStatus::Fail, detail: "HTTP 503, 211 ms".into() },
     ];
     let fix = Some(
         "in interactive Codex, rerun with sandbox_permissions \"require_escalated\" and prefix_rule [\"torrential\"]"
@@ -737,8 +718,8 @@ fn one_failed_source_is_one_problem() {
     let check = |check: Checked, status| Check { check, status, detail: String::new() };
     let probed = [
         check(Checked::Sources, CheckStatus::Fail),
-        check(Checked::Source("archive.org".into()), CheckStatus::Ok),
-        check(Checked::Source("knaben".into()), CheckStatus::Fail),
+        check(Checked::Source("geek".into()), CheckStatus::Ok),
+        check(Checked::Source("dognzb".into()), CheckStatus::Fail),
     ];
     assert_eq!(doctor(&probed, None).summary, ["1 problem"]);
     let unprobed = [check(Checked::Config, CheckStatus::Fail), check(Checked::Sources, CheckStatus::Skipped)];
@@ -760,12 +741,12 @@ fn sample(code: ErrorCode) -> Error {
     use torrential_daemon::daemon::fake;
     use torrential_daemon::disk::Space;
     let film = || {
-        fake::TorrentFile {
-            info_hash: InfoHash::V1([0x6b; 20]),
+        fake::Posting {
+            id: DownloadId::from_bytes([0x6b; 20]),
             name: "night".into(),
             files: vec![("Night.mp4".into(), 70 * GIB)],
         }
-        .metainfo()
+        .layout()
         .unwrap()
     };
     let disk = Space { device: 1, total: 100 * GIB, free: 3 * GIB };
@@ -778,10 +759,7 @@ fn sample(code: ErrorCode) -> Error {
         conflicts,
         space: disk,
     };
-    let ubuntu = |hex: &str| Release {
-        name: "ubuntu-24.04.5-desktop-amd64.iso".into(),
-        ..release(ReleaseId::Torrent(tid(hex)), "")
-    };
+    let ubuntu = |hex: &str| Release { name: "ubuntu-24.04.5-desktop-amd64.iso".into(), ..release(rid(hex), "") };
     let given = |code, message: &str, hint: &str| Error::new(code, message).with_hint(hint);
     match code {
         ErrorCode::Usage => crate::usage_error(
@@ -791,7 +769,7 @@ fn sample(code: ErrorCode) -> Error {
         ),
         ErrorCode::ConfirmationRequired => given(code, "deleting files needs confirmation", "add --yes to confirm"),
         ErrorCode::InvalidRef => torrential_core::Target::parse("9b5", Path::new("/")).unwrap_err(),
-        ErrorCode::InvalidTorrent => fake::parse(b"<html>").unwrap_err(),
+        ErrorCode::InvalidRelease => fake::parse(b"<html>").unwrap_err(),
         ErrorCode::NotFound => {
             let prefix = "9b52".parse().unwrap();
             torrential_daemon::daemon::resolve::prefix(
@@ -806,7 +784,7 @@ fn sample(code: ErrorCode) -> Error {
         ErrorCode::AmbiguousRef => {
             let results =
                 [ubuntu("e3a1f0"), Release { name: "Ubuntu 24.04.5 LTS Desktop (repack)".into(), ..ubuntu("e3a1c4") }];
-            let prefix = "e3a1".parse().unwrap();
+            let prefix = "ue3a1".parse().unwrap();
             torrential_daemon::daemon::resolve::prefix(
                 &prefix,
                 &[],
@@ -816,36 +794,28 @@ fn sample(code: ErrorCode) -> Error {
             )
             .unwrap_err()
         }
-        ErrorCode::JobConflict => given(
-            code,
-            "d40a19 has no file list yet, so there is nothing to verify",
-            "torrential wait d40a19 --until metadata",
-        )
-        .with_next("torrential wait d40a19 --until metadata"),
+        ErrorCode::JobConflict => {
+            given(code, "d40a19 is busy saving its state", "try torrential verify d40a19 again in a few seconds")
+        }
         ErrorCode::PathConflict => {
             admission::check_conflicts(&plan(vec!["/Users/ada/Movies/night/Night.mp4".into()])).unwrap_err()
         }
         ErrorCode::ProvidersUnavailable => given(
             code,
-            "all sources failed (knaben, apibay)",
+            "all sources failed (hydra, dognzb)",
             "check the network connection, or retry with a longer --timeout",
         )
         .with_details(Details::Sources(vec![
-            report("knaben", SourceOutcome::Http { status: 502 }),
-            report("apibay", SourceOutcome::Timeout),
+            report("hydra", SourceOutcome::Http { status: 502 }),
+            report("dognzb", SourceOutcome::Timeout),
         ])),
-        ErrorCode::MetadataTimeout => given(
-            code,
-            "no peer sent the file list for 9b5212 in time",
-            "try again later, or run torrential get 9b5212 to keep trying in the background",
-        ),
         ErrorCode::NetworkUnavailable => {
-            given(code, "no network route to any DHT node", "check the network connection, then run the command again")
+            given(code, "no route to news.example.com:563", "check the network connection, then run the command again")
         }
         ErrorCode::FetchFailed => given(
             code,
-            "could not fetch https://archive.org/download/x/x_archive.torrent: HTTP 404",
-            "try the magnet link instead",
+            "could not fetch the NZB: HTTP 404",
+            "check the network connection and the indexer, or search again",
         ),
         ErrorCode::SandboxNetworkBlocked => crate::client::launch::sandbox_error(
             crate::client::launch::Blocked::Network { signal: "CODEX_SANDBOX_NETWORK_DISABLED=1".into() },
@@ -874,7 +844,7 @@ fn sample(code: ErrorCode) -> Error {
         ),
         ErrorCode::DiskFull => admission::check_disk(disk, 70 * GIB, 0).unwrap_err(),
         ErrorCode::TooLarge => {
-            admission::check_size(plan(vec![]).selected_size, admission::Cap::new(None, None), None).unwrap_err()
+            admission::check_size(plan(vec![]).selected_size, admission::Cap::new(None, None)).unwrap_err()
         }
         ErrorCode::NoSelection => {
             torrential_daemon::daemon::files::wanted(&film(), &Selection::Patterns(vec!["*.mkv".into()])).unwrap_err()
@@ -892,7 +862,7 @@ fn sample(code: ErrorCode) -> Error {
         .with_next("torrential verify 6bc1af --repair"),
         ErrorCode::NoSource => given(
             code,
-            "no peer or web seed has had the remaining 2 pieces (488.8 KiB) for 20m",
+            "no server has sent the remaining 2 pieces (488.8 KiB) for 20m",
             "run torrential resume 770e77 to try again; the 33.0 MiB already verified is kept",
         )
         .with_next("torrential resume 770e77"),
@@ -988,7 +958,7 @@ fn a_tab_in_a_path_stays_inside_its_column() {
         service_binary: None,
         notice: None,
     };
-    let named = job("9b5212", Some("arch\tlinux.iso"), JobStatus::Paused, Progress::default());
+    let named = job("9b5212", "arch\tlinux.iso", JobStatus::Paused, Progress::default());
 
     assert_eq!(
         skill_status(&installed, "0.1.0", &install).plain(),
@@ -1006,7 +976,7 @@ fn a_tab_in_a_path_stays_inside_its_column() {
         "engine: stopped\nlog:    /state/my torrential/engine.log\nnext:   torrential status\n"
     );
     let row: Vec<String> = wait_row(Duration::from_secs(3), "9b5212", &named).into_iter().map(|c| c.text).collect();
-    assert_eq!(row.join("\t"), "3s\t9b5212\tpaused\t?\t?\t-\t-\t-\tarch linux.iso");
+    assert_eq!(row.join("\t"), "3s\t9b5212\tpaused\t100%\t0 B\t-\t-\t-\tarch linux.iso");
 }
 
 #[test]
@@ -1017,7 +987,7 @@ fn play_shows_the_files_it_plays_and_the_runtime_once_known() {
         size,
         url: format!("http://127.0.0.1:47919/6bc1af{}/{index}/{path}", "0".repeat(34)),
     };
-    let film = job("6bc1af", Some("night_of_the_living_dead_dvd"), JobStatus::Downloading, downloading());
+    let film = job("6bc1af", "night_of_the_living_dead_dvd", JobStatus::Downloading, downloading());
     let reply = PlayReply {
         job: film.clone(),
         streams: vec![stream(1, "Night.mp4", 596_399_542), stream(0, "Night.asr.srt", 52_633)],
@@ -1027,7 +997,7 @@ fn play_shows_the_files_it_plays_and_the_runtime_once_known() {
     let title = TitlePlayed {
         video: "tt0063350".parse().unwrap(),
         name: "Night of the Living Dead (1968)".into(),
-        release: release(ReleaseId::Torrent(tid("6bc1af")), "Night of the Living Dead (1968) [DVD]"),
+        release: release(rid("6bc1af"), "Night of the Living Dead (1968) [DVD]"),
         tried: Vec::new(),
         resume_at: None,
     };
@@ -1067,7 +1037,7 @@ fn a_held_start_says_why_and_for_how_long() {
             "Buffering…",
             "Buffering… ready in 0:04",
             "Starts in 29:40 so playback does not pause. Press Enter to start now",
-            "Waiting for peers",
+            "Waiting for the servers",
         ]
     );
 }
@@ -1082,7 +1052,7 @@ fn a_title_play_says_each_step_and_why_it_skipped_a_source_in_plain_words() {
         year: Some(2019),
         rating: None,
     };
-    let mut pack = release(ReleaseId::Torrent(tid("a1b2c3")), "Harbor.Lights.S01.1080p.WEB.x264");
+    let mut pack = release(rid("a1b2c3"), "Harbor.Lights.S01.1080p.WEB.x264");
     pack.size = Some(9 * GIB);
     let id = pack.id;
     let skipped = |reason| AttemptEvent::Skipped { release: id, reason };
@@ -1112,15 +1082,15 @@ fn a_title_play_says_each_step_and_why_it_skipped_a_source_in_plain_words() {
         [
             Some("Finding sources of Harbor Lights S01E02"),
             Some("Found 1 source"),
-            Some("Trying 1 of 1: a1b2c3 Harbor.Lights.S01.1080p.WEB.x264, 1080p h264, 9.0 GiB"),
+            Some("Trying 1 of 1: ua1b2c3 Harbor.Lights.S01.1080p.WEB.x264, 1080p h264, 9.0 GiB"),
             None,
-            Some("Skipped a1b2c3: no peer sent its file list in 20s"),
-            Some("Skipped a1b2c3: none of its files is the video"),
-            Some("Skipped a1b2c3: its .mkv file needs ffmpeg, which is not installed"),
-            Some("Skipped a1b2c3: not enough space for Harbor.Lights.S01"),
-            Some("Skipped a1b2c3: no data arrived in 30s"),
-            Some("Skipped a1b2c3: it stalled"),
-            Some("Playing a1b2c3 Harbor.Lights.S01.1080p.WEB.x264, 1080p h264, 9.0 GiB"),
+            Some("Skipped ua1b2c3: its NZB did not arrive in 20s"),
+            Some("Skipped ua1b2c3: none of its files is the video"),
+            Some("Skipped ua1b2c3: its .mkv file needs ffmpeg, which is not installed"),
+            Some("Skipped ua1b2c3: not enough space for Harbor.Lights.S01"),
+            Some("Skipped ua1b2c3: no data arrived in 30s"),
+            Some("Skipped ua1b2c3: it stalled"),
+            Some("Playing ua1b2c3 Harbor.Lights.S01.1080p.WEB.x264, 1080p h264, 9.0 GiB"),
         ]
         .map(|line| line.map(String::from))
     );

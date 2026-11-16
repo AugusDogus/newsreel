@@ -14,8 +14,8 @@ use serde_json::{Map, Value, json};
 mod common;
 use common::{Home, hooks};
 
-/// The archive.org release of Night of the Living Dead.
-const ARCHIVE: &str = "4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c";
+/// The search result for a release of Night of the Living Dead.
+const NIGHT: &str = "u4c1e9a5d3b8e2f1c4a5d3b8e2f1c4a5d3b8e2f1c";
 /// The seeded downloads: one running, one failed, one paused, two done.
 const RUNNING: &str = "6f2c81";
 const FAILED: &str = "a90d44";
@@ -93,7 +93,7 @@ impl Home {
         loop {
             let out = self.command(&["status", RUNNING, "--json"]).output().unwrap();
             let doc: Value = serde_json::from_slice(&out.stdout).unwrap_or_default();
-            if doc["jobs"][0]["progress"]["peers"] == 3 {
+            if doc["jobs"][0]["progress"]["connections"] == 3 {
                 return;
             }
             assert!(std::time::Instant::now() < deadline, "no stats for {RUNNING}: {doc}");
@@ -267,14 +267,13 @@ fn every_command_answers_in_json_as_it_did() {
         ("title_series", &["title", "tt9999901", "--json"]),
         ("title_unknown", &["title", "tt0000001", "--json"]),
         ("sources", &["sources", "tt0063350", "--json"]),
-        ("files", &["files", &ARCHIVE[..6], "--json"]),
-        ("get_dry_run", &["get", &ARCHIVE[..6], "--dry-run", "--json"]),
+        ("files", &["files", &NIGHT[..7], "--json"]),
+        ("get_dry_run", &["get", &NIGHT[..7], "--dry-run", "--json"]),
         ("status", &["status", "--json"]),
         ("status_one", &["status", RUNNING, "--json"]),
         ("status_unknown", &["status", "ffffff", "--json"]),
         ("wait_done", &["wait", DONE, "--json"]),
         ("wait_timeout", &["wait", RUNNING, "--timeout", "1s", "--json"]),
-        ("wait_metadata", &["wait", RUNNING, "--until", "metadata", "--json"]),
         ("pause", &["pause", RUNNING, "--json"]),
         ("resume", &["resume", RUNNING, "--json"]),
         ("resume_failed", &["resume", FAILED, "--json"]),
@@ -331,7 +330,7 @@ fn every_api_route_answers_as_it_did() {
         ("search_empty", "POST", "/api/search".into(), Some(json!({ "q": " " }))),
         ("jobs", "GET", "/api/jobs".into(), None),
         ("events", "GET", "/api/events".into(), None),
-        ("files", "POST", "/api/files".into(), Some(json!({ "ref": ARCHIVE }))),
+        ("files", "POST", "/api/files".into(), Some(json!({ "ref": NIGHT }))),
         ("media", "GET", film("/api/media"), None),
         ("pieces", "GET", film("/api/pieces"), None),
         ("subtitles_online", "GET", film("/api/subtitles/online"), None),

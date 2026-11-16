@@ -2,7 +2,7 @@
 
 use torrential_core::id::shortest_unique_prefix;
 use torrential_core::protocol::{Change, ChangeResult, JobAction, Request, Response};
-use torrential_core::{Error, TorrentId};
+use torrential_core::{DownloadId, Error};
 
 use super::connect::Conn;
 use super::emit;
@@ -18,8 +18,8 @@ pub fn run(mut conn: Conn, request: Request, command: JobAction, mode: Mode) -> 
 }
 
 pub fn changes(command: JobAction, changes: &[Change]) -> Doc {
-    let full: Vec<TorrentId> = changes.iter().filter_map(|c| c.id.parse().ok()).collect();
-    let short = |id: &str| match id.parse::<TorrentId>() {
+    let full: Vec<DownloadId> = changes.iter().filter_map(|c| c.id.parse().ok()).collect();
+    let short = |id: &str| match id.parse::<DownloadId>() {
         Ok(t) => shortest_unique_prefix(&t, &full, SHORT_ID),
         Err(_) => short_ref(id),
     };

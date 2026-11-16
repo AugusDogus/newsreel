@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Hand-written: Debian's netinst images and two bigger variants, without grab counts, out of rank order. -->
+<rss version="2.0" xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/">
+  <channel>
+    <title>Indexer</title>
+    <item>
+      <title>debian-mac-13.7.0-amd64-netinst.iso</title>
+      <link>https://geek.example/getnzb/d1.nzb</link>
+      <newznab:attr name="category" value="4000" />
+      <newznab:attr name="size" value="793772032" />
+    </item>
+    <item>
+      <title>debian-edu-13.7.0-amd64-netinst.iso</title>
+      <link>https://geek.example/getnzb/d2.nzb</link>
+      <newznab:attr name="category" value="4000" />
+      <newznab:attr name="size" value="801112064" />
+    </item>
+    <item>
+      <title>debian-13.7.0-arm64-netinst.iso</title>
+      <link>https://geek.example/getnzb/d3.nzb</link>
+      <newznab:attr name="category" value="4000" />
+      <newznab:attr name="size" value="735358976" />
+    </item>
+    <item>
+      <title>debian-13.7.0-amd64-netinst.iso</title>
+      <link>https://geek.example/getnzb/d4.nzb</link>
+      <newznab:attr name="category" value="4000" />
+      <newznab:attr name="size" value="792723456" />
+    </item>
+  </channel>
+</rss>

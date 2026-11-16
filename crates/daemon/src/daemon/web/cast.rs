@@ -24,11 +24,11 @@ pub async fn search(ctx: &Ctx, request: Search) -> Result<Value, Error> {
 pub struct Start {
     /// A TV's ID. Without it, the only TV on the network.
     tv: Option<String>,
-    /// A film or an episode to play, or with `ref`, the one the torrent holds.
+    /// A film or an episode to play, or with `ref`, the one the release holds.
     video: Option<VideoRef>,
     /// For a film or an episode, the one release to try.
     source: Option<String>,
-    /// A download or search result ID, an infohash, a magnet link, or the URL of a .torrent file.
+    /// A download or search result ID, or an NZB's URL.
     #[serde(rename = "ref")]
     reference: Option<String>,
     file: Option<u32>,

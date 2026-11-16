@@ -385,7 +385,7 @@ fn the_downloads_are_one_key_away_and_t_comes_back() {
 }
 
 #[test]
-fn with_no_downloads_esc_in_the_empty_torrent_search_comes_back() {
+fn with_no_downloads_esc_in_the_empty_release_search_comes_back() {
     let mut state = titles_app((100, 30));
     state.update(Msg::Watch(Event::Snapshot { jobs: Vec::new() }));
     state.update(Msg::Home { ask: 1, result: Ok(home()) });
@@ -557,16 +557,16 @@ fn a_play_that_fails_says_why_and_what_to_do_in_place_of_the_list_until_esc() {
         Tried { release: result_id("b7f20d"), reason: Skip::NoVideo },
     ];
     let none = Error::new(ErrorCode::NoSource, "no source of Sintel (2010) started")
-        .with_hint("search the torrents for it by name")
+        .with_hint("search Usenet for it by name")
         .with_details(Details::Tried(tried));
     state.update(Msg::TitlePlayed(Err(none)));
     assert_eq!(
         list_lines(&state)[..5],
         [
             "       play │ Playback failed: no source of Sintel (2010) started",
-            "            │ Skipped 4c1e9a: no data arrived in 30s",
-            "            │ Skipped b7f20d: none of its files is the video",
-            "            │ search the torrents for it by name",
+            "            │ Skipped u4c1e9a: no data arrived in 30s",
+            "            │ Skipped ub7f20d: none of its files is the video",
+            "            │ search Usenet for it by name",
             "            │",
         ]
     );
@@ -587,7 +587,7 @@ fn a_skipped_source_wraps_on_a_narrow_terminal_like_the_message_and_the_hint() {
         Tried { release: result_id("b7f20d"), reason: Skip::NoVideo },
     ];
     let none = Error::new(ErrorCode::NoSource, "no source of Sintel (2010) started")
-        .with_hint("search the torrents for it by name")
+        .with_hint("search Usenet for it by name")
         .with_details(Details::Tried(tried));
     state.update(Msg::TitlePlayed(Err(none)));
     assert_eq!(
@@ -596,11 +596,11 @@ fn a_skipped_source_wraps_on_a_narrow_terminal_like_the_message_and_the_hint() {
             "│ play",
             "│ Playback failed: no source of Sintel (2010)",
             "│ started",
-            "│ Skipped 4c1e9a: its .mkv file needs ffmpeg,",
+            "│ Skipped u4c1e9a: its .mkv file needs ffmpeg,",
             "│ which is not installed",
-            "│ Skipped b7f20d: none of its files is the",
+            "│ Skipped ub7f20d: none of its files is the",
             "│ video",
-            "│ search the torrents for it by name",
+            "│ search Usenet for it by name",
         ]
     );
 }

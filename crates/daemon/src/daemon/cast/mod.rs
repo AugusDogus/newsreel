@@ -1,5 +1,5 @@
 //! Play on TV. The engine finds the TVs on the home network with SSDP, and plays a film, an
-//! episode, or a torrent's video on one over UPnP AV: it mints a cast grant for the file, tells
+//! episode, or a release's video on one over UPnP AV: it mints a cast grant for the file, tells
 //! the TV its URL, and asks the TV where it is every second while it plays, which goes to the
 //! watch history. The grant is dropped once the cast ends, and the TV can fetch nothing more.
 
@@ -19,16 +19,16 @@ use torrential_core::text::sanitize;
 use torrential_core::time::now;
 use torrential_core::title::Span;
 use torrential_core::{
-    AttemptEvent, Cast, CastAction, CastRequest, CastState, Container, Error, ErrorCode, Player, Plays, Quality,
-    ReleaseId, Resolution, Target, TitleLink, TorrentId, Tv, TvList, VideoRef, Viewer, Watched,
+    AttemptEvent, Cast, CastAction, CastRequest, CastState, Container, DownloadId, Error, ErrorCode, Player, Plays,
+    Quality, Resolution, ResultId, Target, TitleLink, Tv, TvList, VideoRef, Viewer, Watched,
 };
 
 use super::ctx::Ctx;
 use super::downloads;
 use super::media;
 use super::names::Names;
+use super::owner::Command;
 use super::owner::plays::Destination;
-use super::owner::{Command, MetaTarget};
 use super::playing::Open;
 use super::titles;
 use super::titles::attempt::{self, Outcome, PlayTitle, Played};
@@ -36,7 +36,6 @@ use super::titles::watching::{Screen, Watching};
 use crate::log::log;
 pub use ssdp::Find;
 use ssdp::Heard;
-use torrential_core::protocol::METADATA_WAIT;
 use torrential_core::title::title_name;
 use torrential_core::watching::{SAVE_EVERY, WORTH_SAVING};
 use upnp::{Failed, Renderer, Service};
@@ -261,7 +260,7 @@ impl Casts {
             }
             chosen => chosen?,
         };
-        // A title's name comes once its lookup answers, and a torrent's once its file is chosen.
+        // A title's name comes once its lookup answers, and a release's once its file is chosen.
         let (name, state) = match &request.target {
             Target::Title(video) => (video.to_string(), CastState::Finding),
             _ => ("the video".to_string(), CastState::Loading),
@@ -443,14 +442,14 @@ async fn renderer(http: &reqwest::Client, heard: &Heard) -> Option<Renderer> {
 }
 
 struct Found {
-    id: TorrentId,
+    id: DownloadId,
     file: u32,
-    /// Relative to the torrent's folder, sanitized.
+    /// Relative to the release's folder, sanitized.
     path: String,
     size: u64,
     name: String,
     video: Option<VideoRef>,
-    release: Option<ReleaseId>,
+    release: Option<ResultId>,
     /// Seconds.
     start_at: Option<f64>,
     subtitle: Option<(u32, String)>,
@@ -934,7 +933,7 @@ async fn until_stopped(control: &mut mpsc::UnboundedReceiver<Control>) {
     std::future::pending().await
 }
 
-/// The download and file to play: the first source of a title that starts, or a torrent's video.
+/// The download and file to play: the first source of a title that starts, or a release's video.
 async fn find(
     ctx: &Ctx,
     tv: &Renderer,
@@ -983,13 +982,12 @@ async fn find(
             }
         }
         target => {
-            let deadline = std::time::Instant::now() + METADATA_WAIT;
-            let (source, metainfo, playable) = downloads::prepare(ctx, target.clone(), request.file, deadline).await?;
-            let path = sanitize(&metainfo.files[playable.video as usize].path);
+            let (source, layout, playable) = downloads::prepare(ctx, target.clone(), request.file, None).await?;
+            let path = sanitize(&layout.files[playable.video as usize].path);
             if !tv.tv.plays.takes(&path) {
                 return Err(refused(&tv.tv, &path));
             }
-            let (job, _) = downloads::begin(ctx, source, &playable, deadline).await?;
+            let (job, _) = downloads::begin(ctx, source, &playable).await?;
             let video = request.video.clone().or_else(|| job.title.as_ref().and_then(video_of));
             let release = job.title.as_ref().and_then(|link| link.release);
             let resume_at = match &video {
@@ -1008,9 +1006,9 @@ async fn find(
             (job.id, playable.video, name, video, release, resume_at)
         }
     };
-    let info = downloads::metadata(ctx, MetaTarget::Job(id), std::time::Instant::now() + METADATA_WAIT).await?;
+    let info = downloads::download_files(ctx, id).await?;
     let entry = info
-        .metainfo
+        .layout
         .files
         .get(file as usize)
         .ok_or_else(|| Error::internal(format!("the download has no file {file}")))?;
@@ -1018,7 +1016,7 @@ async fn find(
     let subtitle = match request.subtitle {
         None => None,
         Some(index) => {
-            let playable = downloads::choose(&info.metainfo, Some(file))?;
+            let playable = downloads::choose(&info.layout, Some(file), None)?;
             if !playable.subtitles.contains(&index) {
                 return Err(Error::new(
                     ErrorCode::Usage,
@@ -1029,7 +1027,7 @@ async fn find(
                     &id.to_hex()[..torrential_core::id::SHORT_ID]
                 )));
             }
-            Some((index, sanitize(&info.metainfo.files[index as usize].path)))
+            Some((index, sanitize(&info.layout.files[index as usize].path)))
         }
     };
     Ok(Found {

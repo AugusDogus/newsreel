@@ -3,26 +3,25 @@
 
 use std::collections::BTreeSet;
 use std::io;
-use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use tokio::sync::{broadcast, mpsc, oneshot};
 use torrential_core::error::Details;
 use torrential_core::protocol::{
-    Event, Frame, GetOutcome, GetReply, METADATA_WAIT, PlayReply, Request, Response, TitlePlayed, TitleRequest,
-    TitleStep, WIRE_VERSION, encode_frame,
+    Event, Frame, GetOutcome, GetReply, PlayReply, Request, Response, TitlePlayed, TitleRequest, TitleStep,
+    WIRE_VERSION, encode_frame,
 };
-use torrential_core::{AttemptEvent, CastRequest, Error, ErrorCode, Player, Plays, SearchQuery, TorrentId};
+use torrential_core::{AttemptEvent, CastRequest, DownloadId, Error, ErrorCode, Player, Plays, SearchQuery};
 
 use super::ctx::Ctx;
 use super::devices::Asker;
 use super::downloads::{
-    Answer, JobEvents, Searching, files, get, listed, metadata, pause, play, remove, resume, search, streams,
+    Answer, JobEvents, Searching, download_files, files, get, listed, pause, play, remove, resume, search, streams,
 };
 use super::http::{Connection, Request as Http};
 use super::indexers;
+use super::owner::Command;
 use super::owner::plays::Destination;
-use super::owner::{Command, MetaTarget};
 use super::search_port::Progress;
 use super::titles::attempt::{self, Outcome, PlayTitle, Played};
 use super::titles::{follow, home, pinned, sources, title_page};
@@ -37,9 +36,7 @@ pub async fn handle(ctx: &Ctx, request: Request) -> Response {
             Err(Error::new(ErrorCode::Usage, "this request streams, so it is not a single request"))
         }
         Request::Search { query, .. } => search(ctx, query).await.map(|result| Response::Search { result }),
-        Request::Files { target, timeout_ms } => {
-            files(ctx, target, Duration::from_millis(timeout_ms.into())).await.map(|files| Response::Files { files })
-        }
+        Request::Files { target } => files(ctx, target).await.map(|files| Response::Files { files }),
         Request::Get(request) => get(ctx, request).await.map(|reply| Response::Get { reply: Box::new(reply) }),
         Request::Play(request) => play(ctx, request).await.map(|reply| Response::Play { reply: Box::new(reply) }),
         Request::Status { refs } => {
@@ -176,7 +173,7 @@ async fn play_title(
         None => None,
     };
     let jobs = ctx.owner.ask(|reply| Command::Status { refs: Vec::new(), reply }).await?;
-    let before: BTreeSet<TorrentId> = jobs.iter().map(|job| job.id).collect();
+    let before: BTreeSet<DownloadId> = jobs.iter().map(|job| job.id).collect();
     let ask = PlayTitle { video, pin, replace: None, player: Player::External, plays: Plays::ANY, to: to.clone() };
     let played = match attempt::run(ctx, ask, |step| drop(steps.send(step))).await {
         Outcome::Played(played) => *played,
@@ -189,11 +186,11 @@ async fn play_title(
     let job = jobs.pop().ok_or_else(|| Error::new(ErrorCode::NotFound, "the download that played is gone"))?;
     match to {
         Destination::Plays => {
-            let info = metadata(ctx, MetaTarget::Job(id), Instant::now() + METADATA_WAIT).await?;
+            let info = download_files(ctx, id).await?;
             let playable = crate::playback::stream::around(&listed(ctx, &info).await, file)
                 .ok_or_else(|| Error::internal(format!("the download has no file {file}")))?;
             let files = [playable.video].into_iter().chain(playable.subtitles).collect();
-            let streams = streams(ctx, id, &info.metainfo, files);
+            let streams = streams(ctx, id, &info.layout, files);
             Ok(Response::PlayTitle { reply: Box::new(PlayReply { job, streams }), title })
         }
         Destination::Folder(_) => {

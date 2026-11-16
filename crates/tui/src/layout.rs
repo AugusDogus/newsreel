@@ -1,5 +1,5 @@
 use ratatui::layout::Rect;
-use torrential_core::{Job, JobStatus, ReleaseId, TorrentId};
+use torrential_core::{DownloadId, Job, JobStatus, ResultId};
 
 use crate::state::{Engine, Files, Focus, Item, ROWS, SearchPhase, State, label};
 
@@ -64,14 +64,14 @@ pub fn list_height(state: &State) -> u16 {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Block {
     Label(&'static str),
-    Download(TorrentId),
-    DownloadDetail(TorrentId),
+    Download(DownloadId),
+    DownloadDetail(DownloadId),
     Folded(&'static str),
     Gap,
     Ranking,
     Heads,
-    Result(ReleaseId),
-    ResultDetail(ReleaseId),
+    Result(ResultId),
+    ResultDetail(ResultId),
     Empty,
 }
 
@@ -143,7 +143,7 @@ fn empty_message(state: &State) -> bool {
     }
 }
 
-pub fn in_files(state: &State, id: TorrentId) -> bool {
+pub fn in_files(state: &State, id: DownloadId) -> bool {
     state.focus == Focus::Files && state.cursor == Some(Item::Download(id))
 }
 
@@ -188,7 +188,7 @@ pub fn tree_rows(nodes: usize, viewport: u16) -> usize {
     nodes.min(usize::from(viewport.saturating_sub(5).max(1)))
 }
 
-fn result_detail_height(state: &State, id: ReleaseId, viewport: u16) -> u16 {
+fn result_detail_height(state: &State, id: ResultId, viewport: u16) -> u16 {
     if state.focus != Focus::Files {
         return if narrow(state) { 2 } else { 1 };
     }

@@ -20,7 +20,7 @@ export default defineConfig({
     host: "127.0.0.1",
     proxy: {
       "/api": toEngine,
-      // Raw files of a download: /{40-hex torrent ID}/{file index}/{name}
+      // Raw files of a download: /{40-hex download ID}/{file index}/{name}
       "^/[0-9a-f]{40}/": toEngine,
     },
   },

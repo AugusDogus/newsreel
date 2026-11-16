@@ -78,14 +78,19 @@ impl Terms {
         u16::try_from(name_tokens.len().saturating_sub(matched)).unwrap_or(u16::MAX)
     }
 
+    /// Whether a name is of the query's title: the words before its first year, season,
+    /// episode or resolution are the query's, as `The.Bear.S03E01.1080p` is of `the bear s03e01`
+    /// and `The.Island.with.Bear.Grylls.S03E01` is not.
+    pub fn is_title_of(&self, name: &str) -> bool {
+        let title = |s: &str| tokens(s).into_iter().take_while(|t| !is_marker(t)).collect::<String>();
+        let wanted = title(&self.text);
+        !wanted.is_empty() && title(name) == wanted
+    }
+
     pub fn is_relevant(&self, name: &str) -> bool {
         let hits = self.matches(name, &tokens(name));
         let all_stopwords = self.words.iter().all(|w| STOPWORDS.contains(&w.as_str()));
         self.words.iter().zip(hits).any(|(word, hit)| hit && (all_stopwords || !STOPWORDS.contains(&word.as_str())))
-    }
-
-    pub fn covers(&self, name: &str) -> bool {
-        !self.words.is_empty() && self.matches(name, &tokens(name)).iter().all(|hit| *hit)
     }
 
     fn matches(&self, name: &str, name_tokens: &[String]) -> Vec<bool> {
@@ -131,17 +136,34 @@ fn tokens(s: &str) -> Vec<String> {
     name::words(s).map(str::to_lowercase).collect()
 }
 
+/// A token that ends a release's title: a year, `s03`, `s03e01`, `3x01` or `1080p`.
+fn is_marker(token: &str) -> bool {
+    let digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let season = token.strip_prefix('s').is_some_and(|rest| {
+        let (season, episode) = rest.split_once('e').unwrap_or((rest, "1"));
+        digits(season) && episode.split('e').all(digits)
+    });
+    let crossed = token.split_once('x').is_some_and(|(s, e)| digits(s) && digits(e));
+    let resolution = token.strip_suffix('p').is_some_and(|n| digits(n) && (3..=4).contains(&n.len()));
+    year(token).is_some() || season || crossed || resolution
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every query word is in the name.
+    fn covers(terms: &Terms, name: &str) -> bool {
+        !terms.words.is_empty() && usize::from(terms.relevance(name).matched) == terms.words.len()
+    }
 
     #[test]
     fn counts_words_and_joined_words() {
         let terms = Terms::parse("Arch Linux ISO");
         let r = terms.relevance("archlinux-2026.10.01-x86_64.iso");
         assert_eq!(r, Relevance { matched: 3, year: YearMatch::Absent });
-        assert!(terms.covers("archlinux-2026.10.01-x86_64.iso"));
-        assert!(!terms.covers("ubuntu-24.04.5.1-desktop-amd64.iso"));
+        assert!(covers(&terms, "archlinux-2026.10.01-x86_64.iso"));
+        assert!(!covers(&terms, "ubuntu-24.04.5.1-desktop-amd64.iso"));
     }
 
     #[test]
@@ -162,6 +184,20 @@ mod tests {
         assert_eq!(terms.extra_words("debian-13.7.0-amd64-netinst.iso"), 3);
         assert_eq!(terms.extra_words("debian-edu-13.7.0-amd64-netinst.iso"), 4);
         assert_eq!(Terms::parse("night of the living dead 1968").extra_words("Night of the Living Dead (1968)"), 0);
+    }
+
+    #[test]
+    fn a_title_is_the_words_before_a_year_season_or_resolution() {
+        let bear = Terms::parse("the bear s03e01");
+        assert!(bear.is_title_of("The.Bear.S03E01.Tomorrow.1080p.DSNP.WEB-DL.DDP5.1.H.264-NTb"));
+        assert!(bear.is_title_of("The.Bear.2024.S03E01.1080p.FX.WEB-DL.AVC.AAC-CBGWT"));
+        assert!(!bear.is_title_of("The.Island.with.Bear.Grylls.S03E01.1080p.AMZN.WEB-DL-Cinefeel"));
+        assert!(!bear.is_title_of("Masha.and.the.Bear.S03E01.1080p.HMAX.WEB-DL-playWEB"));
+        let dune = Terms::parse("dune part two 2024");
+        assert!(dune.is_title_of("Dune-Part.Two.[2024].[1080p.MA.WEB-DL-HONE]"));
+        assert!(Terms::parse("spiderman").is_title_of("Spider-Man.2002.1080p"));
+        assert!(Terms::parse("show").is_title_of("Show.1x02.720p"));
+        assert!(!Terms::parse("s03e01").is_title_of("The.Bear.S03E01"), "a query of only markers names no title");
     }
 
     #[test]
@@ -189,10 +225,10 @@ mod tests {
     #[test]
     fn joined_name_words_match_one_query_word() {
         let terms = Terms::parse("spiderman");
-        assert!(terms.covers("Spider-Man No Way Home 2021"));
+        assert!(covers(&terms, "Spider-Man No Way Home 2021"));
         assert_eq!(Terms::parse("wifi driver").relevance("Wi-Fi Driver Pack").matched, 2);
-        assert!(!terms.covers("Spider Monkey Documentary"));
-        assert!(Terms::parse("h264").covers("Movie 2024 1080p H.264"));
+        assert!(!covers(&terms, "Spider Monkey Documentary"));
+        assert!(covers(&Terms::parse("h264"), "Movie 2024 1080p H.264"));
     }
 
     #[test]
@@ -201,7 +237,7 @@ mod tests {
         assert!(!area51.is_relevant("Some Movie 2024 1080p BluRay DTS-HD MA 5.1 x264"));
         assert_eq!(area51.relevance("Area 52 2024 DD 5.1").matched, 1);
         assert_eq!(area51.relevance("Area 51 2015").matched, 2);
-        assert!(!Terms::parse("cifar 10").covers("CIFAR-100 python version 1.0"));
+        assert!(!covers(&Terms::parse("cifar 10"), "CIFAR-100 python version 1.0"));
     }
 
     #[test]
@@ -215,7 +251,7 @@ mod tests {
     #[test]
     fn non_latin_words_match_inside_longer_runs() {
         let terms = Terms::parse("進撃の巨人");
-        assert!(terms.covers("[Group] 進撃の巨人 The Final Season 01"));
+        assert!(covers(&terms, "[Group] 進撃の巨人 The Final Season 01"));
         assert_eq!(Terms::parse("  Ubuntu\t24.04 ").text(), "ubuntu 24.04");
     }
 }

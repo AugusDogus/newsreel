@@ -4,7 +4,7 @@ use quick_xml::{Reader, XmlVersion};
 #[derive(Default, Debug)]
 pub(crate) struct Item {
     fields: Vec<(String, String)>,
-    /// Torznab `<torznab:attr name=… value=…/>` pairs.
+    /// Newznab `<newznab:attr name=… value=…/>` pairs.
     attrs: Vec<(String, String)>,
     pub enclosure: Option<String>,
 }
@@ -126,14 +126,14 @@ mod tests {
     #[test]
     fn reads_fields_attrs_and_entities() {
         let xml = br#"<?xml version="1.0"?><rss xmlns:t="x"><channel><title>feed</title>
-            <item><title>Night &amp; Day&#33;</title><t:attr name="seeders" value="4"/>
-            <enclosure url="https://example.org/a.torrent" length="1"/><description><![CDATA[<b>hi</b>]]></description></item>
+            <item><title>Night &amp; Day&#33;</title><t:attr name="grabs" value="4"/>
+            <enclosure url="https://example.org/a.nzb" length="1"/><description><![CDATA[<b>hi</b>]]></description></item>
             </channel></rss>"#;
         let items = items(xml).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].get("title"), Some("Night & Day!"));
-        assert_eq!(items[0].attr("seeders"), Some("4"));
-        assert_eq!(items[0].enclosure.as_deref(), Some("https://example.org/a.torrent"));
+        assert_eq!(items[0].attr("grabs"), Some("4"));
+        assert_eq!(items[0].enclosure.as_deref(), Some("https://example.org/a.nzb"));
         assert_eq!(items[0].get("description"), Some("<b>hi</b>"));
     }
 

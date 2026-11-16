@@ -2,29 +2,29 @@
 
 use torrential_core::text::sanitize;
 use torrential_core::units::format_size;
-use torrential_core::{ErrorCode, Job, JobStatus};
+use torrential_core::{Job, JobStatus};
 
-use super::rows::{job_row, job_state_cell, next_for_stopped, selection, short_ids, state_name, waiting_line};
+use super::rows::{job_row, next_for_stopped, selection, short_ids, state_cell};
 use crate::output::format;
 use crate::output::theme::Token;
 use crate::output::{Body, Cell, Doc};
 
 fn restartable(status: &JobStatus) -> bool {
-    matches!(status, JobStatus::Error { error } if error.code != ErrorCode::TooLarge)
+    matches!(status, JobStatus::Error { .. })
 }
 
 fn is_active(status: &JobStatus) -> bool {
-    matches!(status, JobStatus::Queued | JobStatus::Metadata | JobStatus::Checking | JobStatus::Downloading)
+    matches!(status, JobStatus::Queued | JobStatus::Checking | JobStatus::Downloading)
 }
 
-pub const JOB_HEADER: [&str; 8] = ["ID", "STATE", "PROGRESS", "SIZE", "DOWN", "PEERS", "ETA", "NAME"];
+pub const JOB_HEADER: [&str; 8] = ["ID", "STATE", "PROGRESS", "SIZE", "DOWN", "CONNS", "ETA", "NAME"];
 
 pub fn jobs(jobs: &[Job]) -> Doc {
     let ids = short_ids(&jobs.iter().map(|j| j.id).collect::<Vec<_>>());
     let rows = jobs.iter().zip(&ids).map(|(job, id)| job_row(id, job)).collect();
     let mut counts: Vec<(&str, usize)> = Vec::new();
     for job in jobs {
-        let name = state_name(job);
+        let name = job.status.name();
         match counts.iter_mut().find(|(n, _)| *n == name) {
             Some((_, count)) => *count += 1,
             None => counts.push((name, 1)),
@@ -33,7 +33,6 @@ pub fn jobs(jobs: &[Job]) -> Doc {
     let mut line = vec![format::count(jobs.len(), "download")];
     line.extend(counts.iter().map(|(name, count)| format!("{count} {name}")));
     let mut summary = vec![line.join(" · ")];
-    summary.extend(waiting_line(jobs));
     for (job, id) in jobs.iter().zip(&ids) {
         if let JobStatus::Error { error } = &job.status {
             summary.push(format!("{id} error[{}]: {}", error.code, sanitize(&error.message)));
@@ -68,31 +67,26 @@ pub fn job(job: &Job) -> Doc {
     let p = &job.progress;
     let mut fields = vec![
         ("id", Cell::styled(job.id.to_hex(), Token::Accent)),
-        ("name", job.name.as_deref().map_or_else(|| Cell::styled(format::UNKNOWN, Token::Muted), Cell::new)),
-        ("state", job_state_cell(job)),
+        ("name", Cell::new(&job.name)),
+        ("state", state_cell(&job.status)),
     ];
-    let progress = match p.size {
-        Some(size) => {
-            format!("{} ({} of {})", format::percent(p), format_size(p.verified.min(size)), format_size(size))
-        }
-        None => format::UNKNOWN.to_string(),
-    };
+    let progress =
+        format!("{} ({} of {})", format::percent(p), format_size(p.verified.min(p.size)), format_size(p.size));
     fields.push(("progress", Cell::new(progress)));
-    let downloading = job.status == JobStatus::Downloading && job.waiting_for.is_none();
+    let downloading = job.status == JobStatus::Downloading;
     if downloading {
         fields.push(("down", Cell::new(format::rate(p.down_rate))));
     }
-    if matches!(job.status, JobStatus::Metadata | JobStatus::Checking | JobStatus::Downloading) {
-        fields.push(("peers", Cell::new(format!("{} ({})", p.peers, format::count(p.seeds as usize, "seed")))));
+    if matches!(job.status, JobStatus::Checking | JobStatus::Downloading) {
+        fields.push(("connections", Cell::new(p.connections.to_string())));
     }
     if downloading {
         fields.push(("eta", Cell::new(format::eta(p.eta))));
     }
     fields.push(("files", Cell::new(selection(&job.selection))));
-    let path = job.path.as_deref().unwrap_or(&job.dir);
-    fields.push(("path", Cell::new(path.display().to_string())));
+    fields.push(("path", Cell::new(job.path.display().to_string())));
     fields.push(("added", Cell::new(format::timestamp(job.added_at))));
-    let mut summary: Vec<String> = waiting_line([job]).into_iter().collect();
+    let mut summary = Vec::new();
     match &job.status {
         JobStatus::Done { finished_at } => fields.push(("finished", Cell::new(format::timestamp(*finished_at)))),
         JobStatus::Error { error } => {

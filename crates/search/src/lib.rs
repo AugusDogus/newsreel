@@ -1,6 +1,6 @@
-//! Turns a [`SearchQuery`] into a [`SearchResult`]: every selected source runs at
-//! once under the query's deadline, listings merge by torrent, and one ranking
-//! orders them, so a human and an agent see the same list.
+//! Turns a [`SearchQuery`] into a [`SearchResult`]: every selected indexer runs at
+//! once under the query's deadline, rows merge by NZB link, and one ranking orders
+//! them, so a human and an agent see the same list.
 //!
 //! The engine process owns one [`Search`] and one [`ResultCache`]. Search never
 //! starts a download.
@@ -13,25 +13,19 @@ mod dates;
 mod http;
 mod imdb;
 pub mod indexers;
-mod metainfo;
 mod observation;
-pub mod rank;
-mod redirect;
+mod rank;
 mod sources;
 mod store;
 pub mod subtitles;
 mod terms;
-mod web_seeds;
+mod trash;
 
-use std::collections::{BTreeMap, VecDeque};
 use std::fmt;
 use std::panic::AssertUnwindSafe;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, RwLock};
+use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-use futures_util::future::{BoxFuture, Shared};
 use futures_util::stream::FuturesUnordered;
 use futures_util::{FutureExt, StreamExt};
 use serde::{Deserialize, Serialize};
@@ -43,31 +37,24 @@ use crate::assemble::{Answer, Linked, Run, assemble, merged, vet};
 use crate::cache::AnswerKey;
 pub use crate::cache::ResultCache;
 use crate::http::{FetchError, Http, Retry};
-use crate::sources::{Ctx, Failure, Source, Stores, archive_org};
-pub use crate::sources::{SavedLink, builtin, lawful};
+pub use crate::sources::SavedLink;
+use crate::sources::{Ctx, Failure, Source};
 use crate::terms::Terms;
-pub use crate::web_seeds::WebSeeds;
 
 #[derive(Clone, PartialEq, Debug, Default, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SearchConfig {
-    /// Where the Academic Torrents catalog, the official listing pages, and hashed
-    /// `.torrent` files are kept between processes. `None` writes nothing to disk.
-    pub cache_dir: Option<PathBuf>,
-    /// Searched after the built-in sources, in this order.
-    pub torznab: Vec<TorznabConfig>,
-    /// Replacement base URLs for built-in sources, by source name, such as a
-    /// mirror. torrential never adds mirrors on its own.
-    pub endpoints: BTreeMap<String, String>,
+    /// Newznab indexers, searched in this order.
+    pub indexers: Vec<IndexerConfig>,
     /// Sources never searched, by name. A query that names one fails.
     pub disabled: Vec<String>,
 }
 
-/// A Jackett, Prowlarr, or bitmagnet Torznab endpoint, such as
-/// `http://127.0.0.1:9117/api/v2.0/indexers/all/results/torznab/api`.
+/// A Newznab endpoint: NZBHydra, Prowlarr, or an indexer's own API, such as
+/// `http://127.0.0.1:5076/api`.
 #[derive(Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct TorznabConfig {
+pub struct IndexerConfig {
     /// The `--source` name: lowercase letters, digits, `-`, `_`, and `.`.
     pub name: String,
     pub url: String,
@@ -75,9 +62,9 @@ pub struct TorznabConfig {
     pub api_key: Option<String>,
 }
 
-impl fmt::Debug for TorznabConfig {
+impl fmt::Debug for IndexerConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TorznabConfig")
+        f.debug_struct("IndexerConfig")
             .field("name", &self.name)
             .field("url", &self.url)
             .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
@@ -88,8 +75,6 @@ impl fmt::Debug for TorznabConfig {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 pub struct SourceInfo {
     pub name: String,
-    /// A catalog of content its publishers share, ranked ahead of general indexes.
-    pub lawful: bool,
 }
 
 /// A search under way, with answers merged and ranked like the final result.
@@ -108,15 +93,9 @@ pub struct Search {
 
 struct Inner {
     http: Http,
-    /// For the redirects of a torrent's web seeds, which must not lead inside.
-    seeds: Http,
     /// The sources a search may use, which [`Search::reconfigure`] replaces whole.
     registry: RwLock<Arc<Registry>>,
-    stores: Stores,
     cache: ResultCache,
-    /// archive.org's answers about an item's servers, asked for as its `.torrent` file was fetched,
-    /// so a download of it starts from those servers.
-    servers: Mutex<VecDeque<Servers>>,
 }
 
 struct Registry {
@@ -130,20 +109,6 @@ impl Registry {
     }
 }
 
-type Lookup = Shared<BoxFuture<'static, Result<Vec<String>, Error>>>;
-
-/// One item's lookup of its servers, begun at `asked`.
-struct Servers {
-    identifier: String,
-    asked: Instant,
-    lookup: Lookup,
-}
-
-/// Lookups begun with a `.torrent` fetch whose download has not started yet.
-const SERVERS_KEPT: usize = 8;
-/// How long a lookup's answer is used for a download that starts after it.
-const SERVERS_FOR: Duration = Duration::from_secs(60);
-
 impl Search {
     /// Fails with `usage` when the config names an unknown source or a bad URL.
     pub fn new(config: &SearchConfig, cache: ResultCache) -> Result<Search, Error> {
@@ -156,21 +121,15 @@ impl Search {
         &self.inner.cache
     }
 
-    /// The web-seed lookup for downloads. It shares this search's lookups, so the servers of an
-    /// archive.org item asked for with its `.torrent` are not asked for again.
-    pub fn web_seeds(&self) -> WebSeeds {
-        WebSeeds(self.inner.clone())
-    }
-
     /// Every enabled source, most authoritative first.
     pub fn sources(&self) -> Vec<SourceInfo> {
         let registry = self.inner.registry();
-        registry.enabled.iter().map(|s| SourceInfo { name: s.meta.name.clone(), lawful: s.meta.lawful }).collect()
+        registry.enabled.iter().map(|s| SourceInfo { name: s.meta.name.clone() }).collect()
     }
 
-    /// Searches the Torznab indexers and leaves out the sources `config` names from now on. Searches
-    /// under way finish with the sources they started with. Fails with `usage`, and changes nothing,
-    /// when the config names an unknown source or a bad URL.
+    /// Searches the Newznab indexers and leaves out the sources `config` names from now on.
+    /// Searches under way finish with the sources they started with. Fails with `usage`, and
+    /// changes nothing, when the config names an unknown source or a bad URL.
     pub fn reconfigure(&self, config: &SearchConfig) -> Result<(), Error> {
         let registry = Arc::new(Registry::new(config)?);
         *self.inner.registry.write().unwrap_or_else(|e| e.into_inner()) = registry;
@@ -221,22 +180,17 @@ impl Search {
                 scope: source.scope(),
                 text: terms.text().to_string(),
                 adult: query.adult,
-                title: query.wanted.is_some(),
             };
             let cached = if query.fresh { None } else { cache.answer(&key, std::time::Instant::now()) };
             async move {
                 if let Some(rows) = cached {
                     return (index, Run { source: source.meta.clone(), answer: Answer::Cached(rows), elapsed_ms: 0 });
                 }
-                let (answer, complete) = AssertUnwindSafe(self.inner.run(source, terms, query, started, deadline))
+                let answer = AssertUnwindSafe(self.inner.run(source, terms, deadline))
                     .catch_unwind()
                     .await
-                    .unwrap_or_else(|_| {
-                        (Answer::Failed(Failure::BadResponse("the source adapter crashed".into())), false)
-                    });
-                if let Answer::Fresh(rows) = &answer
-                    && complete
-                {
+                    .unwrap_or_else(|_| Answer::Failed(Failure::BadResponse("the source adapter crashed".into())));
+                if let Answer::Fresh(rows) = &answer {
                     cache.store(key, rows.clone(), std::time::Instant::now());
                 }
                 (index, Run { source: source.meta.clone(), answer, elapsed_ms: millis(started.elapsed()) })
@@ -263,26 +217,28 @@ impl Search {
                 progress(Progress { result, pending });
             }
         }
-        self.inner.stores.save().await;
         let runs: Vec<Run> = runs.into_iter().flatten().collect();
         let (result, linked) = assemble(query, rank_for(), terms, &runs, millis(started.elapsed()))?;
         cache.remember(self.inner.saved_links(linked));
         Ok(result)
     }
 
-    /// The `.torrent` link to download `release` from: its own, or the one an earlier engine
-    /// process saved for it, with the current API key of the source that issued it. Fails with
-    /// `usage` when that link needs a key and its source is gone or has none.
-    pub fn torrent_url(&self, release: &Release) -> Result<Option<String>, Error> {
-        if release.torrent_url.is_some() {
-            return Ok(release.torrent_url.clone());
+    /// The NZB link to download `release` from: its own, or the one an earlier engine process
+    /// saved for it, with the current API key of the indexer that issued it. Fails with `usage`
+    /// when that link needs a key and its indexer is gone or has none.
+    pub fn nzb_url(&self, release: &Release) -> Result<Option<String>, Error> {
+        if release.nzb_url.is_some() {
+            return Ok(release.nzb_url.clone());
         }
         let Some(saved) = self.inner.cache.saved_link(&release.id) else { return Ok(None) };
+        if saved.key_params.is_empty() {
+            return Ok(Some(saved.url));
+        }
         let name = &saved.source;
         let needs_key = |why: &str, hint: String| {
             Error::new(
                 ErrorCode::Usage,
-                format!("this result's .torrent link needs an API key for the {name} indexer, which {why}"),
+                format!("this result's NZB link needs an API key for the {name} indexer, which {why}"),
             )
             .with_hint(format!("{hint}, or search again"))
         };
@@ -303,23 +259,20 @@ impl Search {
         Ok(Some(url))
     }
 
-    /// The `.torrent` file at `url`, which may be a private link from
-    /// [`ResultCache::find`], so errors never quote it.
-    pub async fn fetch_torrent(&self, url: &str) -> Result<Vec<u8>, Error> {
-        const CAP: usize = 16 << 20;
+    /// The NZB at `url`, which carries the user's API key, so errors never quote it.
+    pub async fn fetch_nzb(&self, url: &str) -> Result<Vec<u8>, Error> {
+        // An NZB for an 80 GB release is about 15 MB.
+        const CAP: usize = 64 << 20;
         const WITHIN: Duration = Duration::from_secs(20);
         let url = Url::parse(url)
             .ok()
             .filter(|u| matches!(u.scheme(), "http" | "https"))
-            .ok_or_else(|| Error::new(ErrorCode::InvalidRef, "a .torrent URL must start with http:// or https://"))?;
-        if let Some(item) = self.inner.registry().enabled.iter().find_map(|s| s.archive_item_of_link(&url)) {
-            self.inner.ask_servers(item);
-        }
-        // A private tracker may count each request for a .torrent as a grab.
+            .ok_or_else(|| Error::new(ErrorCode::InvalidRef, "an NZB URL must start with http:// or https://"))?;
+        // An indexer counts each request as a grab.
         let body = self.inner.http.fetch(&url, CAP, Instant::now() + WITHIN, Retry::Never).await;
         body.map_err(|e| {
-            Error::new(ErrorCode::FetchFailed, format!("could not fetch the .torrent file: {}", fetch_reason(e)))
-                .with_hint("check the network connection, or download by magnet link")
+            Error::new(ErrorCode::FetchFailed, format!("could not fetch the NZB: {}", fetch_reason(e)))
+                .with_hint("check the network connection and the indexer, or search again")
         })
     }
 
@@ -350,76 +303,36 @@ impl Search {
 
 impl Inner {
     fn new(config: &SearchConfig, cache: ResultCache, http: Http) -> Result<Inner, Error> {
-        let seeds = Http::public(http::USER_AGENT, redirect::policy()).map_err(no_client)?;
         let registry = RwLock::new(Arc::new(Registry::new(config)?));
-        let stores = Stores::new(config.cache_dir.clone());
-        Ok(Inner { http, seeds, registry, stores, cache, servers: Mutex::default() })
+        Ok(Inner { http, registry, cache })
     }
 
     fn registry(&self) -> Arc<Registry> {
         self.registry.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    /// Starts asking archive.org for `item`'s servers, for a download of it that may start soon.
-    fn ask_servers(&self, item: archive_org::Item) {
-        let identifier = item.identifier().to_string();
-        let lookup = servers(&self.http, item);
-        let mut kept = self.servers.lock().unwrap_or_else(|e| e.into_inner());
-        kept.retain(|s| s.identifier != identifier);
-        if kept.len() == SERVERS_KEPT {
-            kept.pop_front();
-        }
-        kept.push_back(Servers { identifier, asked: Instant::now(), lookup });
-    }
-
-    /// The lookup of `item`'s servers begun lately with its `.torrent` fetch, taken so a later
-    /// download asks again.
-    fn asked_servers(&self, item: &archive_org::Item) -> Option<Lookup> {
-        let mut kept = self.servers.lock().unwrap_or_else(|e| e.into_inner());
-        let at = kept.iter().position(|s| s.identifier == item.identifier())?;
-        let taken = kept.remove(at)?;
-        (taken.asked.elapsed() < SERVERS_FOR).then_some(taken.lookup)
-    }
-
     fn saved_links(&self, linked: Vec<Linked>) -> Vec<(Release, Option<SavedLink>)> {
         let registry = self.registry();
         linked
             .into_iter()
-            .map(|(release, private)| {
-                let saved = private.and_then(|name| {
-                    let source = registry.enabled.iter().find(|s| s.meta.name == name)?;
-                    source.save_link(release.torrent_url.as_deref()?)
-                });
+            .map(|(release, name)| {
+                let saved = registry
+                    .enabled
+                    .iter()
+                    .find(|s| s.meta.name == name)
+                    .and_then(|source| source.save_link(release.nzb_url.as_deref()?));
                 (release, saved)
             })
             .collect()
     }
 
-    async fn run(
-        &self,
-        source: &Source,
-        terms: &Terms,
-        query: &SearchQuery,
-        started: Instant,
-        deadline: Instant,
-    ) -> (Answer, bool) {
-        let ctx = Ctx {
-            http: &self.http,
-            stores: &self.stores,
-            terms,
-            adult: query.adult,
-            fresh: query.fresh,
-            wanted: query.wanted.as_ref(),
-            started,
-            deadline,
-            partial: AtomicBool::new(false),
-        };
+    async fn run(&self, source: &Source, terms: &Terms, deadline: Instant) -> Answer {
+        let ctx = Ctx { http: &self.http, terms, deadline };
         let rows = timeout_at(deadline, source.search(&ctx)).await.unwrap_or(Err(Failure::Timeout));
-        let answer = match rows.and_then(|rows| vet(terms, rows)) {
+        match rows.and_then(|rows| vet(terms, rows)) {
             Ok(rows) => Answer::Fresh(Arc::new(rows)),
             Err(failure) => Answer::Failed(failure),
-        };
-        (answer, !ctx.partial.load(Ordering::Relaxed))
+        }
     }
 }
 
@@ -439,15 +352,6 @@ fn millis(d: Duration) -> u32 {
     u32::try_from(d.as_millis()).unwrap_or(u32::MAX)
 }
 
-/// Asks archive.org for `item`'s servers on a task of its own, so the answer comes however long the
-/// caller takes to wait for it.
-fn servers(http: &Http, item: archive_org::Item) -> Lookup {
-    let http = http.detached();
-    let task = tokio::spawn(async move { item.mirrors(&http).await });
-    let joined = task.map(|joined| joined.unwrap_or_else(|e| Err(Error::internal(format!("the lookup stopped: {e}")))));
-    joined.boxed().shared()
-}
-
 fn no_client(e: reqwest::Error) -> Error {
     Error::internal(format!("cannot build the HTTP client: {e}"))
 }
@@ -465,17 +369,7 @@ pub async fn record(config: &SearchConfig, source: &str, query: &str) -> Result<
         .find(|s| s.meta.name == source)
         .ok_or_else(|| Error::new(ErrorCode::Usage, format!("unknown source {source:?}")))?;
     let terms = Terms::parse(query);
-    let ctx = Ctx {
-        http: &inner.http,
-        stores: &inner.stores,
-        terms: &terms,
-        adult: false,
-        fresh: true,
-        wanted: None,
-        started: Instant::now(),
-        deadline: Instant::now() + Duration::from_secs(60),
-        partial: AtomicBool::new(false),
-    };
+    let ctx = Ctx { http: &inner.http, terms: &terms, deadline: Instant::now() + Duration::from_secs(60) };
     let outcome = match source.search(&ctx).await {
         Ok(rows) => format!("{} rows", rows.len()),
         Err(failure) => format!("{failure:?}"),
