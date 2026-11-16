@@ -225,10 +225,10 @@ mod tests {
     #[test]
     fn the_latest_redirect_names_the_tag() {
         let found = |location: &str| tag_version(location).map(|v| v.to_string());
-        assert_eq!(found("https://github.com/nexxeln/torrential/releases/tag/v0.1.1").as_deref(), Some("0.1.1"));
-        assert_eq!(found("/nexxeln/torrential/releases/tag/v2.0.3/").as_deref(), Some("2.0.3"));
-        assert_eq!(found("https://github.com/nexxeln/torrential/releases"), None);
-        assert_eq!(found("https://github.com/nexxeln/torrential/releases/tag/nightly"), None);
+        assert_eq!(found("https://github.com/AugusDogus/newsreel/releases/tag/v0.1.1").as_deref(), Some("0.1.1"));
+        assert_eq!(found("/AugusDogus/newsreel/releases/tag/v2.0.3/").as_deref(), Some("2.0.3"));
+        assert_eq!(found("https://github.com/AugusDogus/newsreel/releases"), None);
+        assert_eq!(found("https://github.com/AugusDogus/newsreel/releases/tag/nightly"), None);
     }
 
     #[test]
