@@ -71,7 +71,10 @@ Compressed, encrypted, expired, and incomplete releases are refused with a reaso
   grabs: a release on a list to avoid gets the `avoid` flag and ranks below the rest, and a
   group in a tier ranks above unranked ones. Names with a season or episode use Sonarr's lists.
 - **Titles.** A title's search asks every indexer each of its queries (name and year, then the
-  name). A play waits for the quick indexers (2.5 s) or for all of them, tries the best source,
+  name), and for a film, the releases tagged with its IMDb ID too, up to 300. A release tagged as
+  the film fits under another name (a dub's, the original title, a misspelling) when its year
+  fits, and one tagged as another title never fits. Episodes are tagged with TVDB IDs, not IMDb's,
+  so a series is searched by words alone. A play waits for the quick indexers (2.5 s) or for all of them, tries the best source,
   and moves past one whose NZB does not arrive, holds no video, or gets no data. While one source
   is tried, the next two sources' NZBs are fetched and kept, so stalled indexers in a row cost
   one wait. A download a title play made is held as the search result it came from.
@@ -90,8 +93,6 @@ Compressed, encrypted, expired, and incomplete releases are refused with a reaso
 
 Not done:
 
-- A title's search uses text queries; Newznab's `t=movie` and `t=tvsearch` with the IMDb ID
-  would match more exactly.
 - Resolving a new NZB waits for a free connection behind running downloads, which on real servers is
   about one article long.
 - The app keeps upstream's name.

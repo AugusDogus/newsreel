@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use crate::catalog::{self, Countries, Country, Episode, TitleCard, TitleDetails};
+use crate::catalog::{self, Countries, Country, Episode, TitleCard, TitleDetails, TitleId};
 use crate::error::{Error, ErrorCode};
 use crate::filetype::{FileType, Kind};
 use crate::name::{self, year};
@@ -309,6 +309,8 @@ pub fn season_episodes(details: &TitleDetails, episode: Option<Episode>) -> Resu
 /// The film or episode a person wants, as the catalog names it, to tell its releases from others.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct Wanted {
+    /// The film's ID, or the series'.
+    pub id: TitleId,
     pub name: String,
     /// A film's year, or the year a series began.
     pub year: Option<u16>,
@@ -339,6 +341,7 @@ impl Wanted {
             _ => Namesakes::Shadowed,
         };
         Ok(Wanted {
+            id: card.id.clone(),
             name: card.name.clone(),
             year: card.year,
             episode,
@@ -357,8 +360,23 @@ impl Wanted {
     /// or for a series when it names this title's country. For an episode, the release holds the
     /// episode itself or a pack that covers it.
     pub fn fit(&self, release: &str) -> Option<Named> {
+        self.reading(release, false)
+    }
+
+    /// Like [`Wanted::fit`] for a release an indexer tagged with this title's ID, which may
+    /// name it otherwise: by a dub's title, the original title, or misspelled. A name that is
+    /// not this title's must come with a year that fits, since tags are sometimes wrong.
+    pub fn fit_tagged(&self, release: &str) -> Option<Named> {
+        self.reading(release, true)
+    }
+
+    fn reading(&self, release: &str, tagged: bool) -> Option<Named> {
         let name = normalized(&self.name);
         named(release).into_iter().find(|reading| {
+            let same_name = normalized(&reading.name) == name;
+            if !same_name && !(tagged && reading.year.is_some()) {
+                return false;
+            }
             let country = match reading.country {
                 None => true,
                 Some(_) if self.countries.is_empty() => self.namesakes == Namesakes::None,
@@ -371,7 +389,7 @@ impl Wanted {
                 (Some(_), None) => true,
                 (Some(named), Some(year)) => named.abs_diff(year) <= year_slack(self.episode.is_some()),
             };
-            country && year && reading.span.covers(self.episode) && normalized(&reading.name) == name
+            country && year && reading.span.covers(self.episode)
         })
     }
 
@@ -846,6 +864,7 @@ mod tests {
 
     fn film_named(name: &str, year: u16, namesakes: Namesakes) -> Wanted {
         Wanted {
+            id: "tt0000001".parse().unwrap(),
             name: name.into(),
             year: Some(year),
             episode: None,
@@ -866,6 +885,24 @@ mod tests {
 
     fn expect<'a>(releases: &[&'a str], spans: &[Option<&str>]) -> Vec<(&'a str, Option<String>)> {
         releases.iter().copied().zip(spans.iter().map(|span| span.map(String::from))).collect()
+    }
+
+    #[test]
+    fn a_release_tagged_with_the_title_fits_by_another_name_only_with_a_year_that_fits() {
+        let parasite = film_named("Parasite", 2019, Namesakes::Leading);
+        let releases = [
+            "Gisaengchung.2019.1080p.BluRay.DD5.1.x264-HDU",
+            "Parasite.2019.1080p.BluRay.x264-GRP",
+            "Parasite.1080p.WEB-DL",
+            "Gisaengchung.1080p.BluRay",
+            "Fiction.2008.NF.WEB-DL.DDP2.0.x264-RSG",
+        ];
+        let tagged: Vec<_> = releases
+            .iter()
+            .map(|&release| (release, parasite.fit_tagged(release).map(|n| n.span.to_string())))
+            .collect();
+        assert_eq!(tagged, expect(&releases, &[Some("film"), Some("film"), Some("film"), None, None]));
+        assert_eq!(fits(&parasite, &releases), expect(&releases, &[None, Some("film"), Some("film"), None, None]));
     }
 
     #[test]
@@ -1161,7 +1198,7 @@ mod tests {
         let json = serde_json::to_string(&wanted).unwrap();
         assert_eq!(
             json,
-            r#"{"name":"Breaking Bad","year":2008,"episode":{"season":3,"episode":5},"namesakes":"none","runtime_s":2820,"season_episodes":13,"countries":["US"]}"#
+            r#"{"id":"tt0000001","name":"Breaking Bad","year":2008,"episode":{"season":3,"episode":5},"namesakes":"none","runtime_s":2820,"season_episodes":13,"countries":["US"]}"#
         );
         assert_eq!(serde_json::from_str::<Wanted>(&json).unwrap(), wanted);
     }

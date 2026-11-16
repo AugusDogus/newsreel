@@ -729,6 +729,7 @@ fn a_thousand_shuffles_give_one_order() {
 
 fn night(namesakes: Namesakes, year: u16) -> Wanted {
     Wanted {
+        id: "tt0063350".parse().unwrap(),
         name: "Night of the Living Dead".into(),
         year: Some(year),
         episode: None,
@@ -875,6 +876,7 @@ fn a_phone_plays_a_copy_its_screen_shows_before_a_remux_with_more_grabs() {
 
 fn friday() -> Wanted {
     Wanted {
+        id: "tt0032599".parse().unwrap(),
         name: "His Girl Friday".into(),
         year: Some(1940),
         episode: None,
@@ -930,6 +932,7 @@ fn a_remux_that_fits_the_screen_plays_after_a_copy_that_streams() {
 
 fn sintel() -> Wanted {
     Wanted {
+        id: "tt1727587".parse().unwrap(),
         name: "Sintel".into(),
         year: Some(2010),
         episode: None,
@@ -971,6 +974,7 @@ fn a_trailer_is_not_the_film() {
     )];
     assert_eq!(played(&friday(), Profile::default(), &runs), ["His Girl Friday (1940)"]);
     let boys = Wanted {
+        id: "tt0290988".parse().unwrap(),
         name: "Trailer Park Boys".into(),
         year: Some(2001),
         episode: Some(torrential_core::catalog::Episode { season: 1, episode: 1 }),
@@ -1059,6 +1063,7 @@ fn a_release_too_small_for_the_runtime_is_dropped_as_a_fake() {
 #[test]
 fn an_episode_ranks_before_its_season_pack() {
     let wanted = Wanted {
+        id: "tt0903747".parse().unwrap(),
         name: "Breaking Bad".into(),
         year: Some(2008),
         episode: Some(torrential_core::catalog::Episode { season: 3, episode: 5 }),

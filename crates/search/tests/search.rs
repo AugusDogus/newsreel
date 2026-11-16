@@ -578,11 +578,13 @@ async fn a_title_searches_each_of_its_queries_and_reports_each_indexer_once() {
     let server = Server::start(vec![
         ("/geek/api?t=search&q=night+of+the+living+dead+1968", vec![ok(dated)]),
         ("/geek/api?t=search&q=night+of+the+living+dead", vec![late(yearless)]),
+        ("/geek/api?t=movie&imdbid=0063350", vec![ok(feed(&[]))]),
         ("/hydra/", vec![status(404)]),
     ])
     .await;
     let sources = ["hydra", "geek"];
     let wanted = Wanted {
+        id: "tt0063350".parse().unwrap(),
         name: "Night of the Living Dead".into(),
         year: Some(1968),
         episode: None,
@@ -613,7 +615,62 @@ async fn a_title_searches_each_of_its_queries_and_reports_each_indexer_once() {
     assert_eq!(updates.last().map(|p| p.pending.clone()), Some(vec!["geek".to_string()]));
     assert_eq!(server.hits("/geek/api?t=search&q=night+of+the+living+dead+1968"), 1);
     assert_eq!(server.hits("/geek/api?t=search&q=night+of+the+living+dead"), 1);
-    assert_eq!(server.hits("/hydra/"), 2);
+    assert_eq!(server.hits("/geek/api?t=movie&imdbid=0063350"), 1);
+    assert_eq!(server.hits("/hydra/"), 3);
+}
+
+#[tokio::test]
+async fn a_film_is_asked_for_by_its_id_and_a_release_tagged_as_it_fits_by_another_name() {
+    let tagged = |rows: &[(&str, &str, &str)]| {
+        let items: String = rows
+            .iter()
+            .map(|(tag, name, imdb)| {
+                format!(
+                    r#"<item><title>{name}</title><link>https://indexer.example/getnzb/{tag}.nzb</link><newznab:attr name="category" value="2040" /><newznab:attr name="size" value="6000000000" /><newznab:attr name="imdb" value="{imdb}" /></item>"#
+                )
+            })
+            .collect();
+        format!(
+            r#"<rss xmlns:newznab="http://www.newznab.com/DTD/2010/feeds/attributes/"><channel>{items}</channel></rss>"#
+        )
+        .into_bytes()
+    };
+    let by_id = tagged(&[
+        ("a", "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP", "0063350"),
+        ("d", "Die.Nacht.der.lebenden.Toten.1968.German.1080p.BluRay.x264-GRP", "63350"),
+        ("f", "Living.Dead.Collection.1080p.BluRay", "tt0063350"),
+    ]);
+    // Words find a release the indexer tagged as the 1990 remake, which this film is not.
+    let by_words = tagged(&[("e", "Night.of.the.Living.Dead.1968.1080p.WEB.x264-GRP", "0100258")]);
+    let server = Server::start(vec![
+        ("/geek/api?t=movie&imdbid=0063350&limit=300", vec![ok(by_id)]),
+        ("/geek/api?t=search", vec![ok(by_words)]),
+    ])
+    .await;
+    let wanted = Wanted {
+        id: "tt0063350".parse().unwrap(),
+        name: "Night of the Living Dead".into(),
+        year: Some(1968),
+        episode: None,
+        namesakes: Namesakes::Leading,
+        runtime: Some(Duration::from_secs(96 * 60)),
+        season_episodes: None,
+        countries: Default::default(),
+    };
+    let q = SearchQuery { wanted: Some(wanted), ..query("night of the living dead", &["geek"]) };
+    let search = Search::new(&server.config(&["geek"]), ResultCache::new()).unwrap();
+
+    let result = search.search(&q).await.unwrap();
+
+    let names: Vec<&str> = result.releases.iter().map(|r| r.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "Night.of.the.Living.Dead.1968.1080p.BluRay.x264-GRP",
+            "Die.Nacht.der.lebenden.Toten.1968.German.1080p.BluRay.x264-GRP"
+        ]
+    );
+    assert_eq!(server.hits("/geek/api?t=movie&imdbid=0063350&limit=300"), 1);
 }
 
 #[tokio::test]

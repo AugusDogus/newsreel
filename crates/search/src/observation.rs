@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use torrential_core::{Category, Flag};
+use torrential_core::{Category, Flag, TitleId};
 
 /// One row an indexer answered.
 #[derive(Clone, PartialEq, Debug)]
@@ -13,6 +13,8 @@ pub(crate) struct Observation {
     pub published: Option<i64>,
     pub category: Option<Category>,
     pub flags: BTreeSet<Flag>,
+    /// The title the indexer tagged the row with.
+    pub imdb: Option<TitleId>,
 }
 
 impl Observation {
@@ -26,6 +28,7 @@ impl Observation {
             published: None,
             category: None,
             flags: BTreeSet::new(),
+            imdb: None,
         })
     }
 
