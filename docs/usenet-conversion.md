@@ -1,11 +1,12 @@
 # Converting torrential to Usenet
 
-This fork replaces BitTorrent with Usenet: search Newznab indexers, then stream or
-download from NNTP servers. The goal is feature parity where it makes sense.
+newsreel is a fork of nexxeln/torrential that replaces BitTorrent with Usenet: search Newznab
+indexers, then stream or download from NNTP servers. The goal is feature parity where it makes
+sense.
 
 ## Approach
 
-torrential already isolates the network behind two ports, so most of the program stays:
+torrential already isolates the network behind two ports in its engine crate (`crates/daemon`), so most of the program stays:
 
 - `daemon/engine_port.rs` (`EnginePort`): libtorrent upstream, `daemon/usenet.rs` here. It
   covers add, pause, resume, recheck, `want_range`, `written`, `stream`, and events.
@@ -30,7 +31,7 @@ the segments under a byte range first, which is what streaming and seeking need.
 
 ## Feature map
 
-| torrential | Usenet fork |
+| torrential | newsreel |
 |---|---|
 | Torrent indexes, lawful catalogs | Newznab indexers (NZBHydra, Prowlarr, direct) |
 | Magnet, infohash, `.torrent` URL or file | NZB URL or file |
@@ -45,7 +46,9 @@ the segments under a byte range first, which is what streaming and seeking need.
 | Metadata probes of the next sources | NZBs of the next two sources fetched early |
 | Hold other downloads back while a film streams | Per-download rate limit in the NNTP engine |
 | Phones and TVs, Play on TV (DLNA), plays folder, Trash, ffmpeg fetch, login service | Kept |
-| Updates from GitHub releases, install script | Off: this fork publishes none; build from source |
+| Windows: logon task, Recycle Bin, `install.ps1`, self-update | Kept |
+| Ranking by the file a play opens (archive.org file lists) | Dropped; codecs come from the release name |
+| Updates from GitHub releases, install script | Kept; from AugusDogus/newsreel |
 | Compressed or encrypted RARs | Refused; a play moves to the next release |
 
 ## Status
@@ -80,28 +83,31 @@ Compressed, encrypted, expired, and incomplete releases are refused with a reaso
   one wait. A download a title play made is held as the search result it came from.
 - **Holding back.** `EnginePort::limit` caps one download's bytes per second; the NNTP engine
   paces its article fetches against the cap and lets go at once when it is lifted.
-- **Updates.** The updater stays, but this build has no release server, so it never checks
-  (a test points it at one with `TORRENTIAL_TEST_RELEASES`).
+- **Releases.** `install.sh`, `install.ps1`, the updater, and the release workflow use
+  AugusDogus/newsreel. The builds need no C++, since libtorrent is gone, so Windows needs no vcpkg.
+  Upstream's bridge that updates torrential 0.5 to 0.6 is left out: no newsreel ever spoke 0.5's protocol.
 - **No compatibility.** Nothing reads BitTorrent input or old state: no magnet, infohash, or
   `.torrent` handling, no `torznab` config, no metadata phase, and one fresh database schema.
   Types, JSON fields, and error codes use Usenet terms (`connections`, `nzb_url`, `invalid_release`).
-- **Tests.** `crates/torrential/tests/usenet.rs` and `search.rs` run the binary against a
-  loopback NNTP server (`torrential_usenet::fake`) and Newznab feeds; the fake engine behind the
+- **Tests.** `crates/newsreel/tests/usenet.rs` and `search.rs` run the binary against a
+  loopback NNTP server (`newsreel_usenet::fake`) and Newznab feeds; the fake engine behind the
   CLI tests serves fake releases the same way. In the engine's tests a release the fake network
   publishes is an NZB its indexer serves, and one it does not never arrives.
-- **Upstream.** Ported from nexxeln/torrential v0.5.1 by replaying the fork's commits onto it.
+- **Upstream.** Ported from nexxeln/torrential v0.6.0 by replaying the fork's commits onto it,
+  its first conversion commits as one.
+- **Name.** The app, its crates, paths, and environment variables are `newsreel`, not `torrential`,
+  and its versions start again at 0.1.0.
 
 Not done:
 
 - Resolving a new NZB waits for a free connection behind running downloads, which on real servers is
   about one article long.
-- The app keeps upstream's name.
 
 ## Phases
 
 1. **Tracer bullet.** A `usenet` crate (NNTP, yEnc, NZB, RAR, manifest). A Newznab source.
    Fetching an NZB resolves a manifest. A Usenet `EnginePort` writes segments to disk.
-   `torrential search` then `torrential play` streams a stored-RAR release.
+   `newsreel search` then `newsreel play` streams a stored-RAR release.
 2. **Parity.** Wording and fields across CLI, TUI, and web (servers, not peers). Resume and
    recheck. Availability check before starting, fallback to the next result, retention
    and password signals in ranking, the remembered verdicts from the prototype.
