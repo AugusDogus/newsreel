@@ -108,3 +108,46 @@ pub fn keep_standard_handles() {
         }
     }
 }
+
+/// The SID of the account this process runs as, such as `S-1-5-21-…-1001`. An elevated process
+/// has the same one, though what it creates belongs to Administrators.
+#[cfg(windows)]
+pub fn user_sid() -> std::io::Result<String> {
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, HLOCAL, LocalFree};
+    use windows::Win32::Security::Authorization::ConvertSidToStringSidW;
+    use windows::Win32::Security::{GetTokenInformation, TOKEN_QUERY, TOKEN_USER, TokenUser};
+    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+    use windows::core::PWSTR;
+    let win32 = crate::fsutil::win32;
+    let mut token = HANDLE::default();
+    unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) }.map_err(win32)?;
+    let sid = (|| {
+        let mut len = 0;
+        // The first call only says how long the answer is.
+        let _ = unsafe { GetTokenInformation(token, TokenUser, None, 0, &mut len) };
+        // Words of 8 bytes, so the TOKEN_USER the call writes at the start is aligned.
+        let mut buffer = vec![0u64; (len as usize).div_ceil(8)];
+        unsafe { GetTokenInformation(token, TokenUser, Some(buffer.as_mut_ptr().cast()), len, &mut len) }
+            .map_err(win32)?;
+        // SAFETY: the call succeeded, so the buffer starts with a TOKEN_USER whose SID it holds too.
+        let user = unsafe { &*buffer.as_ptr().cast::<TOKEN_USER>() };
+        let mut text = PWSTR::null();
+        unsafe { ConvertSidToStringSidW(user.User.Sid, &mut text) }.map_err(win32)?;
+        let sid = unsafe { text.to_string() }.map_err(std::io::Error::other);
+        let _ = unsafe { LocalFree(Some(HLOCAL(text.0.cast()))) };
+        sid
+    })();
+    let _ = unsafe { CloseHandle(token) };
+    sid
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    #[test]
+    fn the_sid_is_the_one_whoami_names() {
+        let listed = std::process::Command::new("whoami").args(["/user", "/fo", "csv", "/nh"]).output().unwrap();
+        let listed = String::from_utf8_lossy(&listed.stdout);
+        let sid = listed.trim().rsplit(',').next().unwrap().trim_matches('"');
+        assert_eq!(super::user_sid().unwrap(), sid, "{listed}");
+    }
+}
