@@ -217,13 +217,17 @@ fn without_verbatim(path: &str) -> &str {
     }
 }
 
-/// The person the login service runs as, as Task Scheduler names them: `DOMAIN\user`.
-fn user(env: &Env) -> String {
-    match (env.var("USERDOMAIN"), env.var("USERNAME")) {
-        (Some(domain), Some(name)) => format!("{domain}\\{name}"),
-        (None, Some(name)) => name.to_string(),
-        _ => String::new(),
-    }
+/// The account the logon task runs as and waits for, by its SID, which Task Scheduler takes in
+/// place of a name. The environment can misname it: OpenSSH sets USERDOMAIN to WORKGROUP.
+#[cfg(windows)]
+fn user() -> Result<String, Error> {
+    crate::process::user_sid().map_err(|e| Error::internal(format!("cannot read the SID of this account: {e}")))
+}
+
+/// Only the Windows logon task names its account.
+#[cfg(not(windows))]
+fn user() -> Result<String, Error> {
+    Ok(String::new())
 }
 
 newsreel_core::words! {
@@ -382,7 +386,7 @@ pub fn install(env: &Env, paths: &Paths) -> Result<Report, Error> {
     let manager = Manager::current();
     let path = manager.unit_path(home(env)?, paths);
     let _ = std::fs::remove_file(paths.login_service_declined());
-    let text = unit(manager, &env.installed()?, &paths.log(), env.var("NEWSREEL_HOME"), &user(env));
+    let text = unit(manager, &env.installed()?, &paths.log(), env.var("NEWSREEL_HOME"), &user()?);
     let wrote = put(manager, &path, &text)?;
     activate(env, manager, &path)?;
     let result = if wrote { Change::Installed } else { Change::AlreadyInstalled };
@@ -430,7 +434,7 @@ pub fn add_at_start(env: &Env, paths: &Paths) -> Result<Option<PathBuf>, Error> 
     }
     let manager = Manager::current();
     let path = manager.unit_path(home(env)?, paths);
-    let text = unit(manager, &env.installed()?, &paths.log(), None, &user(env));
+    let text = unit(manager, &env.installed()?, &paths.log(), None, &user()?);
     let current = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
@@ -544,21 +548,18 @@ mod tests {
     fn the_logon_task_runs_the_engine_for_this_person_with_no_window_and_logs_what_it_prints() {
         let exe = Path::new(r"C:\Users\Ada & Bo\AppData\Local\Programs\newsreel\newsreel.exe");
         let log = Path::new(r"C:\Users\Ada & Bo\AppData\Local\newsreel\state\engine.log");
-        let task = unit(Manager::TaskScheduler, exe, log, None, r"STUDIO\ada");
+        const SID: &str = "S-1-5-21-1-2-3-1001";
+        let task = unit(Manager::TaskScheduler, exe, log, None, SID);
         let line = |tag: &str| task.lines().find(|line| line.contains(tag)).unwrap().trim().to_string();
-        assert_eq!(line("<UserId>"), r"<UserId>STUDIO\ada</UserId>");
+        assert_eq!(line("<UserId>"), "<UserId>S-1-5-21-1-2-3-1001</UserId>");
         assert_eq!(line("<Command>"), "<Command>conhost.exe</Command>");
         assert_eq!(
             line("<Arguments>"),
             r#"<Arguments>--headless cmd.exe /d /s /c ""C:\Users\Ada &amp; Bo\AppData\Local\Programs\newsreel\newsreel.exe" daemon run --service &gt;&gt; "C:\Users\Ada &amp; Bo\AppData\Local\newsreel\state\engine.log" 2&gt;&amp;1"</Arguments>"#
         );
         let canonical = Path::new(r"\\?\C:\Users\Ada & Bo\AppData\Local\Programs\newsreel\newsreel.exe");
-        assert_eq!(
-            unit(Manager::TaskScheduler, canonical, log, None, r"STUDIO\ada"),
-            task,
-            "cmd runs no verbatim path"
-        );
-        let home = unit(Manager::TaskScheduler, exe, log, Some(r"D:\th"), r"STUDIO\ada");
+        assert_eq!(unit(Manager::TaskScheduler, canonical, log, None, SID), task, "cmd runs no verbatim path");
+        let home = unit(Manager::TaskScheduler, exe, log, Some(r"D:\th"), SID);
         assert!(home.contains(r#"/c "set "NEWSREEL_HOME=D:\th"&amp;&amp; "C:\"#), "{home}");
         assert_eq!(encoded(Manager::TaskScheduler, "<a/>")[..4], [0xFF, 0xFE, b'<', 0]);
     }
