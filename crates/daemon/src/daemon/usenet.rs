@@ -212,6 +212,18 @@ impl Job {
         first..last.max(first)
     }
 
+    /// Makes every written byte durable. On Windows it also commits a sparse file's allocation,
+    /// which NTFS otherwise leaves at zero until its lazy writer runs, and which the engine reads
+    /// to tell a finished file from one that was lost.
+    fn sync(&self) -> std::io::Result<()> {
+        for file in &self.files {
+            if let Some(opened) = file.handle.lock().unwrap().as_ref() {
+                opened.sync_data()?;
+            }
+        }
+        Ok(())
+    }
+
     fn write(&self, (f, p): PieceRef, bytes: &[u8]) -> std::io::Result<()> {
         let file = &self.files[f];
         let mut handle = file.handle.lock().unwrap();
@@ -478,6 +490,13 @@ async fn worker(job: Arc<Job>, pool: Pool, events: mpsc::Sender<EngineEvent>, ge
 fn finish(job: &Job, state: &mut State, events: &mpsc::Sender<EngineEvent>) {
     let (pieces, unavailable) = state.remaining();
     if pieces == 0 {
+        if let Err(e) = job.sync() {
+            state.run = Run::Stopped;
+            let error = Error::new(ErrorCode::StorageError, format!("cannot save the finished files to disk: {e}"))
+                .with_hint("check that the disk is connected and has room, then run newsreel resume");
+            let _ = events.send(EngineEvent::Failed { id: job.id, error });
+            return;
+        }
         state.run = Run::Finished;
         let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, 0) });
         let _ = events.send(EngineEvent::Finished { id: job.id });
