@@ -109,6 +109,35 @@ pub fn keep_standard_handles() {
     }
 }
 
+/// Keeps every handle this process inherited from passing to the programs it starts, as closing
+/// inherited descriptors does on Unix. An engine that kept one, such as a pipe of the ssh session
+/// whose shell started newsreel, would keep that session open until the engine stopped.
+#[cfg(windows)]
+pub fn keep_inherited_handles() {
+    use windows::Win32::Foundation::{
+        GetHandleInformation, HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS, SetHandleInformation,
+    };
+    use windows::Win32::System::Threading::{GetCurrentProcess, GetProcessHandleCount};
+    // Handle values are multiples of 4, and an inherited handle keeps the value it had in the
+    // parent, so the search goes on until it has seen every handle, or a bound far past any table.
+    const PAST_ANY: usize = 1 << 24;
+    let mut count = 0;
+    if unsafe { GetProcessHandleCount(GetCurrentProcess(), &mut count) }.is_err() {
+        return;
+    }
+    let (mut seen, mut value) = (0, 4);
+    while seen < count && value < PAST_ANY {
+        let handle = HANDLE(value as *mut core::ffi::c_void);
+        let mut flags = 0;
+        if unsafe { GetHandleInformation(handle, &mut flags) }.is_ok() {
+            seen += 1;
+            if flags & HANDLE_FLAG_INHERIT.0 != 0 {
+                let _ = unsafe { SetHandleInformation(handle, HANDLE_FLAG_INHERIT.0, HANDLE_FLAGS(0)) };
+            }
+        }
+        value += 4;
+    }
+}
 /// The SID of the account this process runs as, such as `S-1-5-21-…-1001`. An elevated process
 /// has the same one, though what it creates belongs to Administrators.
 #[cfg(windows)]
