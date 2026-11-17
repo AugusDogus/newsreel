@@ -24,7 +24,7 @@ pub struct Config {
     pub player: Option<Choice>,
     pub subtitles: SubtitleConfig,
     /// NNTP servers, tried by priority.
-    pub usenet: Vec<newsreel_usenet::Server>,
+    pub usenet: Vec<usenet::Server>,
     pub catalog: CatalogConfig,
     pub ffmpeg: FfmpegConfig,
     pub plays_max: PlaysMax,
@@ -451,12 +451,13 @@ fn parse(text: &str, env: &Env) -> Result<Config, Problem> {
                     format!("the {:?} usenet server takes its password from {var}, which is not set", s.host),
                 )
             })?;
-            Ok(newsreel_usenet::Server {
+            Ok(usenet::Server {
                 port: s.port.unwrap_or(if s.tls == Some(false) { 119 } else { 563 }),
                 tls: s.tls.unwrap_or(true),
                 username: s.username,
                 password: password.to_string(),
                 connections: s.connections.unwrap_or(8),
+                pipeline: usenet::Server::DEFAULT_PIPELINE,
                 priority: s.priority.unwrap_or(0),
                 host: s.host,
             })

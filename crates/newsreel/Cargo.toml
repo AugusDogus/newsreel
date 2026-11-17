@@ -29,7 +29,7 @@ tokio = { version = "1.53", features = ["rt"] }
 url = "2.5"
 
 [dev-dependencies]
-newsreel-usenet = { path = "../usenet", features = ["fake"] }
+usenet = { version = "0.2", features = ["fake"] }
 assert_cmd = "2.2"
 flate2 = "1"
 insta = { version = "1.49", features = ["json"] }

@@ -1382,7 +1382,7 @@ async fn every_pause_returns_once_writes_stop_or_fails_when_they_do_not() {
 
 /// A release posted to a loopback NNTP server, and the Usenet engine to download it.
 struct Seeder {
-    server: newsreel_usenet::fake::FakeServer,
+    server: ::usenet::fake::FakeServer,
     nzb: Vec<u8>,
 }
 
@@ -1392,14 +1392,14 @@ impl Seeder {
     fn start(files: &[(&str, u8)]) -> Self {
         let data: Vec<(&str, Vec<u8>)> = files.iter().map(|(name, byte)| (*name, vec![*byte; Self::SIZE])).collect();
         let files: Vec<(&str, &[u8])> = data.iter().map(|(name, bytes)| (*name, bytes.as_slice())).collect();
-        let posting = newsreel_usenet::fake::Posting::new("set", &files, 4096);
-        let server = newsreel_usenet::fake::FakeServer::start();
+        let posting = ::usenet::fake::Posting::new("set", &files, 4096);
+        let server = ::usenet::fake::FakeServer::start();
         server.add(&posting);
         Self { server, nzb: posting.nzb }
     }
 
-    fn pool(&self) -> newsreel_usenet::Pool {
-        newsreel_usenet::Pool::new(vec![self.server.config(4, 0)])
+    fn pool(&self) -> ::usenet::Pool {
+        ::usenet::Pool::new(vec![self.server.config(4, 0)])
     }
 
     fn engine(&self, gate: &Gate) -> impl FnOnce(&std::path::Path) -> Box<dyn Engine> {

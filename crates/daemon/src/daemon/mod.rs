@@ -142,7 +142,7 @@ impl Ports {
         };
         let search = newsreel_search::Search::new(&settings.search, newsreel_search::ResultCache::new())?;
         let search: Arc<dyn SearchPort> = Arc::new(search);
-        let pool = newsreel_usenet::Pool::new(settings.usenet.clone());
+        let pool = ::usenet::Pool::new(settings.usenet.clone());
         Ok(Self {
             engine: Box::new(usenet::Usenet::new(pool.clone(), runtime.clone(), paths.state.join("usenet"))),
             search,

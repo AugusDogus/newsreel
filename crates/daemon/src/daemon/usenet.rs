@@ -10,8 +10,8 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use newsreel_core::{DownloadId, Error, ErrorCode, PieceMap, Slice};
-use newsreel_usenet::manifest::Piece;
-use newsreel_usenet::{Manifest, Nzb, Pool, ResolveError, article};
+use usenet::manifest::Piece;
+use usenet::{Manifest, Nzb, Pool, ResolveError, article};
 
 use super::BoxFuture;
 use super::engine_port::{self, Activity, AddDownload, EngineEvent, EnginePort, Missing, Stats};
@@ -32,16 +32,16 @@ const PACE_CHECK: Duration = Duration::from_millis(200);
 
 /// Reads a manifest: the files a download writes, and where each article lands in them.
 pub fn parse(bytes: &[u8]) -> Result<Layout, Error> {
-    let manifest = Manifest::from_bytes(bytes).map_err(|e| Error::new(ErrorCode::InvalidRelease, e))?;
+    let manifest = Manifest::from_bytes(bytes).map_err(|e| Error::new(ErrorCode::InvalidRelease, e.to_string()))?;
     layout(&manifest, bytes.to_vec())
 }
 
-/// The download a manifest names: the SHA-1 of its NZB.
+/// The download a manifest names: its release ID, a hash of the NZB's segments.
 fn download_id(manifest: &Manifest) -> Result<DownloadId, Error> {
-    manifest.nzb_sha1.parse().map_err(|_| {
+    manifest.release_id.parse().map_err(|_| {
         Error::new(
             ErrorCode::InvalidRelease,
-            format!("the manifest names its NZB by {:?}, not 40 hex characters", manifest.nzb_sha1),
+            format!("the manifest names its release by {:?}, not 40 hex characters", manifest.release_id),
         )
         .with_hint("read the NZB again with newsreel get <nzb file or URL>")
     })
@@ -515,7 +515,8 @@ impl EnginePort for Usenet {
         if self.jobs.contains_key(&id) {
             return Err(Error::internal(format!("the engine already has download {id}")));
         }
-        let manifest = Manifest::from_bytes(&bytes).map_err(|e| Error::new(ErrorCode::InvalidRelease, e))?;
+        let manifest =
+            Manifest::from_bytes(&bytes).map_err(|e| Error::new(ErrorCode::InvalidRelease, e.to_string()))?;
         let meta = layout(&manifest, Vec::new())?;
         let files: Vec<OutputFile> = manifest
             .files
@@ -790,7 +791,7 @@ impl NzbPort for Resolver {
                 Error::new(ErrorCode::InvalidRelease, e.to_string())
                     .with_hint("pass an .nzb file or URL, or an ID from newsreel search")
             })?;
-            let manifest = newsreel_usenet::resolve(&nzb, &self.pool).await.map_err(resolve_error)?;
+            let manifest = usenet::resolve(&nzb, &self.pool).await.map_err(resolve_error)?;
             log(&format!(
                 "resolved {} in {:.1}s: {} files",
                 manifest.title,
@@ -818,7 +819,7 @@ fn resolve_error(e: ResolveError) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use newsreel_usenet::manifest::{self, OutputFile as ManifestFile, Packing};
+    use usenet::manifest::{OutputFile as ManifestFile, Packing};
 
     use super::*;
 
@@ -841,13 +842,7 @@ mod tests {
                 ManifestFile { path: path.to_string(), size: at, pieces }
             })
             .collect();
-        Manifest {
-            format: manifest::FORMAT,
-            nzb_sha1: "ab".repeat(20),
-            title: "Some Release".into(),
-            packing: Packing::Direct,
-            files,
-        }
+        Manifest { release_id: "ab".repeat(20), title: "Some Release".into(), packing: Packing::Direct, files }
     }
 
     fn job(files: &[(&str, &[u64])]) -> Job {

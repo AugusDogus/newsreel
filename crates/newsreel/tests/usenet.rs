@@ -10,9 +10,9 @@ use std::time::{Duration, Instant};
 
 use newsreel_core::Target;
 use newsreel_core::protocol::{PlayRequest, Request};
-use newsreel_usenet::fake::{FakeServer, Posting};
 use serde_json::Value;
 use sha2::Digest;
+use usenet::fake::{FakeServer, Posting};
 
 mod common;
 use common::{Home, alive, eventually, hooks, kill};
@@ -38,7 +38,7 @@ impl Home {
                 s.host, s.port, s.username
             ));
         }
-        let home = Home::new().with(hooks::DISK, "roomy").with(PASSWORD_ENV, newsreel_usenet::fake::PASSWORD);
+        let home = Home::new().with(hooks::DISK, "roomy").with(PASSWORD_ENV, usenet::fake::PASSWORD);
         home.write_config(&config);
         home
     }
@@ -128,7 +128,7 @@ impl Release {
     }
 
     fn id(&self) -> String {
-        hex(&newsreel_usenet::Nzb::parse(&self.posting.nzb).unwrap().sha1)
+        hex(&usenet::Nzb::parse(&self.posting.nzb).unwrap().id)
     }
 
     fn short(&self) -> String {
@@ -774,7 +774,7 @@ fn a_film_stored_in_rar_volumes_streams_from_the_middle_without_extracting() {
     let dir = tempfile::tempdir().unwrap();
     let nzb = dir.path().join("film.nzb");
     std::fs::write(&nzb, &posting.nzb).unwrap();
-    let id = hex(&newsreel_usenet::Nzb::parse(&posting.nzb).unwrap().sha1);
+    let id = hex(&usenet::Nzb::parse(&posting.nzb).unwrap().id);
     let url = play(&home, nzb.display().to_string(), 1);
     assert!(url.ends_with(&format!("/{id}/1/Film.2024.mkv")), "the film, not the sample, plays: {url}");
 
