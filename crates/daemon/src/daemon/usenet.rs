@@ -189,7 +189,8 @@ impl Job {
         })))
     }
 
-    fn stats(&self, state: &State, down_rate: u64) -> Stats {
+    /// `open` is how many connections the pool holds, which a download's requests share.
+    fn stats(&self, state: &State, down_rate: u64, open: u32) -> Stats {
         let (verified, _) = self.verified(state);
         let (pieces, unavailable) = state.remaining();
         Stats {
@@ -197,7 +198,8 @@ impl Job {
             piece_map: self.piece_map(state),
             missing: Some(Missing { pieces, unavailable }),
             down_rate,
-            connections: state.in_flight.len() as u32,
+            // Each connection carries several requests at once, so requests overcount them.
+            connections: (state.in_flight.len() as u32).min(open),
         }
     }
 
@@ -340,6 +342,7 @@ impl Usenet {
 
     fn stats(&mut self) {
         let elapsed = self.stats_at.elapsed().as_secs_f64().max(0.001);
+        let open = self.pool.stats().connections;
         self.stats_at = Instant::now();
         for (id, job) in &self.jobs {
             let state = job.state.lock().unwrap();
@@ -348,7 +351,7 @@ impl Usenet {
             }
             let before = self.landed_at_last_stats.insert(*id, state.landed).unwrap_or(state.landed);
             let rate = ((state.landed - before) as f64 / elapsed) as u64;
-            self.queued.push(EngineEvent::Stats { id: *id, stats: job.stats(&state, rate) });
+            self.queued.push(EngineEvent::Stats { id: *id, stats: job.stats(&state, rate, open) });
         }
     }
 }
@@ -473,7 +476,7 @@ fn finish(job: &Job, state: &mut State, events: &mpsc::Sender<EngineEvent>) {
     let (pieces, unavailable) = state.remaining();
     if pieces == 0 {
         state.run = Run::Finished;
-        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0) });
+        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, 0) });
         let _ = events.send(EngineEvent::Finished { id: job.id });
     } else if unavailable == pieces {
         state.run = Run::Stopped;
@@ -482,7 +485,7 @@ fn finish(job: &Job, state: &mut State, events: &mpsc::Sender<EngineEvent>) {
             format!("{unavailable} articles are missing on every server, so the download cannot finish"),
         )
         .with_hint("the release has expired or been taken down; search again and pick another release");
-        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0) });
+        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, 0) });
         let _ = events.send(EngineEvent::Failed { id: job.id, error });
     }
 }
@@ -592,7 +595,7 @@ impl EnginePort for Usenet {
             state.workers = 0;
             state.announced_downloading = false;
         }
-        self.queued.push(EngineEvent::Stats { id, stats: job.stats(&state, 0) });
+        self.queued.push(EngineEvent::Stats { id, stats: job.stats(&state, 0, 0) });
         self.queued.push(EngineEvent::Paused { id });
         Ok(())
     }
