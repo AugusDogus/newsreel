@@ -22,6 +22,10 @@ runs:
     - if: runner.os == 'macOS'
       shell: bash
       run: nix --extra-experimental-features 'nix-command flakes' develop -c true
+    # The musl test build fills the runner's disk; drop toolchains this repo never uses.
+    - if: runner.os == 'Linux'
+      shell: bash
+      run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL && df -h /
     # The engine's build script builds the web app with bun; the macOS nix shell has its own.
     - if: runner.os != 'macOS'
       uses: oven-sh/setup-bun@v2
