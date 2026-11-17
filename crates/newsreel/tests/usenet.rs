@@ -1,10 +1,9 @@
 //! Downloads and streams through the real binary from loopback NNTP servers.
-// Its locked folders use Unix permission bits.
-#![cfg(unix)]
 
 use std::collections::BTreeMap;
 use std::fs::OpenOptions;
 use std::io::{Read, Seek, SeekFrom, Write};
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -487,11 +486,13 @@ fn a_download_whose_articles_expired_stops_with_no_source_and_keeps_what_it_veri
     assert_eq!(verified(&home.job(&release.id())), a_and_first, "what it verified outlived the engine");
 }
 
+#[cfg(unix)]
 struct Locked {
     path: PathBuf,
     restore: u32,
 }
 
+#[cfg(unix)]
 impl Locked {
     /// `None` as root, which reads and writes past any mode.
     fn new(path: PathBuf, mode: u32) -> Option<Self> {
@@ -504,12 +505,15 @@ impl Locked {
     }
 }
 
+#[cfg(unix)]
 impl Drop for Locked {
     fn drop(&mut self) {
         let _ = std::fs::set_permissions(&self.path, std::fs::Permissions::from_mode(self.restore));
     }
 }
 
+// It shuts a folder with permission bits, which Windows does not have.
+#[cfg(unix)]
 #[test]
 fn after_a_storage_error_resume_downloads_what_never_reached_the_disk() {
     let server = slow();
@@ -533,6 +537,8 @@ fn after_a_storage_error_resume_downloads_what_never_reached_the_disk() {
     assert!(release.intact(&home, "b.bin"), "b.bin pieces that arrived but failed to write came again");
 }
 
+// It shuts a file with permission bits, which Windows does not have.
+#[cfg(unix)]
 #[test]
 fn a_check_that_cannot_read_a_file_fails_and_keeps_what_was_verified() {
     let server = FakeServer::start();
@@ -636,6 +642,8 @@ fn wait_exits_8_on_a_short_timeout_and_0_when_done() {
     assert_eq!(state(&home.job(&release.id())), "done");
 }
 
+// Windows makes links only for an administrator or in Developer Mode.
+#[cfg(unix)]
 #[test]
 fn a_symbolic_link_inside_the_download_folder_is_refused_and_nothing_lands_where_it_points() {
     let server = FakeServer::start();
