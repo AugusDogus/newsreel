@@ -716,7 +716,11 @@ fn a_download_to_files_a_queued_download_will_write_is_refused() {
     assert_eq!(error["code"], "path_conflict");
     assert_eq!(
         error["message"],
-        format!("2 files under {dir}/pack are already files of download {} (pack)", first.short())
+        format!(
+            "2 files under {} are already files of download {} (pack)",
+            home.downloads().join("pack").display(),
+            first.short()
+        )
     );
     assert_eq!(
         error["hint"],
