@@ -50,7 +50,7 @@ impl Access {
             #[cfg(unix)]
             file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
             #[cfg(windows)]
-            crate::fsutil::owner_only(&partial)?;
+            crate::fsutil::user_only(&partial)?;
             file.write_all(&serde_json::to_vec(self).map_err(io::Error::other)?)?;
             std::fs::rename(&partial, path)
         })();
@@ -125,7 +125,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_the_token_files_owner_can_open_it() {
+    fn only_this_account_can_open_the_token_file() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("engine-token");
         let written = Access { port: 47919, token: "ab".repeat(32) };
@@ -135,7 +135,10 @@ mod tests {
         // icacls prints one access entry a line, the first after the file's path.
         let entries: Vec<&str> = listed.lines().filter(|line| line.contains(":(")).collect();
         assert_eq!(entries.len(), 1, "{listed}");
-        assert!(entries[0].ends_with("OWNER RIGHTS:(F)"), "{listed}");
+        // It names the account, which stays the same with elevation, and not the file's owner, which does not.
+        let account = std::process::Command::new("whoami").output().unwrap();
+        let account = String::from_utf8_lossy(&account.stdout).trim().to_lowercase();
+        assert!(entries[0].to_lowercase().ends_with(&format!(" {account}:(f)")), "{listed}");
         assert_eq!(Access::read(&path).unwrap(), Some(written));
     }
 }
