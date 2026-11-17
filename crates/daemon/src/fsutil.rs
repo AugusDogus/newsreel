@@ -74,7 +74,7 @@ pub fn temporary(path: &Path) -> PathBuf {
 }
 
 /// Writes `bytes` to `path` whole, so that only this user can read it: mode 0600 on Unix, and an
-/// owner-only access list on Windows.
+/// access list for this account alone on Windows.
 pub fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let partial = temporary(path);
     let written = (|| {
@@ -86,7 +86,7 @@ pub fn write_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
         #[cfg(unix)]
         file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
         #[cfg(windows)]
-        owner_only(&partial)?;
+        user_only(&partial)?;
         file.write_all(bytes)?;
         std::fs::rename(&partial, path)
     })();
@@ -100,10 +100,11 @@ pub fn sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
 }
 
-/// Leaves only the owner of the file at `path` any access to it, whatever its folder grants, as
-/// mode 0600 does on Unix.
+/// Leaves only this account any access to the file at `path`, whatever its folder grants, as mode
+/// 0600 does on Unix. It names the account rather than the file's owner: what an elevated process
+/// creates belongs to Administrators, which the same person without elevation is not.
 #[cfg(windows)]
-pub fn owner_only(path: &Path) -> io::Result<()> {
+pub fn user_only(path: &Path) -> io::Result<()> {
     use windows::Win32::Foundation::{HLOCAL, LocalFree};
     use windows::Win32::Security::Authorization::{
         ConvertStringSecurityDescriptorToSecurityDescriptorW, SDDL_REVISION_1, SE_FILE_OBJECT, SetNamedSecurityInfoW,
@@ -112,18 +113,12 @@ pub fn owner_only(path: &Path) -> io::Result<()> {
         ACL, DACL_SECURITY_INFORMATION, GetSecurityDescriptorDacl, PROTECTED_DACL_SECURITY_INFORMATION,
         PSECURITY_DESCRIPTOR,
     };
-    use windows::core::{BOOL, HSTRING, w};
-    // Full access for the file's owner, and no entries inherited from the folder.
+    use windows::core::{BOOL, HSTRING};
+    // Full access for this account, and no entries inherited from the folder.
+    let sddl = HSTRING::from(format!("D:P(A;;FA;;;{})", crate::process::user_sid()?));
     let mut descriptor = PSECURITY_DESCRIPTOR::default();
-    unsafe {
-        ConvertStringSecurityDescriptorToSecurityDescriptorW(
-            w!("D:P(A;;FA;;;OW)"),
-            SDDL_REVISION_1,
-            &mut descriptor,
-            None,
-        )
-    }
-    .map_err(win32)?;
+    unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(&sddl, SDDL_REVISION_1, &mut descriptor, None) }
+        .map_err(win32)?;
     let (mut present, mut dacl, mut defaulted) = (BOOL(0), std::ptr::null_mut::<ACL>(), BOOL(0));
     let set =
         unsafe { GetSecurityDescriptorDacl(descriptor, &mut present, &mut dacl, &mut defaulted) }.and_then(|()| {

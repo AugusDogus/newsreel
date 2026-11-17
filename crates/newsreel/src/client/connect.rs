@@ -170,14 +170,24 @@ pub fn reply<R: Reply>(response: Response) -> Result<R, Error> {
     }
 }
 
+/// The error for a token file this newsreel cannot read: an engine with other rights wrote it, such
+/// as one run with sudo, or one an older newsreel ran from an elevated terminal on Windows.
+fn unreadable_token(file: &std::path::Path, e: std::io::Error) -> Error {
+    let message = format!("cannot read {}: {e}", file.display());
+    if e.kind() != ErrorKind::PermissionDenied {
+        return Error::new(ErrorCode::StateCorrupt, message);
+    }
+    Error::new(ErrorCode::StorageError, message).with_hint(
+        "an engine with other rights wrote it, such as one started with sudo or from an elevated terminal; \
+         run newsreel engine stop the same way, then run this again",
+    )
+}
+
 /// The engine that runs now, whatever its version, for reports and for stops the person asks for.
 /// It is the one at the port in the token file, which the engine writes before it answers there.
 pub fn running(paths: &Paths, env: &Env) -> Result<Option<Conn>, Error> {
     let file = paths.engine_token();
-    let read = || {
-        Access::read(&file)
-            .map_err(|e| Error::new(ErrorCode::StateCorrupt, format!("cannot read {}: {e}", file.display())))
-    };
+    let read = || Access::read(&file).map_err(|e| unreadable_token(&file, e));
     let (version, log) = (env.version(), paths.log().display().to_string());
     let Some(mut access) = read()? else { return Ok(None) };
     let frames = loop {
@@ -436,6 +446,18 @@ pub fn unexpected(response: &Response) -> Error {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_token_file_an_engine_with_other_rights_wrote_is_a_permissions_problem() {
+        let file = std::path::Path::new("state/engine-token");
+        let denied = unreadable_token(file, std::io::Error::from(ErrorKind::PermissionDenied));
+        let damaged = unreadable_token(file, std::io::Error::new(ErrorKind::InvalidData, "expected value"));
+
+        assert_eq!(denied.code, ErrorCode::StorageError);
+        assert!(denied.message.starts_with("cannot read state/engine-token: "), "{}", denied.message);
+        assert!(denied.hint.unwrap().contains("run newsreel engine stop the same way"));
+        assert_eq!(damaged.code, ErrorCode::StateCorrupt);
+    }
 
     #[test]
     fn a_mismatch_says_what_runs_and_how_to_run_this_newsreel() {
