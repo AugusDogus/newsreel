@@ -220,6 +220,9 @@ impl Job {
                 std::fs::create_dir_all(dir)?;
             }
             let opened = OpenOptions::new().create(true).write(true).read(true).truncate(false).open(&file.path)?;
+            // A file system without sparse files, such as FAT, still takes the writes, only slower.
+            #[cfg(windows)]
+            let _ = crate::fsutil::sparse(&opened);
             if opened.metadata()?.len() != file.size {
                 opened.set_len(file.size)?;
             }
@@ -921,6 +924,24 @@ mod tests {
         state.have[0][1] = Some(7);
         assert_eq!(state.pick(&job.files), None);
         assert_eq!(state.remaining(), (1, 1), "one piece left, and it is unavailable");
+    }
+
+    /// NTFS fills a file that is not sparse with zeros up to any write past its end of data: for
+    /// a seek near the end of a film, gigabytes, which held a seek for 13 seconds.
+    #[cfg(windows)]
+    #[test]
+    fn a_piece_far_into_a_new_file_lands_in_a_sparse_file() {
+        use std::os::windows::fs::MetadataExt;
+        use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_SPARSE_FILE;
+        let dir = tempfile::tempdir().unwrap();
+        let mut job = job(&[("a.mkv", &[1 << 20; 1024])]);
+        job.files[0].path = dir.path().join("a.mkv");
+
+        job.write((0, 1023), &[7; 1 << 20]).unwrap();
+
+        let meta = std::fs::metadata(&job.files[0].path).unwrap();
+        assert_eq!(meta.len(), 1 << 30);
+        assert_ne!(meta.file_attributes() & FILE_ATTRIBUTE_SPARSE_FILE.0, 0, "the file is not sparse");
     }
 
     #[test]

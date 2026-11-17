@@ -117,6 +117,22 @@ pub fn user_only(path: &Path) -> io::Result<()> {
     set.map_err(win32)
 }
 
+/// Marks `file` sparse, so NTFS leaves the ranges nothing wrote unallocated, as Unix file systems
+/// do. NTFS fills a file that is not sparse with zeros up to any write past its end of data,
+/// which for a write near the end of a film is gigabytes and seconds.
+#[cfg(windows)]
+pub fn sparse(file: &std::fs::File) -> io::Result<()> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::HANDLE;
+    use windows::Win32::System::IO::DeviceIoControl;
+    use windows::Win32::System::Ioctl::FSCTL_SET_SPARSE;
+    let mut returned = 0;
+    unsafe {
+        DeviceIoControl(HANDLE(file.as_raw_handle()), FSCTL_SET_SPARSE, None, 0, None, 0, Some(&mut returned), None)
+    }
+    .map_err(win32)
+}
+
 /// The I/O error of a failed Windows call, with its Win32 code, so its kind says what failed. The
 /// `windows` crate's own conversion keeps the HRESULT that wraps the code.
 #[cfg(windows)]
