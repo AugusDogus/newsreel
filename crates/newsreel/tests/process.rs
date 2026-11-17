@@ -49,6 +49,67 @@ fn status_starts_an_engine_that_outlives_the_call() {
     assert!(log.contains(&format!("started, pid {pid}")), "{log}");
 }
 
+/// sshd runs each session in a job that ends every process in it when the session closes. The
+/// engine leaves the job of the command that started it, and starts in a job that forbids that too.
+#[cfg(windows)]
+#[test]
+fn an_engine_outlives_the_job_of_the_command_that_started_it() {
+    use std::io::Write;
+    use std::os::windows::io::AsRawHandle;
+    use std::os::windows::process::CommandExt;
+    use std::process::Stdio;
+    use windows::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JOB_OBJECT_LIMIT, JOB_OBJECT_LIMIT_BREAKAWAY_OK,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
+    };
+    use windows::Win32::System::Threading::GetCurrentProcess;
+    use windows::core::BOOL;
+    let size = size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32;
+    let mut in_job = BOOL(0);
+    unsafe { IsProcessInJob(GetCurrentProcess(), None, &mut in_job) }.unwrap();
+    if in_job.as_bool() {
+        let mut own = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        unsafe {
+            QueryInformationJobObject(None, JobObjectExtendedLimitInformation, (&raw mut own).cast(), size, None)
+        }
+        .unwrap();
+        let leave = JOB_OBJECT_LIMIT_BREAKAWAY_OK | JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK;
+        if (own.BasicLimitInformation.LimitFlags & leave).0 == 0 {
+            eprintln!("skipped: this test runs in a job that no process can leave");
+            return;
+        }
+    }
+
+    let started_in = |limits: JOB_OBJECT_LIMIT| {
+        let home = Home::new();
+        let job = unsafe { CreateJobObjectW(None, None) }.unwrap();
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
+        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | limits;
+        unsafe { SetInformationJobObject(job, JobObjectExtendedLimitInformation, (&raw const info).cast(), size) }
+            .unwrap();
+        // cmd waits for a line before it runs newsreel, so newsreel starts in the job.
+        let mut session = std::process::Command::new("cmd");
+        session.env_clear().envs(home.process(&[]).get_envs().filter_map(|(key, value)| Some((key, value?))));
+        session.raw_arg(format!(r#"/d /c "set /p _= & "{}" status""#, env!("CARGO_BIN_EXE_newsreel")));
+        let mut session = session.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null()).spawn().unwrap();
+        unsafe { AssignProcessToJobObject(job, HANDLE(session.as_raw_handle())) }.unwrap();
+        session.stdin.take().unwrap().write_all(b"\r\n").unwrap();
+        let status = session.wait().unwrap();
+        let (pid, _) = home.engine().unwrap();
+        unsafe { CloseHandle(job) }.unwrap();
+        std::thread::sleep(Duration::from_secs(1));
+        (status.success(), alive(pid), home)
+    };
+
+    let (started, outlived, _home) = started_in(JOB_OBJECT_LIMIT_BREAKAWAY_OK);
+    let (started_inside, outlived_inside, _inside) = started_in(JOB_OBJECT_LIMIT(0));
+
+    assert!(started && outlived, "the engine left the job");
+    assert!(started_inside && !outlived_inside, "the engine started in a job it could not leave, and ended with it");
+}
+
 #[test]
 fn concurrent_clients_share_one_engine() {
     let home = Home::new();
