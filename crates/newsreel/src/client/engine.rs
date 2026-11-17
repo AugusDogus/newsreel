@@ -61,10 +61,22 @@ pub fn run(command: DaemonCommand, env: &Env, mode: Mode) -> Result<u8, Error> {
             Ok(emit(mode, &doc, &Typed { kind: DocKind::DaemonStop, body: Stopped { result, pid } }))
         }
         DaemonCommand::Install => {
-            if let Some(conn) = connect::running(&paths, env)? {
-                connect::stop(conn, connect::Stop::Asked)?;
+            // The service starts its own engine, so the one running now stops first, and starts
+            // again if the service could not be installed.
+            let stopped = match connect::running(&paths, env)? {
+                Some(conn) => connect::stop(conn, connect::Stop::Asked).map(|_| true)?,
+                None => false,
+            };
+            match service::install(env, &paths) {
+                Err(e) if stopped => Err(match launch::start(&paths, env) {
+                    Ok(_) => e,
+                    Err(start) => Error {
+                        message: format!("{}; the engine it stopped did not start again: {}", e.message, start.message),
+                        ..e
+                    },
+                }),
+                installed => service_report(installed?, mode),
             }
-            service_report(service::install(env, &paths)?, mode)
         }
         DaemonCommand::Uninstall => {
             let report = service::uninstall(env, &paths)?;
