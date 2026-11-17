@@ -96,8 +96,9 @@ jobs:
           Stop-Process $server
       - name: Say whether Invoke-WebRequest marks a download from the internet
         if: runner.os == 'Windows'
+        # Any file from the internet does; this repo may be private, so the public usenet crate's README.
         run: |
-          Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/AugusDogus/newsreel/main/install.sh -OutFile downloaded.txt
+          Invoke-WebRequest -UseBasicParsing https://raw.githubusercontent.com/AugusDogus/usenet-rs/main/README.md -OutFile downloaded.txt
           $mark = Get-Content downloaded.txt -Stream Zone.Identifier -Raw -ErrorAction SilentlyContinue
           if ($mark) { "Zone.Identifier: $mark" } else { 'no Zone.Identifier stream' }
       - uses: actions/upload-artifact@v7
