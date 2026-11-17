@@ -391,6 +391,17 @@ fn pause_stops_writes_and_resume_finishes() {
 }
 
 #[test]
+fn a_download_counts_the_connections_it_uses_not_the_requests_they_carry() {
+    let server = slow();
+    let release = Release::new("big", &BIG, 19).on(&server);
+    let home = Home::served(&server);
+    home.get(&release.nzb_file(), &[]);
+    let job = home.until(&release.id(), "a quarter is verified", |j| verified(j) >= release.total() / 4);
+    let connections = job["progress"]["connections"].as_u64().unwrap();
+    assert!((1..=4).contains(&connections), "the server allows 4 connections, and the job shows {connections}");
+}
+
+#[test]
 fn a_paused_download_keeps_its_file_progress_across_an_engine_restart() {
     let server = slow();
     let release = Release::new("big", &BIG, 9).on(&server);
