@@ -105,7 +105,11 @@ jobs:
       - name: Install with install.ps1, start the engine, and stop it
         run: |
           $server = Start-Process python -ArgumentList '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', 'dist' -PassThru
-          Start-Sleep 2
+          $deadline = (Get-Date).AddSeconds(30)
+          while ($true) {
+            try { Invoke-WebRequest -UseBasicParsing -Method Head 'http://127.0.0.1:8765/' | Out-Null; break }
+            catch { if ((Get-Date) -gt $deadline) { throw 'the local download server did not start' }; Start-Sleep -Milliseconds 250 }
+          }
           $env:NEWSREEL_DOWNLOAD_URL = 'http://127.0.0.1:8765'
           ./install.ps1
           Stop-Process $server
