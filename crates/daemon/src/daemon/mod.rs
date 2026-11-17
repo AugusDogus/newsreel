@@ -319,7 +319,7 @@ fn serve(env: &Env, paths: &Paths, service: bool, http_port: Option<u16>, server
     match service::add_at_start(env, paths) {
         Ok(Some(unit)) => log(&format!("added a login service at {}, so the engine starts at login", unit.display())),
         Ok(None) => {}
-        Err(e) => log(&format!("cannot add a login service: {}", e.message)),
+        Err(e) => log(&format!("cannot add a login service, so the next start tries again: {}", e.message)),
     }
     let test = env.test();
     let seed = test.is_some_and(|test| test.fake_engine()) && !paths.database().exists();

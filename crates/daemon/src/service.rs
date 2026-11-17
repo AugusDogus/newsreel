@@ -324,13 +324,15 @@ fn encoded(manager: Manager, text: &str) -> Vec<u8> {
     }
 }
 
+fn unwritable(path: &Path, e: std::io::Error) -> Error {
+    Error::new(ErrorCode::SandboxWriteBlocked, format!("cannot write {}: {e}", path.display()))
+        .with_hint("run newsreel engine install from a terminal outside any sandbox")
+}
+
 /// Writes whatever of the unit, and on Linux the link that starts it at login, is not already in
 /// place, without starting it. Returns whether it wrote anything.
 fn put(manager: Manager, path: &Path, text: &str) -> Result<bool, Error> {
-    let write_failed = |e: std::io::Error| {
-        Error::new(ErrorCode::SandboxWriteBlocked, format!("cannot write {}: {e}", path.display()))
-            .with_hint("run newsreel engine install from a terminal outside any sandbox")
-    };
+    let write_failed = |e| unwritable(path, e);
     let dir = path.parent().expect("unit paths have a parent");
     let mut wrote = false;
     let bytes = encoded(manager, text);
@@ -353,7 +355,27 @@ fn put(manager: Manager, path: &Path, text: &str) -> Result<bool, Error> {
     Ok(wrote)
 }
 
-/// Starts the service now and at every login, whether or not its unit just changed.
+/// Registers the logon task in `bytes` with `create`, and keeps it at `path` only once that worked,
+/// so the file there always holds what Task Scheduler does, and a start after a failed
+/// registration tries again.
+fn register(path: &Path, bytes: &[u8], create: impl FnOnce(&Path) -> Result<(), Error>) -> Result<(), Error> {
+    let write_failed = |e| unwritable(path, e);
+    std::fs::create_dir_all(path.parent().expect("unit paths have a parent")).map_err(write_failed)?;
+    let partial = crate::fsutil::temporary(path);
+    std::fs::write(&partial, bytes).map_err(write_failed)?;
+    let registered = create(&partial).and_then(|()| std::fs::rename(&partial, path).map_err(write_failed));
+    if registered.is_err() {
+        let _ = std::fs::remove_file(&partial);
+    }
+    registered
+}
+
+fn create_task(env: &Env, xml: &Path) -> Result<(), Error> {
+    run(env, "schtasks", &["/Create", "/TN", TASK, "/XML", &xml.display().to_string(), "/F"])
+}
+
+/// Starts the service now and, but for the logon task, which `register` adds, at every login,
+/// whether or not its unit just changed.
 fn activate(env: &Env, manager: Manager, path: &Path) -> Result<(), Error> {
     match manager {
         Manager::Launchd => {
@@ -365,10 +387,7 @@ fn activate(env: &Env, manager: Manager, path: &Path) -> Result<(), Error> {
             run(env, "systemctl", &["--user", "daemon-reload"])?;
             run(env, "systemctl", &["--user", "enable", "--now", "newsreel.service"])
         }
-        Manager::TaskScheduler => {
-            run(env, "schtasks", &["/Create", "/TN", TASK, "/XML", &path.display().to_string(), "/F"])?;
-            run(env, "schtasks", &["/Run", "/TN", TASK])
-        }
+        Manager::TaskScheduler => run(env, "schtasks", &["/Run", "/TN", TASK]),
     }
 }
 
@@ -387,7 +406,14 @@ pub fn install(env: &Env, paths: &Paths) -> Result<Report, Error> {
     let path = manager.unit_path(home(env)?, paths);
     let _ = std::fs::remove_file(paths.login_service_declined());
     let text = unit(manager, &env.installed()?, &paths.log(), env.var("NEWSREEL_HOME"), &user()?);
-    let wrote = put(manager, &path, &text)?;
+    let wrote = if manager == Manager::TaskScheduler {
+        let bytes = encoded(manager, &text);
+        let held = std::fs::read(&path).ok();
+        register(&path, &bytes, |xml| create_task(env, xml))?;
+        held != Some(bytes)
+    } else {
+        put(manager, &path, &text)?
+    };
     activate(env, manager, &path)?;
     let result = if wrote { Change::Installed } else { Change::AlreadyInstalled };
     Ok(Report { result, manager, unit: path })
@@ -435,6 +461,24 @@ pub fn add_at_start(env: &Env, paths: &Paths) -> Result<Option<PathBuf>, Error> 
     let manager = Manager::current();
     let path = manager.unit_path(home(env)?, paths);
     let text = unit(manager, &env.installed()?, &paths.log(), None, &user()?);
+    if manager == Manager::TaskScheduler {
+        // The file is newsreel's record of the task it registered, in its own state folder, so
+        // other text there is a registration of its own that this one replaces.
+        let bytes = encoded(manager, &text);
+        let held = std::fs::read(&path).ok();
+        if held.as_deref() == Some(bytes.as_slice()) {
+            return Ok(None);
+        }
+        if held.is_some() {
+            crate::log::log(&format!(
+                "the logon task in {} is not this engine's, so it registers this one",
+                path.display()
+            ));
+        }
+        register(&path, &bytes, |xml| create_task(env, xml))?;
+        let _ = std::fs::write(paths.login_service_added(), b"");
+        return Ok(Some(path));
+    }
     let current = match std::fs::read(&path) {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
@@ -443,10 +487,6 @@ pub fn add_at_start(env: &Env, paths: &Paths) -> Result<Option<PathBuf>, Error> 
     // Anything other than this unit, or the start of it that a failed write left, is someone else's.
     if !encoded(manager, &text).starts_with(&current) || !put(manager, &path, &text)? {
         return Ok(None);
-    }
-    if manager == Manager::TaskScheduler {
-        // Task Scheduler runs only a task registered with it.
-        run(env, "schtasks", &["/Create", "/TN", TASK, "/XML", &path.display().to_string(), "/F"])?;
     }
     let _ = std::fs::write(paths.login_service_added(), b"");
     Ok(Some(path))
@@ -542,6 +582,32 @@ mod tests {
             said(Audience::Agent).as_deref(),
             Some("# the engine now starts at login; newsreel engine uninstall turns that off")
         );
+    }
+
+    #[test]
+    fn a_logon_task_is_kept_only_once_it_is_registered_so_a_failed_one_is_tried_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state").join("logon-task.xml");
+        let given = std::cell::RefCell::new(Vec::new());
+        let schtasks = |works: bool| {
+            let given = &given;
+            move |xml: &Path| {
+                given.borrow_mut().push(std::fs::read(xml).unwrap());
+                if works { Ok(()) } else { Err(Error::internal("schtasks /Create failed: No mapping")) }
+            }
+        };
+        let left = || std::fs::read_dir(path.parent().unwrap()).unwrap().count();
+
+        let failed = register(&path, b"task", schtasks(false));
+        let (kept_after_failure, left_after_failure) = (path.exists(), left());
+        register(&path, b"task", schtasks(true)).unwrap();
+
+        assert_eq!(failed.unwrap_err().message, "schtasks /Create failed: No mapping");
+        assert!(!kept_after_failure, "a failed registration leaves no record of a task");
+        assert_eq!(left_after_failure, 0, "nor a partial file");
+        assert_eq!(std::fs::read(&path).unwrap(), b"task");
+        assert_eq!(left(), 1);
+        assert_eq!(*given.borrow(), [b"task", b"task"]);
     }
 
     #[test]
