@@ -110,6 +110,39 @@ fn an_engine_outlives_the_job_of_the_command_that_started_it() {
     assert!(started_inside && !outlived_inside, "the engine started in a job it could not leave, and ended with it");
 }
 
+/// Windows hands a child every handle that may be inherited, so without care the engine would
+/// hold any its client inherited, such as a pipe of the ssh session whose shell ran newsreel.
+#[cfg(windows)]
+#[test]
+fn the_engine_holds_no_handle_its_client_inherited() {
+    use std::io::Read;
+    use std::os::windows::io::AsRawHandle;
+    use std::process::Stdio;
+    use windows::Win32::Foundation::{HANDLE, HANDLE_FLAG_INHERIT, HANDLE_FLAGS, SetHandleInformation};
+    let home = Home::new();
+    let (mut reader, writer) = std::io::pipe().unwrap();
+    let inherited =
+        |flags| unsafe { SetHandleInformation(HANDLE(writer.as_raw_handle()), HANDLE_FLAG_INHERIT.0, flags) };
+    // Only for the start, so the commands other tests start do not take it too.
+    inherited(HANDLE_FLAG_INHERIT).unwrap();
+    let client = home.process(&["status"]).stdout(Stdio::null()).stderr(Stdio::null()).spawn();
+    inherited(HANDLE_FLAGS(0)).unwrap();
+    let started = client.unwrap().wait().unwrap();
+    drop(writer);
+    let (closed, ended) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = reader.read_to_end(&mut Vec::new());
+        let _ = closed.send(());
+    });
+
+    let ended = ended.recv_timeout(Duration::from_secs(30));
+
+    assert!(started.success());
+    assert!(ended.is_ok(), "the engine still holds the pipe its client inherited");
+    let (pid, _) = home.engine().unwrap();
+    assert!(alive(pid));
+}
+
 #[test]
 fn concurrent_clients_share_one_engine() {
     let home = Home::new();

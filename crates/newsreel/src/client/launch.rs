@@ -130,6 +130,8 @@ pub fn start(paths: &Paths, env: &Env) -> Result<Conn, Error> {
 pub fn launch_stage(env: &Env) -> u8 {
     #[cfg(unix)]
     close_inherited_descriptors();
+    #[cfg(windows)]
+    newsreel_daemon::process::keep_inherited_handles();
     let result = (|| -> Result<u32, String> {
         let paths = Paths::from_process(env).map_err(|e| e.message)?;
         let log_path = paths.log();
