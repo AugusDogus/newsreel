@@ -561,6 +561,25 @@ fn engine_install_starts_the_service_the_engine_added_at_its_first_start() {
     assert_eq!(service.calls(), expected, "the unit was there, and install still started it");
 }
 
+// Its stand-ins are for launchd and systemd.
+#[cfg(unix)]
+#[test]
+fn a_failed_engine_install_starts_again_the_engine_it_stopped() {
+    let service = Service::new();
+    assert_eq!(service.home.run(&["status"]).code, 0);
+    let (before, _) = service.home.engine().unwrap();
+    for program in ["launchctl", "systemctl"] {
+        service.home.stub(program, "echo 'no user manager' >&2; exit 1");
+    }
+
+    let install = service.home.run(&["engine", "install", "--json"]);
+
+    assert_ne!(install.code, 0, "{}", install.stdout);
+    assert!(format!("{}{}", install.stdout, install.stderr).contains("no user manager"), "{}", install.stderr);
+    let (after, _) = service.home.engine().expect("the engine runs again");
+    assert_ne!(after, before, "install stopped the engine before it tried");
+}
+
 // Its stand-ins are for launchd and systemd; W4 tests the Windows logon task in CI.
 #[cfg(unix)]
 #[test]
