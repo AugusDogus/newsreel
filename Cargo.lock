@@ -1748,6 +1748,7 @@ dependencies = [
  "tokio",
  "url",
  "usenet",
+ "windows",
 ]
 
 [[package]]

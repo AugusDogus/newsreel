@@ -1,9 +1,10 @@
 //! Codex kills a tool call's process group when the call returns, so the engine starts
 //! from a launcher in a new session. On Windows the engine starts with a console of its own that
-//! has no window, so it outlives the terminal and can hear Ctrl-C from `engine stop`.
+//! has no window, outside the job of the process that started it, so it outlives the terminal and
+//! the ssh session, and can hear Ctrl-C from `engine stop`.
 
 use std::io::Read;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::Duration;
 
 use newsreel_core::error::Details;
@@ -91,8 +92,8 @@ pub fn start(paths: &Paths, env: &Env) -> Result<Conn, Error> {
     let exe = env.executable().map_err(|e| unavailable(e.message))?;
     let mut launcher = Command::new(exe);
     launcher.args(["daemon", "launch"]).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-    on_its_own(&mut launcher);
-    let mut child = launcher.spawn().map_err(|e| unavailable(format!("cannot start the engine: {e}")))?;
+    let mut child =
+        spawn_on_its_own(&mut launcher).map_err(|e| unavailable(format!("cannot start the engine: {e}")))?;
     let mut out = String::new();
     let _ = child.stdout.take().map(|mut s| s.read_to_string(&mut out));
     let status = child.wait().map_err(|e| unavailable(format!("cannot start the engine: {e}")))?;
@@ -143,8 +144,7 @@ pub fn launch_stage(env: &Env) -> u8 {
             .stdin(Stdio::null())
             .stdout(log.try_clone().map_err(|e| e.to_string())?)
             .stderr(log);
-        on_its_own(&mut engine);
-        Ok(engine.spawn().map_err(|e| e.to_string())?.id())
+        Ok(spawn_on_its_own(&mut engine).map_err(|e| e.to_string())?.id())
     })();
     match result {
         Ok(pid) => {
@@ -160,23 +160,32 @@ pub fn launch_stage(env: &Env) -> u8 {
 
 /// Starts `command` in a session of its own.
 #[cfg(unix)]
-fn on_its_own(command: &mut Command) {
+fn spawn_on_its_own(command: &mut Command) -> std::io::Result<Child> {
     use std::os::unix::process::CommandExt;
     // SAFETY: setsid is async-signal-safe, the only kind of call allowed between fork and exec.
     unsafe {
         command.pre_exec(|| if libc::setsid() == -1 { Err(std::io::Error::last_os_error()) } else { Ok(()) });
     }
+    command.spawn()
 }
 
 /// Starts `command` with a console of its own that has no window, in a process group of its own,
-/// so neither the terminal closing nor its Ctrl-C stops it.
+/// so neither the terminal closing nor its Ctrl-C stops it, and outside this process's job. A job
+/// can end every process in it when it closes, as sshd's does when its session ends.
 #[cfg(windows)]
-fn on_its_own(command: &mut Command) {
+fn spawn_on_its_own(command: &mut Command) -> std::io::Result<Child> {
     use std::os::windows::process::CommandExt;
     const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    const CREATE_BREAKAWAY_FROM_JOB: u32 = 0x0100_0000;
+    const ERROR_ACCESS_DENIED: i32 = 5;
     newsreel_daemon::process::keep_standard_handles();
-    command.creation_flags(CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW);
+    let flags = CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW;
+    match command.creation_flags(flags | CREATE_BREAKAWAY_FROM_JOB).spawn() {
+        // A job that forbids leaving it refuses the start, so the engine stays in that job.
+        Err(e) if e.raw_os_error() == Some(ERROR_ACCESS_DENIED) => command.creation_flags(flags).spawn(),
+        spawned => spawned,
+    }
 }
 
 #[cfg(unix)]
