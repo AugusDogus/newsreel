@@ -8,7 +8,7 @@ use crate::error::Error;
 use crate::id::DownloadId;
 use crate::watching::TitleLink;
 
-/// A download. Its ID is the SHA-1 of the release's NZB.
+/// A download. Its ID is a hash of the release's segments.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Job {

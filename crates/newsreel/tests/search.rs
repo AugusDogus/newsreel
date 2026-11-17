@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
-use newsreel_usenet::fake::{FakeServer, Posting};
 use serde_json::Value;
+use usenet::fake::{FakeServer, Posting};
 
 mod common;
 use common::{Home, Run, Server, hooks, ok, status};
@@ -52,7 +52,7 @@ const PASSWORD_ENV: &str = "TEST_NNTP_PASSWORD";
 impl Home {
     /// A home whose config lists `indexers` under `sources.newznab`.
     fn searching(indexers: &[String]) -> Home {
-        let home = Home::new().with(hooks::DISK, "roomy").with(PASSWORD_ENV, newsreel_usenet::fake::PASSWORD);
+        let home = Home::new().with(hooks::DISK, "roomy").with(PASSWORD_ENV, usenet::fake::PASSWORD);
         let sources =
             if indexers.is_empty() { String::new() } else { format!("sources:\n  newznab:\n{}", indexers.concat()) };
         home.write_config(&sources);

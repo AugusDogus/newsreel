@@ -2,7 +2,8 @@ use std::fmt;
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-/// A download: the SHA-1 of its release's NZB, so the same NZB is always the same download.
+/// A download: a hash of its release's segments, so the same release is always the same download,
+/// even when an indexer varies the rest of the NZB on every fetch.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct DownloadId([u8; 20]);
 

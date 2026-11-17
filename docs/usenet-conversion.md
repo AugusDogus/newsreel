@@ -19,6 +19,10 @@ layout of the playable files. The `NzbPort` (`daemon/nzb_port.rs`) resolves an N
 search result, a file, or a URL over NNTP (first article of each file, RAR headers), so
 `parse` stays synchronous and the owner, store, CLI, TUI, and web app need few changes.
 
+NNTP, yEnc, NZB, RAR, and manifests live in the [`usenet`](https://crates.io/crates/usenet)
+crate, which started here and is now published on its own from
+[AugusDogus/usenet-rs](https://github.com/AugusDogus/usenet-rs).
+
 A manifest maps every article to a byte range of an output file:
 
 - A video posted directly: the output file is the posted file; each segment is a piece.
@@ -65,9 +69,10 @@ Compressed, encrypted, expired, and incomplete releases are refused with a reaso
 - **Reuse.** Each landed piece's CRC32 is journaled under the state directory. A release added
   again after a crash or `rm` reads those pieces back from disk and fetches only what no
   longer matches.
-- **IDs.** A search result is `u` and the SHA-1 of its NZB link (`ResultId`); a download is the
-  SHA-1 of its NZB (`DownloadId`). The engine records which result became which download, so
-  either works afterwards.
+- **IDs.** A search result is `u` and the SHA-1 of its NZB link (`ResultId`); a download is a
+  SHA-1 of its NZB's segments (`DownloadId`), not of the whole document, because indexers vary
+  the metadata, posters, dates, and groups on every fetch. The engine records which result
+  became which download, so either works afterwards.
 - **Ranking.** Newznab `grabs` stand where seeders stood: the table, `--sort grabs`, `--min-grabs`.
   Where upstream favoured official sources, TRaSH Guides' Radarr and Sonarr custom formats
   (release group and title conditions only, bundled by `scripts/trash/update.py`) rank above
@@ -90,7 +95,7 @@ Compressed, encrypted, expired, and incomplete releases are refused with a reaso
   `.torrent` handling, no `torznab` config, no metadata phase, and one fresh database schema.
   Types, JSON fields, and error codes use Usenet terms (`connections`, `nzb_url`, `invalid_release`).
 - **Tests.** `crates/newsreel/tests/usenet.rs` and `search.rs` run the binary against a
-  loopback NNTP server (`newsreel_usenet::fake`) and Newznab feeds; the fake engine behind the
+  loopback NNTP server (`usenet::fake`) and Newznab feeds; the fake engine behind the
   CLI tests serves fake releases the same way. In the engine's tests a release the fake network
   publishes is an NZB its indexer serves, and one it does not never arrives.
 - **Upstream.** Ported from nexxeln/torrential v0.6.0 by replaying the fork's commits onto it,

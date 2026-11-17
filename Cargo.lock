@@ -1740,7 +1740,6 @@ dependencies = [
  "newsreel-daemon",
  "newsreel-search",
  "newsreel-tui",
- "newsreel-usenet",
  "serde",
  "serde_json",
  "sha2 0.10.9",
@@ -1748,6 +1747,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "url",
+ "usenet",
 ]
 
 [[package]]
@@ -1776,7 +1776,6 @@ dependencies = [
  "lzma-rust2",
  "newsreel-core",
  "newsreel-search",
- "newsreel-usenet",
  "objc2",
  "objc2-foundation",
  "qrcodegen",
@@ -1795,6 +1794,7 @@ dependencies = [
  "tokio",
  "ts-rs",
  "url",
+ "usenet",
  "windows",
  "windows-core",
  "zip",
@@ -1827,22 +1827,6 @@ dependencies = [
  "newsreel-core",
  "ratatui",
  "serde_json",
-]
-
-[[package]]
-name = "newsreel-usenet"
-version = "0.1.0"
-dependencies = [
- "crc32fast",
- "futures-util",
- "quick-xml",
- "rustls",
- "rustls-platform-verifier",
- "serde",
- "serde_json",
- "sha1 0.10.7",
- "tokio",
- "tokio-rustls",
 ]
 
 [[package]]
@@ -3478,6 +3462,26 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
+]
+
+[[package]]
+name = "usenet"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "171926d8b99f3dac8393a37897adb15cc9f24b57251f82842768ab2a37e90178"
+dependencies = [
+ "crc32fast",
+ "futures-util",
+ "memchr",
+ "parking_lot",
+ "quick-xml",
+ "rustls",
+ "rustls-platform-verifier",
+ "serde",
+ "serde_json",
+ "sha1 0.10.7",
+ "tokio",
+ "tokio-rustls",
 ]
 
 [[package]]
