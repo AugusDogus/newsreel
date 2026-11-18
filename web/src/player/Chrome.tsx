@@ -10,6 +10,7 @@ import { Spinner } from "../ui/Spinner";
 import { usePlayer } from "./context";
 import type { Fetching } from "./ffmpeg";
 import { useVideo } from "./video";
+import { withKey } from "../lib/keyboard";
 
 /** A name for what plays, over the picture. */
 export interface Heading {
@@ -81,8 +82,8 @@ export function TopBar({ heading, readout, onBack }: TopBarProps) {
     <header className="flex items-start gap-2 bg-linear-to-b from-black/80 via-black/40 to-transparent pt-(--edge-top) pr-(--edge-right) pb-16 pl-(--edge-left)">
       <button
         type="button"
-        aria-label="Back (Esc)"
-        title="Back (Esc)"
+        aria-label={withKey("Back", "Esc")}
+        title={withKey("Back", "Esc")}
         onClick={onBack}
         className="relative flex size-10 shrink-0 items-center justify-center rounded-full hover:bg-white/15 pointer-coarse:size-11"
       >

@@ -308,3 +308,18 @@ which is the naming this fix replaces). `a_device_whose_pair_page_saw_a_tv_is_na
 `web/src/pair.test.ts` checks the page sends the field.
 
 **Upstream.** Same name table in v0.7.0, with `("android", "Android")`. Upstream has it.
+
+### 7a. Keyboard keys named on TVs and touchscreens
+
+**Bug.** The player's buttons are labelled "Back (Esc)", "Play (Space)", "Mute (M)" and so on.
+The label is also the tooltip and the accessible name, which a TV's or a phone's browser reads
+out, where no keyboard exists to press them. Reported from the device tests; their screenshots do
+not show a tooltip, so the evidence is the labels in `Chrome.tsx` and `Controls.tsx`.
+
+**Fix.** `withKey(label, key)` (`web/src/lib/keyboard.ts`) adds the key only when the browser is
+not a TV and has a pointer that hovers and is fine, as a computer's mouse or trackpad is. The back
+button, play, mute, subtitles, fullscreen and next use it.
+
+**Test.** `web/src/lib/keyboard.test.ts`.
+
+**Upstream.** Same fixed labels in v0.7.0. Upstream has it.

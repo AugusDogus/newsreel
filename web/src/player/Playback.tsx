@@ -38,6 +38,7 @@ import { type Command, command } from "./keys";
 import { defaultAudio, plan } from "./plan";
 import { SeekBar } from "./SeekBar";
 import { audioLabel, offsetText, Settings, type SettingsPage } from "./Settings";
+import { withKey } from "../lib/keyboard";
 import { Shortcuts } from "./Shortcuts";
 import { DirectSource, RemuxSource, type SourceState } from "./source";
 import { Unsaved } from "./saving";
@@ -658,7 +659,7 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
             filesOpen={filesOpen}
             hasFiles={multiple}
             hasNext={next !== null}
-            nextLabel={shown.kind === "release" ? "Next video (N)" : "Next episode (N)"}
+            nextLabel={withKey(shown.kind === "release" ? "Next video" : "Next episode", "N")}
             airPlay={airPlay}
             cast={
               <CastButton

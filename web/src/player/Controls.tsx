@@ -19,13 +19,14 @@ import type { PlayerActions } from "./actions";
 import { usePlayer } from "./context";
 import { TimeLabel, useChapter } from "./TimeLabel";
 import { useVideo } from "./video";
+import { withKey } from "../lib/keyboard";
 
 function Volume({ actions }: { actions: PlayerActions }) {
   const { video } = usePlayer();
   const volume = useVideo(video, (state) => (state.muted ? 0 : state.volume));
   return (
     <div className="group/volume flex items-center pointer-coarse:max-sm:hidden tv:hidden">
-      <ControlButton label={volume === 0 ? "Unmute (M)" : "Mute (M)"} onClick={actions.toggleMute}>
+      <ControlButton label={withKey(volume === 0 ? "Unmute" : "Mute", "M")} onClick={actions.toggleMute}>
         {volume === 0 ? <SpeakerXMarkIcon /> : <SpeakerWaveIcon />}
       </ControlButton>
       <div className="flex w-0 items-center overflow-hidden transition-[width] duration-200 group-focus-within/volume:w-24 group-hover/volume:w-24 motion-reduce:transition-none max-sm:hidden">
@@ -105,7 +106,7 @@ export function Controls(props: Props) {
         {clock("sm:hidden")}
       </div>
       <div className="flex items-center gap-1 max-sm:gap-0">
-        <ControlButton label={paused ? "Play (Space)" : "Pause (Space)"} onClick={() => actions.toggle()} className="*:[svg]:size-6">
+        <ControlButton label={withKey(paused ? "Play" : "Pause", "Space")} onClick={() => actions.toggle()} className="*:[svg]:size-6">
           {paused ? <PlayIcon /> : <PauseIcon />}
         </ControlButton>
         {props.hasNext && (
@@ -126,7 +127,7 @@ export function Controls(props: Props) {
         {/* On a phone the menu hangs from the whole bar, as the buttons are too near the left edge for its width. */}
         <div className="flex items-center gap-1 max-sm:gap-0 sm:relative" data-menu-root>
           <ControlButton
-            label="Subtitles (C turns them on or off)"
+            label={withKey("Subtitles", "C turns them on or off")}
             aria-haspopup="menu"
             aria-expanded={menu === "subtitles"}
             onClick={() => props.onMenu("subtitles")}
@@ -151,7 +152,7 @@ export function Controls(props: Props) {
           </ControlButton>
         )}
         {props.onFullscreen && (
-          <ControlButton label={props.fullscreen ? "Leave fullscreen (F)" : "Fullscreen (F)"} onClick={props.onFullscreen}>
+          <ControlButton label={withKey(props.fullscreen ? "Leave fullscreen" : "Fullscreen", "F")} onClick={props.onFullscreen}>
             {props.fullscreen ? <ArrowsPointingInIcon /> : <ArrowsPointingOutIcon />}
           </ControlButton>
         )}
