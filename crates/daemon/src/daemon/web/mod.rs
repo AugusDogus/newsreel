@@ -293,7 +293,21 @@ fn status(code: ErrorCode) -> &'static str {
 }
 
 async fn fail(conn: &mut Connection<'_>, request: &Request, error: &Error) -> io::Result<bool> {
-    conn.json(status(error.code), &ErrorBody { error }, request).await
+    let error = for_browser(error);
+    conn.json(status(error.code), &ErrorBody { error: &error }, request).await
+}
+
+/// `error` with a hint a person in a browser can act on, where the engine's names what to type
+/// at a command line.
+pub fn for_browser(error: &Error) -> std::borrow::Cow<'_, Error> {
+    match (error.code, &error.details) {
+        (ErrorCode::ProvidersUnavailable, Some(newsreel_core::error::Details::Sources(sources))) => {
+            std::borrow::Cow::Owned(
+                error.clone().with_hint(newsreel_search::failed_hint(sources, newsreel_search::Reader::Browser)),
+            )
+        }
+        _ => std::borrow::Cow::Borrowed(error),
+    }
 }
 
 /// Answers with a whole file the engine made, which the browser may keep for an hour: the same

@@ -3,6 +3,8 @@
 //! only reads the feed.
 
 use newsreel_core::{Category, Flag, TitleId};
+use std::sync::OnceLock;
+
 use sha1::{Digest, Sha1};
 use url::{Url, form_urlencoded};
 
@@ -13,10 +15,33 @@ use crate::observation::{Observation, count, hex, web_url};
 /// A configured endpoint and the API key its links are issued under.
 pub(crate) struct Newznab {
     pub api_key: Option<String>,
+    /// `/api` under the configured address, once that address answered a web page and this the
+    /// feed, as NZBHydra's address without its `/api` does.
+    pub api: OnceLock<Url>,
 }
 
 impl Newznab {
+    /// Searches `endpoint`, or its `/api` when `endpoint` answers a web page and that the feed.
     pub(super) async fn search(&self, ctx: &Ctx<'_>, endpoint: &Url) -> Result<Vec<Observation>, Failure> {
+        if let Some(api) = self.api.get() {
+            return self.ask(ctx, api).await;
+        }
+        match self.ask(ctx, endpoint).await {
+            Err(Failure::BadResponse(page))
+                if page == rss::WEB_PAGE && !endpoint.path().trim_end_matches('/').ends_with("/api") =>
+            {
+                let mut api = endpoint.clone();
+                api.set_path(&format!("{}/api", endpoint.path().trim_end_matches('/')));
+                // A web page there too says more about the address than this one's answer.
+                let found = self.ask(ctx, &api).await.map_err(|_| Failure::BadResponse(page))?;
+                let _ = self.api.set(api);
+                Ok(found)
+            }
+            asked => asked,
+        }
+    }
+
+    async fn ask(&self, ctx: &Ctx<'_>, endpoint: &Url) -> Result<Vec<Observation>, Failure> {
         let mut url = endpoint.clone();
         {
             let mut pairs = url.query_pairs_mut();

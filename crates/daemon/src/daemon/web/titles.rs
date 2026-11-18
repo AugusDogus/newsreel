@@ -272,6 +272,7 @@ pub(in crate::daemon) async fn last(ctx: &Ctx, outcome: Outcome) -> Value {
         }
         Outcome::Failed { error, tried } => (error, tried),
     };
+    let error = super::for_browser(&error).into_owned();
     serde_json::to_value(AttemptEvent::Failed { error, tried }).expect("steps serialize")
 }
 

@@ -1,7 +1,9 @@
 mod newznab;
 mod rss;
 
-use std::sync::Arc;
+pub(crate) use rss::WEB_PAGE;
+
+use std::sync::{Arc, OnceLock};
 
 use newsreel_core::{Error, ErrorCode, SourceOutcome, TitleId, text};
 use serde::{Deserialize, Serialize};
@@ -139,7 +141,7 @@ pub(crate) fn registry(config: &SearchConfig) -> Result<Vec<Arc<Source>>, Error>
             .ok()
             .filter(|u| matches!(u.scheme(), "http" | "https"))
             .ok_or_else(|| config_error(format!("indexer {name:?} needs an http or https URL")))?;
-        let newznab = Newznab { api_key: api_key.clone() };
+        let newznab = Newznab { api_key: api_key.clone(), api: OnceLock::new() };
         sources.push(Arc::new(Source { meta: Arc::new(meta), video: true, base, newznab }));
     }
     for name in &config.disabled {

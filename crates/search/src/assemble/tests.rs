@@ -1178,3 +1178,19 @@ fn a_ranked_groups_remux_past_the_screens_band_plays_after_a_copy_that_streams()
     let runs = [fresh(&geek(), vec![video(0x9a, remux, Some(1381), 57 * GB), video(0x9b, encode, Some(1615), 9 * GB)])];
     assert_eq!(played(&night(Namesakes::Leading, 1968), mac(), &runs), [encode, remux]);
 }
+
+/// The web app showed "retry with a longer --timeout", a flag a browser does not have.
+#[test]
+fn a_failed_search_hints_at_what_its_reader_can_do_and_at_api_for_a_web_page() {
+    let failed = |outcome| vec![SourceReport { source: "hydra".into(), outcome, elapsed_ms: 1 }];
+    let timeout = failed(SourceOutcome::Timeout);
+    assert!(failed_hint(&timeout, Reader::Terminal).contains("--timeout"));
+    let browser = failed_hint(&timeout, Reader::Browser);
+    assert!(!browser.contains("--"), "{browser}");
+    assert!(browser.contains("search again"), "{browser}");
+    let page = failed(SourceOutcome::BadResponse { reason: crate::sources::WEB_PAGE.into() });
+    for reader in [Reader::Terminal, Reader::Browser] {
+        let hint = failed_hint(&page, reader);
+        assert!(hint.contains("/api") && !hint.contains("network"), "{hint}");
+    }
+}

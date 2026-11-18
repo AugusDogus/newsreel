@@ -27,6 +27,9 @@ impl Item {
     }
 }
 
+/// Why a feed did not read when a web page came instead, as when an address lacks its `/api`.
+pub(crate) const WEB_PAGE: &str = "expected an RSS feed, got <html>";
+
 pub(crate) fn items(body: &[u8]) -> Result<Vec<Item>, String> {
     let text = String::from_utf8_lossy(body);
     // Not `trim_text`: it trims around entity references, so "Tom &amp; Jerry"
@@ -50,6 +53,7 @@ pub(crate) fn items(body: &[u8]) -> Result<Vec<Item>, String> {
                             let description = attr(e, "description").unwrap_or_default();
                             return Err(format!("indexer error {code}: {description}"));
                         }
+                        "html" => return Err(WEB_PAGE.into()),
                         other => return Err(format!("expected an RSS feed, got <{other}>")),
                     }
                 }

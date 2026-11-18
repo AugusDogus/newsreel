@@ -21,8 +21,9 @@ const CAP: usize = 4 << 20;
 /// What an address turned out to be.
 #[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Found {
-    /// A Newznab endpoint, which answered `t=caps` with these categories.
-    Endpoint { categories: Vec<IndexerCategory> },
+    /// A Newznab endpoint, which answered `t=caps` with these categories: the address asked, or
+    /// `/api` under it when it answered a web page and that answered.
+    Endpoint { url: Url, categories: Vec<IndexerCategory> },
     /// A Prowlarr server and each Usenet indexer it has.
     Prowlarr { indexers: Vec<Hosted> },
 }
@@ -88,7 +89,7 @@ impl Probe {
     pub async fn find(&self, url: &Url, key: Option<&ApiKey>) -> Result<Found, Error> {
         let keyed = key.is_some();
         let first = match self.caps(url, key).await {
-            Ok(categories) => return Ok(Found::Endpoint { categories }),
+            Ok(categories) => return Ok(Found::Endpoint { url: url.clone(), categories }),
             Err(problem @ Problem::NotNewznab(_)) => problem,
             Err(problem) => return Err(problem.error(url, keyed)),
         };
@@ -98,7 +99,10 @@ impl Probe {
                     .with_hint("add your Usenet indexer in Prowlarr, then run this again"))
             }
             Ok(Some(indexers)) => Ok(Found::Prowlarr { indexers }),
-            Ok(None) => Err(first.error(url, keyed)),
+            Ok(None) => match self.api_caps(url, key).await {
+                Some((api, categories)) => Ok(Found::Endpoint { url: api, categories }),
+                None => Err(first.error(url, keyed)),
+            },
             Err(problem) => Err(problem.error(url, keyed)),
         }
     }
@@ -107,8 +111,25 @@ impl Probe {
     pub async fn check(&self, url: &Url, key: Option<&ApiKey>) -> Check {
         match self.caps(url, key).await {
             Ok(categories) => Check::Answers { categories },
+            Err(problem @ Problem::NotNewznab(_)) => match self.api_caps(url, key).await {
+                Some((_, categories)) => Check::Answers { categories },
+                None => Check::Fails { reason: problem.reason(key.is_some()) },
+            },
             Err(problem) => Check::Fails { reason: problem.reason(key.is_some()) },
         }
+    }
+
+    /// `/api` under `url`, and its categories, when `url` does not end in `/api` and that answers
+    /// `t=caps`. NZBHydra's address without its `/api` answers its web page, and searches go to
+    /// its `/api` then.
+    async fn api_caps(&self, url: &Url, key: Option<&ApiKey>) -> Option<(Url, Vec<IndexerCategory>)> {
+        if url.path().trim_end_matches('/').ends_with("/api") {
+            return None;
+        }
+        let mut api = under(url, "api");
+        api.set_query(url.query());
+        let categories = self.caps(&api, key).await.ok()?;
+        Some((api, categories))
     }
 
     async fn caps(&self, url: &Url, key: Option<&ApiKey>) -> Result<Vec<IndexerCategory>, Problem> {

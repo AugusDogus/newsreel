@@ -34,6 +34,7 @@ use tokio::time::{Instant, timeout_at};
 use url::Url;
 
 use crate::assemble::{Answer, Linked, Run, assemble, merged, vet};
+pub use crate::assemble::{Reader, failed_hint};
 use crate::cache::AnswerKey;
 pub use crate::cache::ResultCache;
 use crate::http::{FetchError, Http, Retry};

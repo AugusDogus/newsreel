@@ -112,7 +112,7 @@ pub async fn add(ctx: &Ctx, url: &str, name: Option<String>, key: Option<ApiKey>
         valid(name)?;
     }
     let wanted: Vec<(Option<String>, String, Url)> = match indexers.probe.find(&url, key.as_ref()).await? {
-        Found::Endpoint { .. } => vec![(name, derived(&url), url.clone())],
+        Found::Endpoint { url: found, .. } => vec![(name, derived(&found), found)],
         Found::Prowlarr { indexers: hosted } => {
             if name.is_some() && hosted.len() > 1 {
                 let message = format!("Prowlarr at {url} has {} indexers, and --name names one", hosted.len());

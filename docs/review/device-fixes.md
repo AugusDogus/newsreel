@@ -174,3 +174,51 @@ changes:
 now. `only_what_the_engine_reads_once_needs_a_restart` checks which settings count.
 
 **Upstream.** Same single load in v0.7.0 (`Config::load` in `serve`). Upstream has it.
+
+## 4. Hints that do not fit their reader
+
+### 4a. The web app says "retry with a longer --timeout"
+
+**Bug.** When every indexer failed, the web app's search and title pages showed the hint
+`check the network connection, or retry with a longer --timeout`. `--timeout` is a command line
+flag; a browser has nothing to set.
+
+**Cause.** The hint is fixed in `all_failed` (`crates/search/src/assemble.rs`), and the engine
+hands the same error to the CLI and to the web API.
+
+**Fix.** `failed_hint(sources, reader)` picks the hint from how the sources failed and who reads
+it. The CLI keeps its wording. The web API (`web::fail`, and the last line of a title play)
+replaces the hint of a `providers_unavailable` error with the browser's: `check that the computer
+running newsreel is online, then search again`. It works from the error's structured
+`details.sources`, not by editing text.
+
+**Upstream.** v0.7.0 has the same fixed hint in `all_failed`. Upstream has it.
+
+### 4b. A Newznab address without `/api`
+
+**Bug.** With NZBHydra's address written without `/api`, the search failed with
+`expected an RSS feed, got <html>` (right) and the hint `check the network connection` (wrong:
+the network was fine). `newsreel indexers add` refused the same address.
+
+**Fix.**
+- A search whose address answers a web page, and does not end in `/api`, asks `<address>/api`
+  once. When that answers the feed, the source keeps using it (`Newznab::api`). When it does not,
+  the failure stays the web page one.
+- `indexers add` and the check `newsreel indexers` runs do the same, and `add` writes the `/api`
+  address it found to config.yaml.
+- When an indexer still answers a web page, the hint names `/api`: `an indexer answered a web page,
+  not its feed: its url in config.yaml must be its Newznab API, which usually ends in /api, such as
+  http://127.0.0.1:5076/api for NZBHydra`.
+
+**Tests.** `an_indexer_given_by_its_base_address_is_searched_at_its_api`,
+`an_indexer_that_answers_a_web_page_gets_a_hint_about_its_api_path_not_the_network`
+(`crates/newsreel/tests/search.rs`) and `an_indexers_base_address_is_added_as_its_api`
+(`crates/newsreel/tests/indexers.rs`) failed before and pass now.
+`a_failed_search_hints_at_what_its_reader_can_do_and_at_api_for_a_web_page` checks both readers.
+
+**Live check.** The test engine with the real NZBHydra written as `http://<host>:5076` (no `/api`):
+`newsreel search "charade 1963"` listed its releases, and `newsreel indexers` showed it answering
+with its categories.
+
+**Upstream.** Upstream searched Torznab feeds, which have the same `/api` convention, through the
+same fixed hint. The fallback to `/api` is new here.

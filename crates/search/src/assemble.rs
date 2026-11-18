@@ -113,8 +113,30 @@ fn joined(first: SourceOutcome, then: SourceOutcome) -> SourceOutcome {
 fn all_failed(sources: Vec<SourceReport>) -> Error {
     let names: Vec<&str> = sources.iter().map(|r| r.source.as_str()).collect();
     Error::new(ErrorCode::ProvidersUnavailable, format!("all sources failed ({})", names.join(", ")))
-        .with_hint("check the network connection, or retry with a longer --timeout")
+        .with_hint(failed_hint(&sources, Reader::Terminal))
         .with_details(Details::Sources(sources))
+}
+
+/// Where a person reads a hint, which says what they can do there.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Reader {
+    /// At a command line, which has `--timeout`.
+    Terminal,
+    Browser,
+}
+
+/// What to do when every source failed, as `sources` say each did.
+pub fn failed_hint(sources: &[SourceReport], reader: Reader) -> String {
+    let page = |report: &SourceReport| matches!(&report.outcome, SourceOutcome::BadResponse { reason } if reason == crate::sources::WEB_PAGE);
+    if sources.iter().any(page) {
+        return "an indexer answered a web page, not its feed: its url in config.yaml must be its Newznab API, \
+                which usually ends in /api, such as http://127.0.0.1:5076/api for NZBHydra"
+            .into();
+    }
+    match reader {
+        Reader::Terminal => "check the network connection, or retry with a longer --timeout".into(),
+        Reader::Browser => "check that the computer running newsreel is online, then search again".into(),
+    }
 }
 
 pub(crate) struct Candidate {

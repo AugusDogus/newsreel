@@ -131,6 +131,22 @@ fn an_indexer_is_checked_then_searched_at_once_and_its_key_is_never_printed() {
     assert!(!home.log().contains("k3y"), "{}", home.log());
 }
 
+/// NZBHydra's address without `/api` answers its web page.
+#[test]
+fn an_indexers_base_address_is_added_as_its_api() {
+    let server =
+        Server::start(|_| vec![("/hydra/api?t=caps", vec![ok(CAPS.to_vec())]), ("/hydra", vec![ok(PAGE.to_vec())])]);
+    let home = home();
+    let base = format!("{}/hydra", server.base);
+
+    let added = home.run(&["indexers", "add", &base, "--key", "k3y", "--json"]);
+
+    assert_eq!(added.code, 0, "{}{}", added.stdout, added.stderr);
+    assert_eq!(added.json()["indexers"][0]["url"], format!("{base}/api"));
+    let config = std::fs::read_to_string(home.path("th/config/config.yaml")).unwrap();
+    assert!(config.contains(&format!("url: {base}/api\n")), "{config}");
+}
+
 #[test]
 fn prowlarrs_own_address_adds_each_enabled_usenet_indexer() {
     let listed = json!([

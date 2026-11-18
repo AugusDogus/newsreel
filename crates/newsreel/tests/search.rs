@@ -352,6 +352,39 @@ fn the_engine_refuses_a_config_that_does_not_parse() {
     assert_eq!(config(&fixed_doctor), ("ok".to_string(), file));
 }
 
+const WEB_PAGE: &[u8] = b"<!DOCTYPE html><html><head><title>NZBHydra 2</title></head><body></body></html>";
+
+/// NZBHydra's address without `/api` answers its web page. The search failed with a hint to
+/// check the network.
+#[test]
+fn an_indexer_given_by_its_base_address_is_searched_at_its_api() {
+    let server =
+        Server::start(|base| vec![("/hydra/api", vec![ok(sintel(base))]), ("/hydra", vec![ok(WEB_PAGE.to_vec())])]);
+    let home = Home::searching(&[format!("    - name: hydra\n      url: {}/hydra\n", server.base)]);
+
+    let found = home.run(&["search", "sintel", "--json"]);
+
+    assert_eq!(found.code, 0, "{}{}", found.stdout, found.stderr);
+    assert_eq!(locators(&found.json()).len(), 2, "{}", found.stdout);
+    let again = home.run(&["search", "sintel 2010", "--json"]);
+    assert_eq!(again.code, 0, "{}", again.stderr);
+    assert_eq!(server.asked("/hydra?").len() + server.asked("/hydra/?").len(), 1, "the base is asked once");
+}
+
+#[test]
+fn an_indexer_that_answers_a_web_page_gets_a_hint_about_its_api_path_not_the_network() {
+    let server = Server::start(|_| vec![("/hydra", vec![ok(WEB_PAGE.to_vec())])]);
+    let home = Home::searching(&[format!("    - name: hydra\n      url: {}/hydra\n", server.base)]);
+
+    let failed = home.run(&["search", "sintel", "--json"]);
+
+    let error = &failed.json()["error"];
+    assert_eq!(error["code"], "providers_unavailable", "{}", failed.stdout);
+    let hint = error["hint"].as_str().unwrap();
+    assert!(hint.contains("/api"), "{hint}");
+    assert!(!hint.contains("network"), "{hint}");
+}
+
 /// The engine read config.yaml once, so an indexer added by hand was listed by newsreel indexers,
 /// which reads the file, but never searched until the engine restarted.
 #[test]
