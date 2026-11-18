@@ -54,6 +54,9 @@ the segments under a byte range first, which is what streaming and seeking need.
 | Ranking by the file a play opens (archive.org file lists) | Dropped; codecs come from the release name |
 | Updates from GitHub releases, install script | Kept; from AugusDogus/newsreel |
 | Compressed or encrypted RARs | Refused; a play moves to the next release |
+| `indexers` list, add, and remove Torznab feeds, Prowlarr's and Jackett's indexers | Newznab APIs and Prowlarr's Usenet indexers; Jackett proxies only trackers |
+| `server install`, Docker image, `connect`, `pull`, `public_address`, Tailscale pairing links | Kept; the image is `ghcr.io/augusdogus/newsreel` |
+| Torrent traffic bound to one network interface, such as a VPN's | Dropped |
 
 ## Status
 
@@ -98,10 +101,31 @@ Compressed, encrypted, expired, and incomplete releases are refused with a reaso
   loopback NNTP server (`usenet::fake`) and Newznab feeds; the fake engine behind the
   CLI tests serves fake releases the same way. In the engine's tests a release the fake network
   publishes is an NZB its indexer serves, and one it does not never arrives.
-- **Upstream.** Ported from nexxeln/torrential v0.6.0 by replaying the fork's commits onto it,
-  its first conversion commits as one.
+- **Indexers.** `newsreel indexers add` asks an address for Newznab `t=caps` and writes it to
+  `sources.newznab`; Prowlarr's own address adds each of its enabled Usenet indexers. A key may sit
+  in config.yaml as `api_key`, and a server's password as `password`, beside `api_key_env` and
+  `password_env`, because the engine the login service or `server install` starts sees only
+  `NEWSREEL_HOME`. A config.yaml newsreel writes a key or password into is readable by its owner
+  alone.
+- **Login service.** When launchctl, `systemctl --user`, or schtasks is missing or refuses, as under
+  su, sudo, or ssh without a login session, in a container, or under WSL, `engine install` fails with
+  `service_unavailable`, says why and what to do, and says whether the engine it stopped runs again.
+- **Upstream.** Ported from nexxeln/torrential v0.7.0 by replaying the fork's commits onto it,
+  its first conversion commits as one. Upstream's version number is not taken.
 - **Name.** The app, its crates, paths, and environment variables are `newsreel`, not `torrential`,
   and its versions start again at 0.1.0.
+
+Left out of upstream 0.7.0, for having no Usenet counterpart:
+
+- `torrent_interface`, which binds libtorrent's peer, tracker, and DHT sockets to one interface so a
+  swarm sees only a VPN's address, and the title play that fails at once while it is down. NNTP goes
+  over TLS to the account's own provider, and no peer sees the address.
+- libtorrent's listen port where TCP and UDP both bind, and its Windows UDP port test: newsreel
+  listens for no peers.
+- libtorrent writing through the system cache on Windows. The CI's timing of `engine stop` came along.
+- A file list that comes while its folder hangs: newsreel has no metadata phase. A release's layout
+  is known before its download starts, and every look in its folder already goes through `Reach`.
+- Adding Jackett's indexers: Jackett proxies only torrent trackers.
 
 Not done:
 
