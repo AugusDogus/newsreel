@@ -119,6 +119,12 @@ jobs:
           & $newsreel status --json
           if ($LASTEXITCODE) { throw 'newsreel status failed' }
           if ((& $newsreel engine status --json | ConvertFrom-Json).engine -ne 'running') { throw 'the engine does not run' }
+          $stopping = [Diagnostics.Stopwatch]::StartNew()
           & $newsreel engine stop
-          if ($LASTEXITCODE) { throw 'engine stop failed' }
+          $stopped = $LASTEXITCODE
+          Write-Host "engine stop took $([math]::Round($stopping.Elapsed.TotalSeconds, 1)) s"
+          if ($stopped) {
+            Get-Content "$env:LOCALAPPDATA\newsreel\state\engine.log" -Tail 50 -ErrorAction SilentlyContinue
+            throw 'engine stop failed'
+          }
           if ((& $newsreel engine status --json | ConvertFrom-Json).engine -ne 'stopped') { throw 'the engine still runs' }
