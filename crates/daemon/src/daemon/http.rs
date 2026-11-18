@@ -750,7 +750,7 @@ impl Connection<'_> {
         };
         let content_type = dlna.map_or(content_type(&file.path), |dlna| dlna.mime.as_str());
         let dlna = dlna.map(Dlna::headers).unwrap_or_default();
-        // A torrent's infohash fixes every byte of its files, so this tag never names other bytes,
+        // A download's ID fixes every byte of its files, so this tag never names other bytes,
         // and a browser that keeps it can resume a cut download.
         let tag = format!("ETag: \"{}-{index}\"\r\n", id.to_hex());
         let head = format!(

@@ -296,7 +296,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
     },
     {
       "name": "indexers",
-      "about": "List, add, or remove the Torznab indexers the engine searches, such as Jackett's or Prowlarr's",
+      "about": "List, add, or remove the Newznab indexers the engine searches, such as NZBHydra or Prowlarr",
       "arguments": [],
       "flags": [],
       "subcommands": [
@@ -308,11 +308,11 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
         },
         {
           "name": "add",
-          "about": "Check a Torznab feed, or Prowlarr's or Jackett's own address, and add each indexer it has",
+          "about": "Check a Newznab API URL, or Prowlarr's own address, and add each Usenet indexer it has",
           "arguments": [
             {
               "name": "URL",
-              "help": "A Torznab feed URL, or the address of Prowlarr or Jackett",
+              "help": "A Newznab API URL, or the address of Prowlarr",
               "required": true,
               "repeatable": false
             }
@@ -327,7 +327,7 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
             },
             {
               "name": "--key",
-              "help": "The API key, from the settings page of Jackett or Prowlarr",
+              "help": "The API key, from the settings page of the indexer, NZBHydra, or Prowlarr",
               "takes_value": true,
               "repeatable": false,
               "value_name": "KEY"

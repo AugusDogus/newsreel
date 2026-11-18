@@ -70,7 +70,7 @@ pub enum Command {
         #[command(subcommand)]
         command: Option<DevicesCommand>,
     },
-    /// List, add, or remove the Newznab indexers the engine searches, such as NZBHydra or Prowlarr's
+    /// List, add, or remove the Newznab indexers the engine searches, such as NZBHydra or Prowlarr
     #[command(
         after_help = "Examples:\n  newsreel indexers\n  newsreel indexers add http://127.0.0.1:5076/api --key <nzbhydra api key> --name hydra\n  newsreel indexers add http://127.0.0.1:9696 --key <prowlarr api key>\n  newsreel indexers add https://api.nzbgeek.info/api --key <api key> --name geek\n  newsreel indexers remove geek --json"
     )]
