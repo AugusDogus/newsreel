@@ -1629,7 +1629,7 @@ async fn a_player_that_asks_while_an_update_installs_hears_to_try_again() {
         refused,
         (
             503,
-            "content-length: 50\ncontent-type: text/plain; charset=utf-8\nretry-after: 5\nx-content-type-options: nosniff\n"
+            "content-length: 48\ncontent-type: text/plain; charset=utf-8\nretry-after: 5\nx-content-type-options: nosniff\n"
                 .into(),
             b"newsreel is updating, try again in a few seconds".to_vec()
         )

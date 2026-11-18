@@ -17,7 +17,7 @@ use super::super::fake;
 use super::super::owner::Command;
 use super::super::owner::deleter::TrashPause;
 use super::super::store::{Store, Tombstone};
-use super::titles::{PATIENT, night, night_with};
+use super::titles::{PATIENT, night_with};
 use super::web::{nzb_link, post};
 use super::{Gate, Harness, MIB, Outside, Player, ROOMY, prefix, release, written};
 use crate::disk::reserve;
@@ -770,7 +770,7 @@ async fn the_engine_answers_while_the_plays_folder_does_not() {
 #[cfg(unix)]
 #[tokio::test(flavor = "multi_thread")]
 async fn a_title_play_says_it_waits_for_a_plays_folder_that_does_not_answer() {
-    let (h, night) = night();
+    let (h, night) = super::titles::night();
     let _stalled = h.disk.stall(h.plays(), h.dir.path().join("stall"));
     let steps = h.play_title("tt0063350", Some(&night[3]), None).await;
     let tried = [
@@ -782,7 +782,7 @@ async fn a_title_play_says_it_waits_for_a_plays_folder_that_does_not_answer() {
     ];
     assert_eq!(steps[..5], tried);
     let waiting = format!("newsreel is waiting for access to {}", h.play_folder(&night[3]).display());
-    assert!(steps[5].starts_with("skipped a4a4a4") && steps[5].contains(&waiting), "{}", steps[5]);
+    assert!(steps[5].starts_with("skipped ua4a4a") && steps[5].contains(&waiting), "{}", steps[5]);
 }
 
 /// rm --delete cannot tell whether a download in a folder that stopped answering uses the files,

@@ -58,6 +58,7 @@ expression: value
           }
         },
         "wanted": {
+          "id": "tt0063350",
           "name": "Night of the Living Dead",
           "year": 1968,
           "episode": null,

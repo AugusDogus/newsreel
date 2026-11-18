@@ -2,13 +2,13 @@
 source: crates/tui/src/tests/render.rs
 expression: shot(&scenario(size))
 ---
-" newsreel                                                       ↓ 10.0 MiB/s  "
+"   newsreel                                                       ↓ 10.0 MiB/s  "
 "                                                                                "
 "     search │ press / to search                                                 "
 "            │                                                                   "
 "      error ↑ openwebtext-2019                    ━━╸─────   36%    disk error  "
 "     paused │ stackexchange                       ━━╸─────   33%                "
-"            │   ~/Downloads/newsreel/stackexchange                            "
+"            │   ~/Downloads/newsreel/stackexchange                              "
 "            │   12.9 GiB of 38.0 GiB                                            "
 "      files ↑   part04.7z                         ━╸──────   20%       100 MiB  "
 "            │   part05.7z                         ━━──────   25%       100 MiB  "

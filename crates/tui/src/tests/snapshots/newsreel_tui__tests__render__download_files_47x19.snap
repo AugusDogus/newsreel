@@ -2,13 +2,13 @@
 source: crates/tui/src/tests/render.rs
 expression: shot(&scenario(size))
 ---
-"  newsreel                      ↓ 10.0 MiB/s "
+"  newsreel                        ↓ 10.0 MiB/s "
 "                                               "
 "│ press / to search                            "
 "│                                              "
 "↑ paused                                       "
 "│ stackexchange                ━━━───────  33% "
-"│   ~/Downloads/newsreel/stackexchange       "
+"│   ~/Downloads/newsreel/stackexchange         "
 "│   12.9 GiB of 38.0 GiB                       "
 "↑   part09.7z                  ━━━━╸─────  45% "
 "│   part10.7z                  ━━━━━─────  50% "

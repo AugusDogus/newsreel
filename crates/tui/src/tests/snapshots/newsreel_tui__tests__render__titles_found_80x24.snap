@@ -2,7 +2,7 @@
 source: crates/tui/src/tests/render.rs
 expression: shot(&scenario(size))
 ---
-" newsreel                                                       ↓ 10.0 MiB/s  "
+"   newsreel                                                       ↓ 10.0 MiB/s  "
 "                                                                                "
 "     search │ night of the living dead                                3 titles  "
 "            │                                                                   "

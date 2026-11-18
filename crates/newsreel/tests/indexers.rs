@@ -95,7 +95,7 @@ fn an_indexer_is_checked_then_searched_at_once_and_its_key_is_never_printed() {
     assert_eq!(
         config,
         format!(
-            "# mine\nupdates: off\nsources:\n  newznab:\n    - name: hydra\n      url: {endpoint}\n      api_key: k3y\n"
+            "# mine\nupdates: off\n\nsources:\n  newznab:\n    - name: hydra\n      url: {endpoint}\n      api_key: k3y\n"
         )
     );
     #[cfg(unix)]

@@ -59,8 +59,8 @@ fn connect_drives_the_engine_on_another_machine_and_never_starts_one_here() {
 
     let search = laptop.run(&["search", "arch", "linux"]);
     let first = search.stdout.lines().nth(1).and_then(|row| row.split('\t').next());
-    assert_eq!(first, Some("9b5212"), "{}", search.stderr);
-    let got = laptop.json(&["get", "9b5212", "--json"]);
+    assert_eq!(first, Some("u9b5212"), "{}", search.stderr);
+    let got = laptop.json(&["get", "u9b5212", "--json"]);
     assert_eq!(got["reply"]["job"]["id"], ARCH);
     assert!(ids(&server).contains(&ARCH.to_string()), "the download runs on the server");
     assert_eq!(laptop.json(&["status", "9b5212", "--json"])["jobs"][0]["id"], ARCH);
@@ -135,7 +135,7 @@ fn pull_copies_a_finished_download_from_the_engine_on_another_machine_and_again_
     std::fs::create_dir_all(held.parent().unwrap()).unwrap();
     std::fs::write(&held, &bytes).unwrap();
     assert_eq!(laptop.run(&["search", "night", "of", "the", "living", "dead"]).code, 0);
-    assert_eq!(laptop.run(&["get", "4c1e9a", "--files", "*.srt"]).code, 0);
+    assert_eq!(laptop.run(&["get", "u4c1e9a", "--files", "*.srt"]).code, 0);
     assert_eq!(laptop.run(&["wait", "4c1e9a"]).code, 0);
 
     let into = laptop.path("pulled").display().to_string();

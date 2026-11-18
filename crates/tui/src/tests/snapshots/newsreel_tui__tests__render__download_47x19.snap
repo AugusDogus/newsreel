@@ -2,13 +2,13 @@
 source: crates/tui/src/tests/render.rs
 expression: shot(&scenario(size))
 ---
-"  newsreel                      ↓ 10.0 MiB/s "
+"  newsreel                        ↓ 10.0 MiB/s "
 "                                               "
 "│ night of the living…    8 results · 2 failed "
 "│                                              "
 "│ downloading                                  "
 "● wikipedia-en-2026-09-text    ▃▁▃▂▂▂▂▂▂▁  22% "
-"│   ~/Downloads/torrentia…edia-en-2026-09-text "
+"│   ~/Downloads/newsreel/…edia-en-2026-09-text "
 "│   5.3 GiB of 23.0 GiB · 10.0 MiB/s           "
 "│   enwiki-20260…ream.xml.bz2  ━━────────  24% "
 "│   enwiki-20260…ndex.txt.bz2  ──────────   0% "

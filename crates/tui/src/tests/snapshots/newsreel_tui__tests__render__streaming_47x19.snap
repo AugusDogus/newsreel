@@ -1,9 +1,8 @@
 ---
 source: crates/tui/src/tests/render.rs
-assertion_line: 29
 expression: shot(&scenario(size))
 ---
-"  newsreel                      ↓ 10.0 MiB/s "
+"  newsreel                        ↓ 10.0 MiB/s "
 "                                               "
 "│ night of the living dead           2 of 6    "
 "│                                              "

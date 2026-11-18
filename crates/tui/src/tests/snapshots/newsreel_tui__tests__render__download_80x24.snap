@@ -2,12 +2,12 @@
 source: crates/tui/src/tests/render.rs
 expression: shot(&scenario(size))
 ---
-" newsreel                                                       ↓ 10.0 MiB/s  "
+"   newsreel                                                       ↓ 10.0 MiB/s  "
 "                                                                                "
 "     search │ night of the living dead                    8 results · 2 failed  "
 "            │                                                                   "
 "downloading ● wikipedia-en-2026-09-text           ▃▂▂▂▂▃▂▁   22%      30m left  "
-"            │   ~/Downloads/newsreel/wikipedia-en-2026-09-text                "
+"            │   ~/Downloads/newsreel/wikipedia-en-2026-09-text                  "
 "            │   5.3 GiB of 23.0 GiB · 10.0 MiB/s · 27 connections               "
 "            │   enwiki-20260901-…istream.xml.bz2  ━╸──────   24%      21.4 GiB  "
 "            │   enwiki-20260901-…m-index.txt.bz2  ────────    0%       254 MiB  "
