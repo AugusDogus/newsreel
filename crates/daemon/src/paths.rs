@@ -119,6 +119,11 @@ impl Paths {
         self.state.join("engine.error")
     }
 
+    /// What the engine says while changes to config.yaml wait for it to restart.
+    pub fn restart_needed(&self) -> PathBuf {
+        self.state.join("restart-needed")
+    }
+
     /// Keeps why the engine could not start, for the client that started it to report.
     pub fn record_startup_error(&self, error: &Error) {
         let file = self.startup_error();

@@ -143,3 +143,34 @@ TV keeps the connection open after its answer and drops the next request on it. 
 with the same error as gmrender, and passes now.
 
 **Upstream.** Same client in v0.7.0. Upstream has it.
+
+## 3. Hand edits to config.yaml are ignored until the engine restarts
+
+**Bug.** An indexer added to config.yaml by hand showed up in `newsreel indexers`, which reads
+the file, but searches never asked it, and nothing said why.
+
+**Cause.** `serve` in `daemon/mod.rs` loads config.yaml once and builds everything from it.
+Only the engine's own writes (`indexers add` and `remove`) call `SearchPort::reconfigure`.
+
+**What upstream's design supports.** Upstream already re-reads some settings each time it uses
+them (preferences, the update policy, the player) and can swap a running search's indexer list
+(`Search::reconfigure`, used by `indexers add`). Everything else is built once at start: the NNTP
+pool and its connections (the `usenet` crate's `Pool` has no way to change its servers), the
+downloads folder the owner and disk detector watch, the network listener and its exposure, and
+the subtitle, catalog and ffmpeg clients. Rebuilding those in place would mean restarting most of
+the engine from inside, which is what a restart already does safely (it saves state first).
+
+**Fix** (`daemon/config_watch.rs`). The engine looks at config.yaml every 2 seconds. When it
+changes:
+- it loads it; one that does not load is logged and the running settings are kept;
+- a changed indexer list or `sources.disabled` goes to `reconfigure`, so searches use it at once;
+- a change to a setting read only at start (`downloads.dir`, `usenet.servers`, `subtitles`,
+  `catalog`, `ffmpeg`, `plays.max`, `server`, `public_address`) is logged, and written to
+  `state/restart-needed`, which `newsreel engine status` shows as its notice, with how to restart
+  (`newsreel engine stop`; the next command starts it again). Undoing the edit clears it.
+
+**Test.** `the_engine_searches_indexers_added_by_hand_and_says_when_a_change_needs_a_restart`
+(`crates/newsreel/tests/search.rs`) failed before (the new indexer was never asked) and passes
+now. `only_what_the_engine_reads_once_needs_a_restart` checks which settings count.
+
+**Upstream.** Same single load in v0.7.0 (`Config::load` in `serve`). Upstream has it.

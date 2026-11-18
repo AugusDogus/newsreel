@@ -32,14 +32,21 @@ pub fn run(command: DaemonCommand, env: &Env, mode: Mode) -> Result<u8, Error> {
                 Some(mut conn) => {
                     let jobs = conn.ask::<Vec<Job>>(&Request::Status { refs: Vec::new() });
                     let downloads = jobs.ok().map(|jobs| jobs.len());
+                    let version = local
+                        .then(|| {
+                            connect::mismatch(Some(&conn.engine_version), service_binary.as_deref(), &this_version)
+                        })
+                        .flatten();
+                    // The engine writes it while changes to config.yaml wait for a restart.
+                    let restart = local.then(|| std::fs::read_to_string(paths.restart_needed()).ok()).flatten();
+                    let notice = match (version, restart) {
+                        (Some(version), Some(restart)) => Some(format!("{version}; {restart}")),
+                        (version, restart) => version.or(restart),
+                    };
                     DaemonReport {
                         engine: "running",
                         pid: Some(conn.pid),
-                        notice: local
-                            .then(|| {
-                                connect::mismatch(Some(&conn.engine_version), service_binary.as_deref(), &this_version)
-                            })
-                            .flatten(),
+                        notice,
                         version: Some(conn.engine_version.clone()),
                         address: Some(conn.engine.address().to_string()),
                         device: chosen.map(|chosen| chosen.device),

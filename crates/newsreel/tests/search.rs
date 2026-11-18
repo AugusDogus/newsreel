@@ -1,10 +1,11 @@
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 use serde_json::Value;
 use usenet::fake::{FakeServer, Posting};
 
 mod common;
-use common::{Home, Run, Server, hooks, ok, status};
+use common::{Home, Run, Server, eventually, hooks, ok, status};
 
 /// One Newznab search result.
 struct Item {
@@ -349,6 +350,34 @@ fn the_engine_refuses_a_config_that_does_not_parse() {
     assert_eq!(config(&doctor), ("fail".to_string(), message));
     assert_eq!(fixed.code, 0, "{}", fixed.stderr);
     assert_eq!(config(&fixed_doctor), ("ok".to_string(), file));
+}
+
+/// The engine read config.yaml once, so an indexer added by hand was listed by newsreel indexers,
+/// which reads the file, but never searched until the engine restarted.
+#[test]
+fn the_engine_searches_indexers_added_by_hand_and_says_when_a_change_needs_a_restart() {
+    let server =
+        Server::start(|base| vec![("/hydra/api", vec![ok(sintel(base))]), ("/geek/api", vec![ok(sintel_4k(base))])]);
+    let home = Home::searching(&[server.indexer("hydra", None)]);
+    assert_eq!(home.run(&["search", "sintel"]).code, 0);
+
+    let both = format!("sources:\n  newznab:\n{}{}", server.indexer("hydra", None), server.indexer("geek", None));
+    home.write_config(&both);
+    eventually("a search asks the indexer added by hand", Duration::from_secs(20), || {
+        home.run(&["search", "sintel 2010"]);
+        !server.asked("/geek/").is_empty()
+    });
+    assert!(!home.run(&["engine", "status"]).stdout.contains("restart"), "indexers need no restart");
+
+    home.write_config(&format!(
+        "{both}usenet:\n  servers:\n    - host: news.example.invalid\n      username: you\n      password: secret\n"
+    ));
+    eventually("engine status says a restart is needed", Duration::from_secs(20), || {
+        home.run(&["engine", "status"]).stdout.contains("usenet.servers")
+    });
+    let status = home.run(&["engine", "status"]).stdout;
+    assert!(status.contains("newsreel engine stop"), "it says how to restart: {status}");
+    assert!(home.log().contains("usenet.servers"), "{}", home.log());
 }
 
 #[test]
