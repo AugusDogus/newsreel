@@ -27,6 +27,8 @@ export class PlayerActions {
 
   play = (): void => void this.element.play().catch(() => {});
 
+  pause = (): void => this.element.pause();
+
   /** `shown` draws the play or pause symbol over the picture, for actions with no button under the pointer. */
   toggle = (shown = false): void => {
     const start = this.element.paused || this.element.ended;

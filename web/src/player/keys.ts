@@ -3,6 +3,8 @@ import { isBack, isTv } from "../lib/tv";
 /** What a key press asks of the player. */
 export type Command =
   | { kind: "toggle" }
+  | { kind: "play" }
+  | { kind: "pause" }
   | { kind: "seekBy"; seconds: number }
   /** A fraction of the video's length. */
   | { kind: "seekTo"; fraction: number }
@@ -104,6 +106,26 @@ const REMOTE: Record<string, Command> = {
   ArrowDown: { kind: "controls" },
 };
 
+/** A remote's or a keyboard's media keys, by name. */
+const MEDIA: Record<string, Command> = {
+  MediaPlayPause: { kind: "toggle" },
+  MediaPlay: { kind: "play" },
+  MediaPause: { kind: "pause" },
+  MediaFastForward: { kind: "seekBy", seconds: 10 },
+  MediaRewind: { kind: "seekBy", seconds: -10 },
+  MediaStop: { kind: "leave" },
+};
+
+/** The media keys by the key codes LG webOS and Samsung Tizen send, often with no key name. */
+const MEDIA_CODES: Record<number, string> = {
+  415: "MediaPlay",
+  19: "MediaPause",
+  10252: "MediaPlayPause",
+  417: "MediaFastForward",
+  412: "MediaRewind",
+  413: "MediaStop",
+};
+
 /**
  * The command for a key press, or null when the key belongs to the control that has focus.
  * Symbols are read as typed, wherever the layout puts them. Letters and digits fall back to the
@@ -112,6 +134,9 @@ const REMOTE: Record<string, Command> = {
 export function command(event: KeyboardEvent): Command | null {
   if (event.metaKey || event.ctrlKey || event.altKey) return null;
   if (isBack(event)) return { kind: "leave" };
+  // No control has a use for a media key, so it works wherever focus is.
+  const media = MEDIA[event.key] ?? MEDIA[MEDIA_CODES[event.keyCode] ?? ""];
+  if (media) return media;
   const target = event.target as Element;
   // Menus and form controls use arrows, Home, End, and typing themselves.
   if (target.closest("[role=menu], input, select, textarea, [contenteditable]")) return null;

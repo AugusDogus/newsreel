@@ -387,6 +387,10 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
       switch (action.kind) {
         case "toggle":
           return actions.toggle(true);
+        case "play":
+          return actions.play();
+        case "pause":
+          return actions.pause();
         case "seekBy":
           return actions.seekBy(action.seconds);
         case "seekTo":
