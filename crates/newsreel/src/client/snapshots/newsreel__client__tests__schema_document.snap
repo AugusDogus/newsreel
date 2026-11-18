@@ -1108,6 +1108,11 @@ expression: "serde_json::to_string_pretty(&value).unwrap()"
       "retryable": false
     },
     {
+      "code": "service_unavailable",
+      "exit": 6,
+      "retryable": false
+    },
+    {
       "code": "internal",
       "exit": 1,
       "retryable": false

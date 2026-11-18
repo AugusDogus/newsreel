@@ -38,6 +38,9 @@ crate::words! {
         NotPaired = "not_paired",
         /// Something only the machine running the engine may do, such as adding a device.
         LocalOnly = "local_only",
+        /// The login service, launchd, systemd's user manager or Task Scheduler, is not there or
+        /// refused the change, as in a session without a login, so the engine cannot start at login.
+        ServiceUnavailable = "service_unavailable",
         Internal = "internal",
     }
 }

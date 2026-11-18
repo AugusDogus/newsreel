@@ -43,7 +43,8 @@ pub const fn code(error: ErrorCode) -> u8 {
         | DaemonVersion
         | StateCorrupt
         | NotPaired
-        | LocalOnly => ENVIRONMENT,
+        | LocalOnly
+        | ServiceUnavailable => ENVIRONMENT,
         DiskFull | TooLarge | NoSelection | StorageError | VerificationFailed | NoSource => DOWNLOAD,
         Interrupted => INTERRUPTED,
     }

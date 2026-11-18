@@ -871,6 +871,13 @@ fn sample(code: ErrorCode) -> Error {
             "only the computer running newsreel can add or remove devices",
             "open newsreel on that computer to do it",
         ),
+        ErrorCode::ServiceUnavailable => given(
+            code,
+            "cannot set up the login service: systemctl --user daemon-reload failed: Failed to connect to bus: No medium found",
+            "systemd's user manager does not answer here, as under su, sudo or ssh without a login session, in a \
+             container or WSL, or with no systemd; run this again from a logged-in desktop session, or once loginctl \
+             enable-linger has started your user manager; newsreel status starts the engine meanwhile",
+        ),
         ErrorCode::Internal => Error::internal("the engine thread stopped"),
     }
 }

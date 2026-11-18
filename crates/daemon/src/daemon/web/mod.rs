@@ -284,7 +284,9 @@ fn status(code: ErrorCode) -> &'static str {
         TooLarge => "413 Content Too Large",
         FetchFailed => "502 Bad Gateway",
         ProvidersUnavailable | NetworkUnavailable | NoSource | Interrupted => "503 Service Unavailable",
-        SandboxNetworkBlocked | SandboxWriteBlocked | DaemonUnavailable | DaemonVersion => "503 Service Unavailable",
+        SandboxNetworkBlocked | SandboxWriteBlocked | DaemonUnavailable | DaemonVersion | ServiceUnavailable => {
+            "503 Service Unavailable"
+        }
         DiskFull => "507 Insufficient Storage",
         StorageError | StateCorrupt | VerificationFailed | Internal => "500 Internal Server Error",
     }

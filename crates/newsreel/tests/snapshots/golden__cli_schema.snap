@@ -1110,6 +1110,11 @@ expression: value
         "retryable": false
       },
       {
+        "code": "service_unavailable",
+        "exit": 6,
+        "retryable": false
+      },
+      {
         "code": "internal",
         "exit": 1,
         "retryable": false

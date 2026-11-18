@@ -1,8 +1,8 @@
 //! `newsreel engine`: whether the engine runs, stopping it, and its login service.
 
-use newsreel_core::Error;
 use newsreel_core::Job;
 use newsreel_core::protocol::Request;
+use newsreel_core::{Error, ErrorCode};
 use serde::Serialize;
 
 use super::remote::Remotes;
@@ -90,14 +90,22 @@ pub fn run(command: DaemonCommand, env: &Env, mode: Mode) -> Result<u8, Error> {
                 Some(conn) => connect::stop(conn, connect::Stop::Asked).map(|_| true)?,
                 None => false,
             };
+            // Whether an engine runs after a failed install, which the hint says with the rest.
+            let hinted = |e: Error, said: &dyn Fn(&str) -> String| Error {
+                hint: Some(said(e.hint.as_deref().unwrap_or_default())),
+                ..e
+            };
             match service::install(env, &paths) {
                 Err(e) if stopped => Err(match launch::start(&paths, env) {
-                    Ok(_) => e,
+                    Ok(_) => hinted(e, &|hint| format!("the engine it stopped runs again; {hint}")),
                     Err(start) => Error {
                         message: format!("{}; the engine it stopped did not start again: {}", e.message, start.message),
                         ..e
                     },
                 }),
+                Err(e) if e.code == ErrorCode::ServiceUnavailable => {
+                    Err(hinted(e, &|hint| format!("{hint}; newsreel status starts the engine meanwhile")))
+                }
                 installed => service_report(installed?, mode),
             }
         }

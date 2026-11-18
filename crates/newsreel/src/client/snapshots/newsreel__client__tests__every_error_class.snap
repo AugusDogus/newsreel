@@ -413,6 +413,20 @@ hint: open newsreel on that computer to do it
   },
   "next": null
 }
+=== service_unavailable, exit 6
+error[service_unavailable]: cannot set up the login service: systemctl --user daemon-reload failed: Failed to connect to bus: No medium found
+hint: systemd's user manager does not answer here, as under su, sudo or ssh without a login session, in a container or WSL, or with no systemd; run this again from a logged-in desktop session, or once loginctl enable-linger has started your user manager; newsreel status starts the engine meanwhile
+--- json
+{
+  "schema": 1,
+  "type": "error",
+  "error": {
+    "code": "service_unavailable",
+    "message": "cannot set up the login service: systemctl --user daemon-reload failed: Failed to connect to bus: No medium found",
+    "hint": "systemd's user manager does not answer here, as under su, sudo or ssh without a login session, in a container or WSL, or with no systemd; run this again from a logged-in desktop session, or once loginctl enable-linger has started your user manager; newsreel status starts the engine meanwhile"
+  },
+  "next": null
+}
 === internal, exit 1
 error[internal]: the engine thread stopped
 --- json

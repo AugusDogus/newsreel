@@ -613,6 +613,53 @@ fn a_failed_engine_install_starts_again_the_engine_it_stopped() {
     assert_ne!(after, before, "install stopped the engine before it tried");
 }
 
+/// A login service this environment cannot reach, as under su, sudo or ssh without a login
+/// session, or in a container, is the environment's doing, not newsreel's: engine install says
+/// what happened, whether the engine still runs, and what to do instead.
+// Its stand-ins are for launchd and systemd.
+#[cfg(unix)]
+#[test]
+fn an_engine_install_the_login_service_refuses_says_so_and_what_to_do() {
+    let mut service = Service::new();
+    let refusal = if cfg!(target_os = "macos") {
+        "Bootstrap failed: 125: Domain does not support specified action"
+    } else {
+        "Failed to connect to bus: No medium found"
+    };
+    for program in ["launchctl", "systemctl"] {
+        service.home.stub(program, &format!("echo '{refusal}' >&2; exit 1"));
+    }
+    let failed = |home: &Home| {
+        let run = home.run(&["engine", "install", "--json"]);
+        let error = run.json()["error"].clone();
+        let text = |key: &str| error[key].as_str().unwrap_or_default().to_string();
+        (run.code, text("code"), text("message"), text("hint"))
+    };
+    let what_to_do = if cfg!(target_os = "macos") { "in Terminal on the Mac itself" } else { "loginctl enable-linger" };
+
+    let (code, kind, message, hint) = failed(&service.home);
+    assert_eq!((code, kind.as_str()), (6, "service_unavailable"));
+    assert!(message.starts_with("cannot set up the login service: ") && message.ends_with(refusal), "{message}");
+    assert!(hint.contains(what_to_do) && hint.ends_with("newsreel status starts the engine meanwhile"), "{hint}");
+    assert!(!hint.contains("runs again"), "no engine ran before: {hint}");
+
+    assert_eq!(service.home.run(&["status"]).code, 0);
+    let (_, kind, _, hint) = failed(&service.home);
+    assert_eq!(kind, "service_unavailable");
+    assert!(hint.starts_with("the engine it stopped runs again; "), "{hint}");
+
+    let missing = service.home.path("no-programs");
+    std::fs::create_dir_all(&missing).unwrap();
+    service.home.set(hooks::SERVICE_BIN, &missing.display().to_string());
+    let (_, kind, message, _) = failed(&service.home);
+    assert_eq!(kind, "service_unavailable");
+    let program = if cfg!(target_os = "macos") { "launchctl" } else { "systemctl" };
+    assert!(
+        message.starts_with(&format!("cannot set up the login service: {program} is not on this system")),
+        "{message}"
+    );
+}
+
 // Its stand-ins are for launchd and systemd; W4 tests the Windows logon task in CI.
 #[cfg(unix)]
 #[test]

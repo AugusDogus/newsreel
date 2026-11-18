@@ -270,16 +270,36 @@ fn output(env: &Env, name: &str, args: &[&str]) -> Result<String, Error> {
     if name == "systemctl" && env.var("XDG_RUNTIME_DIR").is_none() {
         command.env("XDG_RUNTIME_DIR", format!("/run/user/{}", crate::paths::uid()));
     }
-    let output =
-        command.args(args).output().map_err(|e| Error::new(ErrorCode::Internal, format!("cannot run {name}: {e}")))?;
+    let output = command.args(args).output().map_err(|e| match e.kind() {
+        std::io::ErrorKind::NotFound => unavailable(name, format!("{name} is not on this system")),
+        _ => unavailable(name, format!("cannot run {name}: {e}")),
+    })?;
     if output.status.success() {
         return Ok(String::from_utf8_lossy(&output.stdout).into_owned());
     }
-    Err(Error::internal(format!(
-        "{name} {} failed: {}",
-        args.join(" "),
-        String::from_utf8_lossy(&output.stderr).trim()
-    )))
+    let said = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(unavailable(name, format!("{name} {} failed: {said}", args.join(" "))))
+}
+
+/// A login service that `program` could not set up. It is how this system or session is, not a
+/// fault of newsreel's, so the hint says why that happens and what to do instead.
+fn unavailable(program: &str, what: String) -> Error {
+    let why = match program {
+        "systemctl" | "loginctl" => {
+            "systemd's user manager does not answer here, as under su, sudo or ssh without a login session, in a \
+             container or WSL, or with no systemd; run this again from a logged-in desktop session, or once \
+             loginctl enable-linger has started your user manager"
+        }
+        "launchctl" => {
+            "launchd takes login agents only from a logged-in desktop session, which ssh and su do not have; run this \
+             again in Terminal on the Mac itself"
+        }
+        _ => {
+            "Task Scheduler refused the logon task, as a policy or an account it cannot run tasks for makes it do; \
+             run this again from a desktop session of this account"
+        }
+    };
+    Error::new(ErrorCode::ServiceUnavailable, format!("cannot set up the login service: {what}")).with_hint(why)
 }
 
 /// Whether systemd starts the services of user `uid` at boot and keeps them after the user logs
