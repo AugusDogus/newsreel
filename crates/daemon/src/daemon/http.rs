@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant};
 
 use newsreel_core::filetype::FileType;
-use newsreel_core::{DownloadId, ErrorCode};
+use newsreel_core::{DownloadId, Error, ErrorCode};
 use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
@@ -748,6 +748,17 @@ impl Connection<'_> {
             ),
             None => ("200 OK", (0, file.size), String::new()),
         };
+        // A read that starts on bytes no server can send fails before it begins, saying why.
+        if !file.complete && !request.head_only() && start < end {
+            let length = CHUNK.min(end - start);
+            if let Err(error) = unfetchable(self.ctx.engine.ask(move |e| e.want_range(id, index, start, length)).await)
+            {
+                let text =
+                    error.hint.as_ref().map_or(error.message.clone(), |hint| format!("{}\n{hint}", error.message));
+                let plain = "text/plain; charset=utf-8";
+                return self.send("503 Service Unavailable", plain, "", text.as_bytes(), &request).await;
+            }
+        }
         let content_type = dlna.map_or(content_type(&file.path), |dlna| dlna.mime.as_str());
         let dlna = dlna.map(Dlna::headers).unwrap_or_default();
         // A download's ID fixes every byte of its files, so this tag never names other bytes,
@@ -860,8 +871,10 @@ enum Arrived {
 async fn arrived(ctx: &Ctx, id: DownloadId, index: u32, offset: u64, length: u64) -> io::Result<Arrived> {
     let started = Instant::now();
     loop {
-        if let Ok(bytes @ 1..) = ctx.engine.ask(move |e| e.want_range(id, index, offset, length)).await {
-            return Ok(Arrived::Bytes(bytes));
+        match unfetchable(ctx.engine.ask(move |e| e.want_range(id, index, offset, length)).await) {
+            Ok(Some(bytes @ 1..)) => return Ok(Arrived::Bytes(bytes)),
+            Err(error) => return Err(io::Error::other(error.message)),
+            Ok(_) => {}
         }
         match ctx.owner.ask(|reply| Command::StreamFile { id, index, reply }).await {
             Ok(file) if file.complete => return Ok(Arrived::Done),
@@ -872,6 +885,17 @@ async fn arrived(ctx: &Ctx, id: DownloadId, index: u32, offset: u64, length: u64
             return Err(io::ErrorKind::TimedOut.into());
         }
         tokio::time::sleep(POLL).await;
+    }
+}
+
+/// What `want_range` said, as the bytes that have arrived, if it said, or the error that says no
+/// server can send the bytes at the offset, so that waiting for them would never end.
+fn unfetchable(wanted: Result<u64, Error>) -> Result<Option<u64>, Error> {
+    match wanted {
+        Ok(bytes) => Ok(Some(bytes)),
+        Err(error) if error.code == ErrorCode::NoSource => Err(error),
+        // Not in the engine, which a finished download no longer is.
+        Err(_) => Ok(None),
     }
 }
 

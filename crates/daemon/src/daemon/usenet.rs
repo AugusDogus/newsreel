@@ -10,7 +10,9 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use newsreel_core::{DownloadId, Error, ErrorCode, PieceMap, Slice};
+use usenet::article::ArticleError;
 use usenet::manifest::Piece;
+use usenet::yenc::Part;
 use usenet::{Manifest, Nzb, Pool, ResolveError, article};
 
 use super::BoxFuture;
@@ -29,6 +31,11 @@ const READAHEAD: usize = 64;
 const POLL_WAIT: Duration = Duration::from_millis(10);
 /// How often a worker held back by a rate limit looks again, so lifting the limit frees it soon.
 const PACE_CHECK: Duration = Duration::from_millis(200);
+/// Pieces no server can send that the log names one by one, per download and run; the rest are
+/// counted when the download stops.
+const NAMED_MOST: u32 = 3;
+/// The least time between log lines about one download's fetches that will be tried again.
+const RETRY_LOG_EVERY: Duration = Duration::from_secs(60);
 
 /// Reads a manifest: the files a download writes, and where each article lands in them.
 pub fn parse(bytes: &[u8]) -> Result<Layout, Error> {
@@ -99,14 +106,17 @@ struct State {
     /// CRC32 an earlier run journaled for a piece not in `have`: read back before fetching.
     journaled: Vec<Vec<Option<u32>>>,
     in_flight: BTreeSet<PieceRef>,
-    /// Missing on every server.
-    failed: BTreeSet<PieceRef>,
+    /// Pieces no server can send intact, and why, which asking again will not change.
+    failed: BTreeMap<PieceRef, String>,
     urgent: VecDeque<PieceRef>,
     /// Where the last requested range ended; readahead continues from here.
     focus: Option<PieceRef>,
     workers: usize,
     landed: u64,
-    last_error: Option<String>,
+    /// Pieces in `failed` the log has named, so a release with thousands gone logs a few.
+    named: u32,
+    /// When the log last said a fetch failed and will be tried again.
+    retry_logged_at: Option<Instant>,
     announced_downloading: bool,
     /// Bytes per second the download may take, when the owner caps it.
     limit: Option<NonZeroU32>,
@@ -129,7 +139,7 @@ impl State {
         self.wanted.get(f) == Some(&true)
             && self.have[f].get(p) == Some(&None)
             && !self.in_flight.contains(&(f, p))
-            && !self.failed.contains(&(f, p))
+            && !self.failed.contains_key(&(f, p))
     }
 
     fn pick(&mut self, files: &[OutputFile]) -> Option<PieceRef> {
@@ -154,7 +164,7 @@ impl State {
                 pieces += have.iter().filter(|h| h.is_none()).count() as u32;
             }
         }
-        (pieces, self.failed.iter().filter(|(f, _)| self.wanted[*f]).count() as u32)
+        (pieces, self.failed.keys().filter(|(f, _)| self.wanted[*f]).count() as u32)
     }
 }
 
@@ -201,6 +211,21 @@ impl Job {
             // Each connection carries several requests at once, so requests overcount them.
             connections: (state.in_flight.len() as u32).min(open),
         }
+    }
+
+    /// Where a piece lands, as a log line or an error names it.
+    fn place(&self, (f, p): PieceRef) -> String {
+        let (file, piece) = (&self.files[f], &self.files[f].pieces[p]);
+        let name = file.path.file_name().unwrap_or(file.path.as_os_str()).to_string_lossy();
+        format!("bytes {}..{} of {name}", piece.offset, piece.offset + piece.length)
+    }
+
+    /// The error a reader gets for a piece no server can send.
+    fn unrecoverable(&self, piece: PieceRef, why: &str) -> Error {
+        Error::new(ErrorCode::NoSource, format!("no server can send {}: {why}", self.place(piece))).with_hint(format!(
+            "this release cannot play past that point; pick another release, or run newsreel resume {} to ask the servers again",
+            short(self.id)
+        ))
     }
 
     /// Pieces of `file` under `[offset, offset + length)`.
@@ -429,28 +454,19 @@ async fn worker(job: Arc<Job>, pool: Pool, events: mpsc::Sender<EngineEvent>, ge
                 tokio::time::sleep((start - now).min(PACE_CHECK)).await;
             }
         }
-        let fetched = article::fetch(&pool, &piece.ids).await;
-        let landed = match fetched {
-            Ok(part) => {
-                let (from, to) = (piece.skip as usize, (piece.skip + piece.length) as usize);
-                match part.data.get(from..to).filter(|_| part.begin == piece.begin) {
-                    Some(bytes) => Ok(bytes.to_vec()),
-                    None => Err(Some(format!(
-                        "article <{}> holds bytes {}..{} of its file, not the {} bytes from {} the NZB places there",
-                        piece.ids[0],
-                        part.begin,
-                        part.end(),
-                        piece.length,
-                        piece.begin + piece.skip
-                    ))),
-                }
-            }
-            Err(e) if e.is_missing() => Err(None),
-            Err(e) => {
+        let landed = match Fetched::of(piece, article::fetch(&pool, &piece.ids).await) {
+            Fetched::Landed(bytes) => Ok(bytes),
+            Fetched::Unrecoverable(why) => Err(why),
+            Fetched::Retry(why) => {
                 {
                     let mut state = job.state.lock().unwrap();
                     state.in_flight.remove(&next);
-                    state.last_error = Some(e.to_string());
+                    let now = Instant::now();
+                    if state.retry_logged_at.is_none_or(|at| now - at >= RETRY_LOG_EVERY) {
+                        state.retry_logged_at = Some(now);
+                        let place = job.place(next);
+                        log(&format!("{} cannot fetch {place} yet, trying again every 2s: {why}", short(job.id)));
+                    }
                 }
                 tokio::time::sleep(RETRY_AFTER).await;
                 continue;
@@ -477,14 +493,65 @@ async fn worker(job: Arc<Job>, pool: Pool, events: mpsc::Sender<EngineEvent>, ge
                 state.landed += bytes.len() as u64;
                 job.journal.record(next, crc);
             }
-            Err(corrupt) => {
-                if let Some(why) = corrupt {
-                    state.last_error = Some(why);
-                }
-                state.failed.insert(next);
-            }
+            Err(why) => unrecoverable(&job, &mut state, next, why),
         }
     }
+}
+
+/// What one fetch of a piece came to.
+#[derive(PartialEq, Eq, Debug)]
+enum Fetched {
+    /// The piece's bytes, in the place the NZB gives them.
+    Landed(Vec<u8>),
+    /// No server sent it intact, and asking again sends the same: it expired, or every copy
+    /// posted is damaged. Why, for the log and the download's error.
+    Unrecoverable(String),
+    /// It may come on a later try: a server could not be reached, or a connection broke.
+    Retry(String),
+}
+
+impl Fetched {
+    fn of(piece: &Piece, fetched: Result<Part, ArticleError>) -> Self {
+        match fetched {
+            Ok(part) => {
+                let (from, to) = (piece.skip as usize, (piece.skip + piece.length) as usize);
+                match part.data.get(from..to).filter(|_| part.begin == piece.begin) {
+                    Some(bytes) => Self::Landed(bytes.to_vec()),
+                    None => Self::Unrecoverable(format!(
+                        "article <{}> holds bytes {}..{} of its file, not the {} bytes from {} the NZB places there",
+                        piece.ids[0],
+                        part.begin,
+                        part.end(),
+                        piece.length,
+                        piece.begin + piece.skip
+                    )),
+                }
+            }
+            // A server sends the copy every time it is asked for, so a damaged one stays damaged.
+            Err(e @ (ArticleError::Yenc { .. } | ArticleError::Nntp(usenet::nntp::NntpError::Missing { .. }))) => {
+                Self::Unrecoverable(e.to_string())
+            }
+            Err(e) => Self::Retry(e.to_string()),
+        }
+    }
+}
+
+/// Sets aside a piece no server can send, and names it in the log. A reader waiting on it then
+/// fails instead of waiting ([`EnginePort::want_range`]), and the download stops once only such
+/// pieces are left ([`finish`]).
+///
+/// PAR2 repair hooks in here: a piece the release's recovery files can rebuild is queued for
+/// repair instead of set aside.
+fn unrecoverable(job: &Job, state: &mut State, piece: PieceRef, why: String) {
+    if state.named < NAMED_MOST {
+        state.named += 1;
+        log(&format!("{} cannot fetch {}: {why}", short(job.id), job.place(piece)));
+    }
+    state.failed.insert(piece, why);
+}
+
+fn short(id: DownloadId) -> String {
+    id.to_hex()[..6].to_string()
 }
 
 fn finish(job: &Job, state: &mut State, events: &mpsc::Sender<EngineEvent>) {
@@ -502,11 +569,16 @@ fn finish(job: &Job, state: &mut State, events: &mpsc::Sender<EngineEvent>) {
         let _ = events.send(EngineEvent::Finished { id: job.id });
     } else if unavailable == pieces {
         state.run = Run::Stopped;
+        let first = state.failed.iter().find(|((f, _), _)| state.wanted[*f]);
+        let why = first.map(|(piece, why)| format!("; {}: {why}", job.place(*piece))).unwrap_or_default();
         let error = Error::new(
             ErrorCode::NoSource,
-            format!("{unavailable} articles are missing on every server, so the download cannot finish"),
+            format!("no server can send {unavailable} of the release's articles, so the download cannot finish{why}"),
         )
-        .with_hint("the release has expired or been taken down; search again and pick another release");
+        .with_hint(
+            "the release has expired, been taken down, or was posted damaged; search again and pick another release",
+        );
+        log(&format!("{} stopped: {}", short(job.id), error.message));
         let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, 0) });
         let _ = events.send(EngineEvent::Failed { id: job.id, error });
     }
@@ -575,12 +647,13 @@ impl EnginePort for Usenet {
             have,
             journaled,
             in_flight: BTreeSet::new(),
-            failed: BTreeSet::new(),
+            failed: BTreeMap::new(),
             urgent: VecDeque::new(),
             focus: None,
             workers: 0,
             landed: 0,
-            last_error: None,
+            named: 0,
+            retry_logged_at: None,
             announced_downloading: false,
             limit: None,
             paced_until: None,
@@ -631,6 +704,7 @@ impl EnginePort for Usenet {
                 state.generation += 1;
                 state.workers = 0;
                 state.failed.clear();
+                state.named = 0;
             }
         }
         self.start_workers(&job);
@@ -733,6 +807,21 @@ impl EnginePort for Usenet {
             return Ok(length);
         };
         let arrived = job.files[f].pieces[first].offset.saturating_sub(offset).min(length);
+        if let Some(why) = state.failed.get(&(f, first))
+            && arrived == 0
+        {
+            // The reader cannot go on, so neither can a play of this download: stop it, which
+            // says why in its status and lets a player move to another source.
+            let error = job.unrecoverable((f, first), why);
+            if state.run == Run::Running {
+                state.run = Run::Stopped;
+                state.generation += 1;
+                state.workers = 0;
+                log(&format!("{} stopped: a reader waits on bytes no server can send", short(id)));
+                self.queued.push(EngineEvent::Failed { id, error: error.clone() });
+            }
+            return Err(error);
+        }
         for r in missing.iter().rev() {
             state.urgent.push_front(*r);
         }
@@ -880,12 +969,13 @@ mod tests {
             journaled: have.clone(),
             have,
             in_flight: BTreeSet::new(),
-            failed: BTreeSet::new(),
+            failed: BTreeMap::new(),
             urgent: VecDeque::new(),
             focus: None,
             workers: 0,
             landed: 0,
-            last_error: None,
+            named: 0,
+            retry_logged_at: None,
             announced_downloading: false,
             limit: None,
             paced_until: None,
@@ -934,11 +1024,29 @@ mod tests {
         assert_eq!(picks, [50, 51, 52, 53, 54]);
     }
 
+    /// Every server sent Charade (1963)'s article cut short, without its `=yend` line, and the
+    /// engine asked for it again every 2 seconds for good.
+    #[test]
+    fn a_damaged_or_missing_article_is_set_aside_and_an_unreachable_server_is_asked_again() {
+        use usenet::nntp::NntpError;
+        use usenet::yenc::YencError;
+        let piece = piece(0, 4);
+        let id = piece.ids[0].clone();
+        let damaged = ArticleError::Yenc { message_id: id.clone(), error: YencError::NoHeader };
+        assert!(matches!(Fetched::of(&piece, Err(damaged)), Fetched::Unrecoverable(why) if why.contains(&id)));
+        let missing = ArticleError::Nntp(NntpError::Missing { message_id: id.clone() });
+        assert!(matches!(Fetched::of(&piece, Err(missing)), Fetched::Unrecoverable(_)));
+        let unreachable = ArticleError::Nntp(NntpError::Unreachable { message_id: id, errors: vec![] });
+        assert!(matches!(Fetched::of(&piece, Err(unreachable)), Fetched::Retry(_)));
+        let part = Part { name: "a.mkv".into(), file_size: 4, begin: 0, data: vec![1, 2, 3, 4] };
+        assert_eq!(Fetched::of(&piece, Ok(part)), Fetched::Landed(vec![1, 2, 3, 4]));
+    }
+
     #[test]
     fn pieces_missing_everywhere_are_not_picked_again() {
         let job = job(&[("a.mkv", &[10, 10])]);
         let mut state = job.state.lock().unwrap();
-        state.failed.insert((0, 0));
+        state.failed.insert((0, 0), "gone".into());
         assert_eq!(state.pick(&job.files), Some((0, 1)));
         state.have[0][1] = Some(7);
         assert_eq!(state.pick(&job.files), None);

@@ -775,6 +775,33 @@ fn a_player_reads_the_middle_of_a_file_long_before_the_download_finishes() {
     assert!(verified(&job) < release.total() / 2, "{} of {} bytes verified", verified(&job), release.total());
 }
 
+/// Charade (1963) once held a player for good on one article that no server could send: the
+/// read waited without a word until its connection timed out.
+#[test]
+fn a_read_across_an_article_no_server_has_fails_at_once_and_the_download_says_why() {
+    let server = FakeServer::start();
+    let release = Release::new("film", &[("film.mkv", 2 << 20)], 29).on(&server);
+    // Article 64 holds bytes 1 MiB to 1 MiB + 16 KiB.
+    let gone = release.articles("film.mkv")[64].clone();
+    server.remove(&gone);
+    let home = Home::served(&server);
+    let url = play(&home, release.nzb_file(), 0);
+    let asked = Instant::now();
+
+    let (head, body) = get_range(&url, "bytes=1040000-1100000");
+    assert!(head.starts_with("HTTP/1.1 206 Partial Content\r\n"), "{head}");
+    assert!(body == release.files["film.mkv"][1_040_000..1 << 20], "the bytes before the gap come, then the read ends");
+    let (head, body) = get_range(&url, "bytes=1048576-1100000");
+    assert!(head.starts_with("HTTP/1.1 503 Service Unavailable\r\n"), "{head}");
+    assert!(String::from_utf8_lossy(&body).contains(&gone), "the answer names the article: {head}");
+    assert!(asked.elapsed() < Duration::from_secs(30), "the reads took {:?}", asked.elapsed());
+
+    let job = home.until(&release.id(), "the download stops", |j| state(j) == "error");
+    assert_eq!(job["error"]["code"], "no_source", "{job:#}");
+    assert!(job["error"]["message"].as_str().unwrap().contains(&gone), "{job:#}");
+    assert!(home.log().contains(&gone), "the engine log names the article: {}", home.log());
+}
+
 #[test]
 fn a_film_stored_in_rar_volumes_streams_from_the_middle_without_extracting() {
     let server = slow();
