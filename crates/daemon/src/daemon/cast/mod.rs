@@ -177,9 +177,12 @@ impl Dlna {
 
 impl Casts {
     pub fn new(ctx: Weak<Ctx>, find: Find) -> Self {
-        // A redirect could lead anywhere, and a TV has no use for one.
+        // A redirect could lead anywhere, and a TV has no use for one. Each request gets a
+        // connection of its own: libupnp, which many renderers run, answers one request per
+        // connection without saying so, and drops the next one sent on it.
         let http = reqwest::Client::builder()
             .no_proxy()
+            .pool_max_idle_per_host(0)
             .redirect(reqwest::redirect::Policy::none())
             .connect_timeout(Duration::from_secs(3))
             .build()

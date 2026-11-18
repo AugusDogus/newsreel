@@ -55,6 +55,9 @@ struct Screen {
     length_unknown: bool,
     /// Seeks it answers but does not do, after the one in `length_unknown`.
     ignored_seeks: u32,
+    /// It answers one request per connection without saying so, as gmrender-resurrect's libupnp
+    /// does: a second request on the connection gets it closed.
+    hangs_up_unannounced: bool,
 }
 
 #[derive(Clone)]
@@ -217,11 +220,17 @@ async fn answer(mut stream: TcpStream, screen: Arc<Mutex<Screen>>, sink: &'stati
             ("200 OK", reply)
         }
     };
+    let close = if screen.lock().unwrap().hangs_up_unannounced { "" } else { "Connection: close\r\n" };
     let answer = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: text/xml; charset=\"utf-8\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}",
+        "HTTP/1.1 {status}\r\nContent-Type: text/xml; charset=\"utf-8\"\r\nContent-Length: {}\r\n{close}\r\n{reply}",
         reply.len()
     );
     let _ = stream.write_all(answer.as_bytes()).await;
+    if !close.is_empty() {
+        return;
+    }
+    // It keeps the connection open, and drops the next request on it unanswered.
+    let _ = request(&mut stream).await;
 }
 
 /// What a TV answers to an action it cannot do now.
@@ -690,6 +699,21 @@ async fn a_cast_that_resumes_shows_where_it_resumes_while_the_tv_seeks_there() {
     control(&h, CastAction::Stop).await.unwrap();
     watching.abort();
     assert_eq!(*shown.lock().unwrap(), [None, Some(2_473.0), Some(2_480.0)], "never the top of the film");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_tv_that_hangs_up_after_each_answer_without_saying_so_still_plays_the_cast() {
+    let tv = FakeTv::start(lan(), SINK).await;
+    tv.set(|screen| screen.hangs_up_unannounced = true);
+    let h = harness(&tv, fake::Search::new(Vec::new()));
+    let film = release(95, "Night", &[("Night.mp4", 2 * MIB)]);
+    written(&h.downloads().join("Night/Night.mp4"), 2 * MIB);
+    h.network.set_rate(100 * GIB);
+    h.get(h.nzb_file(&film), &[]).await.unwrap();
+    h.until("done", |jobs| jobs[0].status.name() == "done").await;
+    cast(&h, by_hand(Target::Prefix(prefix(&film)))).await.unwrap();
+    tv.until("playing", |screen| screen.transport == "PLAYING").await;
+    until(&h, "playing", |cast| cast.state == CastState::Playing).await;
 }
 
 /// A cast that resumes, done, on a fake TV `tv` changes as `prepare` says.

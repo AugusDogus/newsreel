@@ -81,3 +81,65 @@ is the same loop), but libtorrent never says a piece cannot come, so upstream ca
 **Left for the `usenet` crate.** `article::fetch` stops at the first copy that does not decode
 and the pool returns the first server's body, so a copy damaged on one server but intact on
 another is not looked for. Here all four servers had the same bytes, so it would not have helped.
+
+## 2. Play on TV says it resumed, but the TV starts at 0:00
+
+**Bug.** `newsreel tv play` printed `at: 51:37` and the cast bar showed the resume point, but the
+renderer played from 0:00. After 30 seconds the bar jumped to the TV's real place without a word.
+
+**How it was found.** Casting to gmrender-resurrect (nixpkgs, gstreamer output to fakesink)
+during the device tests. Its log (`~/.cache/nr-devtest/logs/gmr2.log`) shows the order:
+`TransportState: PLAYING` at 15:15:10.35, `CurrentTrackDuration: 1:35:52` at 15:15:10.85, then
+`RelativeTimePosition` counting up from 0:00:01. No position jump follows, so the resume seek did
+nothing.
+
+**Root cause.** The cast seeks on the first poll that says PLAYING. gmrender says PLAYING as soon
+as it hands the URI to gstreamer, before the pipeline has prerolled; a seek then is answered with
+success and lost. The cast took the answer as done (`Seek::Taken`), showed the intended time for
+`RESUME_WITHIN` (30 s), and then gave up silently. A seek the TV refused was retried on the next
+three polls (3 s), which a slow TV can also miss.
+
+**Fix** (`daemon/cast/mod.rs`, `Resume::check`).
+- Seek only once the TV can take it: it says the track's length, or its position has moved.
+- After a seek the TV took, check where it is. Within 10 s before the target (a seek lands on the
+  keyframe before it) counts as there. Not there 5 s later sends the seek again, up to 3 seeks.
+- While it resumes, the cast still shows where it resumes (upstream's
+  `a_cast_that_resumes_shows_where_it_resumes_while_the_tv_seeks_there`, for an LG TV that
+  takes about 3 s, still passes). Once the seeks are spent, it shows the TV's real place and
+  logs `<tv> did not go to <time> after 3 seeks, so it plays from <time>`.
+- The unit test of the old rule (`…or_has_had_half_a_minute_to`) asserted the 30 s give-up, which
+  is the behaviour removed here, so it was rewritten for the new rule.
+
+**Tests.** With a fake TV that plays before it knows the length and loses one more seek after,
+`a_cast_resumes_once_the_tv_knows_the_length_and_seeks_again_when_a_seek_is_lost` failed before
+(one seek, sent too early) and passes now (none before the length, two after).
+`a_cast_whose_tv_never_takes_the_resume_shows_where_the_tv_really_is` failed before (one seek,
+the intended time shown for 30 s) and passes now (three seeks, then the real place).
+
+**Live check.** gmrender-resurrect 0.3.1 from nixpkgs, `newsreel tv play <download> --at 10:00`
+on a 20 minute test video served from a loopback NNTP server: PLAYING at 17:23:26.07, length
+known at 26.72, `RelativeTimePosition: 0:10:00` at 27.07, and `newsreel tv` showed 602, 606, 610
+seconds as it played (log in `~/.cache/nr-devfix/gmr-resume-after.log`).
+
+**Upstream.** Same code in v0.7.0 (`Resume::over`, `RESUME_WITHIN` of 30 s). Upstream has it.
+
+## 2b. A renderer that runs libupnp drops the Play after SetAVTransportURI
+
+**Bug.** Found while checking fix 2 against gmrender: every cast failed with `nr-fix-renderer
+cannot be reached (error sending request for url (…/upnp/control/rendertransport1))` right after
+the renderer logged the new URI.
+
+**Evidence.** Two SOAP requests on one kept-alive connection from Python: the first gets `200`
+with no `Connection: close`, the second gets `BrokenPipeError`. libupnp answers one request per
+connection without saying so. The cast's reqwest client keeps connections for reuse, so the Play
+sent right after SetAVTransportURI goes down the dead one. The earlier device test did not hit
+it, so it depends on timing.
+
+**Fix.** The cast client keeps no idle connections (`pool_max_idle_per_host(0)`). A TV's control
+requests are a few a second, so a new connection each costs nothing that matters.
+
+**Test.** `a_tv_that_hangs_up_after_each_answer_without_saying_so_still_plays_the_cast`: the fake
+TV keeps the connection open after its answer and drops the next request on it. It failed before
+with the same error as gmrender, and passes now.
+
+**Upstream.** Same client in v0.7.0. Upstream has it.
