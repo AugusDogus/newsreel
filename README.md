@@ -44,12 +44,12 @@ sources:
   newznab:                      # NZBHydra, Prowlarr, or an indexer's own API
     - name: hydra
       url: http://127.0.0.1:5076/api
-      api_key_env: HYDRA_API_KEY
+      api_key: <api key>
 usenet:
   servers:
     - host: news.example.com    # TLS on port 563 unless you say otherwise
       username: you
-      password_env: NEWS_PASSWORD
+      password: <password>
       connections: 20
     - host: backup.example.com
       username: you
@@ -57,7 +57,7 @@ usenet:
       priority: 1               # asked only for articles the servers above lack
 ```
 
-Keys and passwords come from the environment variables you name, never from the file.
+A key or password sits in the file, or comes from the variable `api_key_env` or `password_env` names. The engine the login service starts sees none of your shell's variables, so give it the file's. Keep the file readable by you alone (`chmod 600 config.yaml`); newsreel does that whenever it writes a key into it.
 
 The engine starts at login and keeps running, so your phone and TV can always reach it. It carries on its downloads after a restart and installs updates when nothing is playing. To stop it starting at login, run `newsreel engine uninstall`.
 

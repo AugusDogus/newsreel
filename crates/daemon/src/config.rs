@@ -136,12 +136,14 @@ struct Usenet {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UsenetServer {
-    host: String,
+    host: Spanned<String>,
     port: Option<u16>,
     tls: Option<bool>,
     username: String,
-    /// The environment variable that holds the password, so the file holds no secret.
-    password_env: Spanned<String>,
+    /// The password itself. A file newsreel writes one into is readable by its owner alone.
+    password: Option<Spanned<String>>,
+    /// The engine's environment variable that holds the password.
+    password_env: Option<Spanned<String>>,
     connections: Option<u16>,
     priority: Option<i32>,
 }
@@ -168,6 +170,12 @@ struct ServerOnly {
 #[serde(default)]
 struct SourcesOnly {
     sources: Sources,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(default)]
+struct UsenetOnly {
+    usenet: Usenet,
 }
 
 #[derive(Deserialize, Default)]
@@ -412,9 +420,14 @@ fn read_indexers(text: &str) -> Result<Indexers, Problem> {
     Ok(Indexers { entries, disabled: file.sources.disabled })
 }
 
-/// Whether `text` holds an API key, or may: an unreadable `sources` block counts.
+/// Whether `text` holds an API key or a server's password, or may: an unreadable `sources` or
+/// `usenet` block counts.
 fn holds_key(text: &str) -> bool {
-    read_indexers(text).map_or(true, |indexers| indexers.entries.iter().any(|e| matches!(e.key, Key::Inline(_))))
+    let key =
+        read_indexers(text).map_or(true, |indexers| indexers.entries.iter().any(|e| matches!(e.key, Key::Inline(_))));
+    let password = serde_saphyr::from_str::<UsenetOnly>(text)
+        .map_or(true, |file| file.usenet.servers.iter().any(|server| server.password.is_some()));
+    key || password
 }
 
 fn save(
@@ -771,22 +784,38 @@ fn parse(text: &str, env: &Env) -> Result<Config, Problem> {
         .servers
         .into_iter()
         .map(|s| {
-            let Spanned { value: var, referenced, .. } = s.password_env;
-            let password = env.var(&var).ok_or_else(|| {
-                (
-                    Some(referenced.line()),
-                    format!("the {:?} usenet server takes its password from {var}, which is not set", s.host),
-                )
-            })?;
+            let Spanned { value: host, referenced: at, .. } = s.host;
+            let password = match (s.password, s.password_env) {
+                (Some(Spanned { value, referenced, .. }), None) if value.is_empty() => {
+                    return Err((Some(referenced.line()), format!("the {host:?} usenet server's password is empty")));
+                }
+                (Some(Spanned { value, .. }), None) => value,
+                (None, Some(Spanned { value: var, referenced, .. })) => {
+                    env.var(&var).map(str::to_string).ok_or_else(|| {
+                        let message = format!(
+                            "the {host:?} usenet server takes its password from {var}, which is not set for the engine; write the password as password instead"
+                        );
+                        (Some(referenced.line()), message)
+                    })?
+                }
+                (Some(Spanned { referenced, .. }), Some(_)) => {
+                    let message = format!("the {host:?} usenet server has both password and password_env; keep one");
+                    return Err((Some(referenced.line()), message));
+                }
+                (None, None) => {
+                    let message = format!("the {host:?} usenet server has no password; give it password or password_env");
+                    return Err((Some(at.line()), message));
+                }
+            };
             Ok(usenet::Server {
                 port: s.port.unwrap_or(if s.tls == Some(false) { 119 } else { 563 }),
                 tls: s.tls.unwrap_or(true),
                 username: s.username,
-                password: password.to_string(),
+                password,
                 connections: s.connections.unwrap_or(8),
                 pipeline: usenet::Server::DEFAULT_PIPELINE,
                 priority: s.priority.unwrap_or(0),
-                host: s.host,
+                host,
             })
         })
         .collect::<Result<_, Problem>>()?;
@@ -915,11 +944,30 @@ usenet:
     }
 
     #[test]
-    fn a_usenet_password_must_come_from_a_set_variable() {
-        let text = "usenet:\n  servers:\n    - host: h\n      username: u\n      password_env: MISSING\n";
-        let (line, message) = parse(text, &env()).unwrap_err();
-        assert_eq!(line, Some(5));
-        assert_eq!(message, "the \"h\" usenet server takes its password from MISSING, which is not set");
+    fn a_usenet_password_is_in_the_file_or_in_a_set_variable_and_never_both() {
+        let server = "usenet:\n  servers:\n    - host: h\n      username: u\n";
+        let read = |more: &str| parse(&format!("{server}{more}"), &env()).map(|c| c.usenet[0].password.clone());
+        assert_eq!(read("      password: s3cret\n"), Ok("s3cret".to_string()));
+        assert_eq!(read("      password_env: NEWS_PASS\n"), Ok("s3cret".to_string()));
+        let refused = [
+            (
+                "      password_env: MISSING\n",
+                (
+                    Some(5),
+                    "the \"h\" usenet server takes its password from MISSING, which is not set for the engine; \
+                     write the password as password instead",
+                ),
+            ),
+            (
+                "      password: s3cret\n      password_env: NEWS_PASS\n",
+                (Some(5), "the \"h\" usenet server has both password and password_env; keep one"),
+            ),
+            ("      password: ''\n", (Some(5), "the \"h\" usenet server's password is empty")),
+            ("", (Some(3), "the \"h\" usenet server has no password; give it password or password_env")),
+        ];
+        for (more, (line, message)) in refused {
+            assert_eq!(read(more), Err((line, message.to_string())), "{more}");
+        }
     }
 
     #[test]
@@ -1481,5 +1529,10 @@ player: mpv
         std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).unwrap();
         folder.save(LAPTOP);
         assert_eq!(format!("{:o}", mode()), "600", "setup closes a file that holds a key");
+
+        folder.write("usenet:\n  servers:\n    - host: h\n      username: u\n      password: s3cret\n");
+        std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o644)).unwrap();
+        folder.save(LAPTOP);
+        assert_eq!(format!("{:o}", mode()), "600", "setup closes a file that holds a server's password");
     }
 }
