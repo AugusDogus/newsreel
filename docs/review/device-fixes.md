@@ -248,3 +248,36 @@ needs no touch and either no pointer or a TV name in the user agent, so all thre
 failed before and pass now; tablets in 16:10 and 4:3 stay out; the old cases still pass.
 
 **Upstream.** Same `looksLikeTv` in v0.7.0. Upstream has it.
+
+## 6. Remote navigation
+
+### 6a. The Pair button cannot be reached with a remote
+
+**Bug.** On the TV, the pair page opens with focus in the code field. Down, OK and Enter stay in
+the field, and nothing else moves focus, so a remote never reaches Pair
+(`~/.cache/nr-devtest/shots/tv-04-pairfocus.png`).
+
+**Fix** (`crates/daemon/src/daemon/web/pair.html`). Down moves from the code to Pair and Up back;
+OK or Enter in the code pairs (and says the code needs six digits when it is short); the sixth
+digit moves focus to Pair. Keys are read by name, or by key code for TV browsers that send none.
+
+**Test.** `web/src/pair.test.ts` runs the page's own script against a small stand-in DOM. Both
+tests fail on the old page (`PAIR_PAGE=<old copy> bun test src/pair.test.ts`) and pass now.
+
+**Upstream.** Same page in v0.7.0, with no key handling. Upstream has it.
+
+### 6b. The player ignores media keys
+
+**Bug.** On a TV the player answered only Enter, Up and Down from a remote
+(`REMOTE` in `web/src/player/keys.ts`); Play/Pause, Fast Forward, Rewind and Stop did nothing.
+
+**Fix.** `MediaPlayPause` plays or pauses, `MediaPlay` and `MediaPause` play and pause (so a
+browser that also passes the key to the media session does not undo it), `MediaFastForward` and
+`MediaRewind` go 10 s, and `MediaStop` leaves the player as Back does. LG and Samsung often send
+only key codes (415, 19, 10252, 417, 412, 413), which map the same way. Media keys work wherever
+focus is, since no control uses them.
+
+**Test.** `a remote's media keys play, pause, wind, and stop, by name or by a TV's key code,
+wherever focus is` in `web/src/player/keys.test.ts` failed before and passes now.
+
+**Upstream.** Same `REMOTE` map in v0.7.0. Upstream has it.

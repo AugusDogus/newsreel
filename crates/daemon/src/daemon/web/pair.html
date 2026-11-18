@@ -91,6 +91,28 @@
     pair();
   });
 
+  // A TV remote has arrows and OK. Down and Up move between the code and Pair, OK on the code
+  // pairs once it has six digits, and the sixth digit moves to Pair, since the field would keep
+  // the arrows and OK for itself. keyCode, because some TV browsers send no key name.
+  var KEYS = { 38: "ArrowUp", 40: "ArrowDown", 13: "Enter" };
+  document.addEventListener("keydown", function (event) {
+    var key = event.key && event.key !== "Unidentified" ? event.key : KEYS[event.keyCode];
+    var on = document.activeElement;
+    if (key === "ArrowDown" && on !== go) {
+      event.preventDefault();
+      go.focus();
+    } else if (key === "ArrowUp" && on === go) {
+      event.preventDefault();
+      input.focus();
+    } else if (key === "Enter" && on === input) {
+      event.preventDefault();
+      pair();
+    }
+  });
+  input.addEventListener("input", function () {
+    if (input.value.replace(/\D/g, "").length === 6) go.focus();
+  });
+
   // The QR code on the Mac carries the code after #, which never reaches the server.
   var linked = location.hash.replace(/\D/g, "");
   if (linked.length === 6) {
