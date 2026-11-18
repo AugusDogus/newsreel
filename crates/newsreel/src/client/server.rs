@@ -96,7 +96,8 @@ mod linux {
                 let mut stdout = anstream::stdout().lock();
                 let _ = stdout.write_all(devices::blocks(&qr(&offer.url)).as_bytes());
             }
-            let pairing = devices::offer_doc(offer, list.unreachable.as_deref(), newsreel_core::time::now());
+            let qr_shown = devices::Qr::of(mode);
+            let pairing = devices::offer_doc(offer, list.unreachable.as_deref(), qr_shown, newsreel_core::time::now());
             if let crate::output::Body::Fields { fields, .. } = pairing.body
                 && let crate::output::Body::Fields { fields: all, .. } = &mut doc.body
             {

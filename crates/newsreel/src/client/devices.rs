@@ -29,7 +29,7 @@ pub fn run(mut conn: Conn, command: Option<DevicesCommand>, mode: Mode) -> Resul
                 let mut stdout = anstream::stdout().lock();
                 let _ = stdout.write_all(blocks(&qr(&offer.url)).as_bytes());
             }
-            offer_doc(offer, list.unreachable.as_deref(), now())
+            offer_doc(offer, list.unreachable.as_deref(), Qr::of(mode), now())
         }
         _ => list_doc(&list, now()),
     };
@@ -62,7 +62,20 @@ fn list_doc(list: &DeviceList, now: i64) -> Doc {
     Doc { body: Body::Table { header: vec!["ID", "NAME", "ADDED", "SEEN", "FROM"], rows }, summary, next }
 }
 
-pub(super) fn offer_doc(offer: &PairingOffer, unreachable: Option<&str>, now: i64) -> Doc {
+/// Whether a QR code was printed above the offer: only for a person at a terminal.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(super) enum Qr {
+    Shown,
+    NotShown,
+}
+
+impl Qr {
+    pub(super) fn of(mode: Mode) -> Self {
+        if mode == Mode::Human { Self::Shown } else { Self::NotShown }
+    }
+}
+
+pub(super) fn offer_doc(offer: &PairingOffer, unreachable: Option<&str>, qr: Qr, now: i64) -> Doc {
     let mut fields = vec![
         ("address", Cell::styled(&offer.address, Token::Accent)),
         ("code", Cell::styled(&offer.code, Token::Accent)),
@@ -76,8 +89,11 @@ pub(super) fn offer_doc(offer: &PairingOffer, unreachable: Option<&str>, now: i6
     let left = offer.expires_at.saturating_sub(now).max(0) as u64;
     let expires = if left < 60 { "in under a minute".to_string() } else { format!("in {}", units::age(left)) };
     fields.push(("expires", Cell::new(expires)));
-    let mut summary =
-        vec!["scan the QR code with the phone's camera, or open the address on the TV and enter the code".to_string()];
+    let how = match qr {
+        Qr::Shown => "scan the QR code with the phone's camera, or open the address on the TV and enter the code",
+        Qr::NotShown => "open the address on the phone or TV and enter the code",
+    };
+    let mut summary = vec![how.to_string()];
     summary.extend(unreachable.map(String::from));
     Doc { body: Body::Fields { title: Vec::new(), fields }, summary, next: Some("newsreel devices".into()) }
 }
@@ -172,14 +188,20 @@ mod tests {
     #[test]
     fn adding_shows_the_address_and_the_code_to_type() {
         assert_eq!(
-            offer_doc(&offer(), None, NOW).plain(),
+            offer_doc(&offer(), None, Qr::NotShown, NOW).plain(),
             "address: http://studio-mac.local:47919\n\
              code:    482913\n\
              or:      http://192.168.1.23:47919\n\
              tailnet: http://studio-mac.tail1234.ts.net:47919\n\
              expires: in 5m\n\
-             # scan the QR code with the phone's camera, or open the address on the TV and enter the code\n\
+             # open the address on the phone or TV and enter the code\n\
              next:    newsreel devices\n"
+        );
+        // A person at a terminal sees the QR code above, so they are told to scan it.
+        let shown = offer_doc(&offer(), None, Qr::Shown, NOW);
+        assert_eq!(
+            shown.summary[0],
+            "scan the QR code with the phone's camera, or open the address on the TV and enter the code"
         );
     }
 

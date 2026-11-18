@@ -323,3 +323,17 @@ button, play, mute, subtitles, fullscreen and next use it.
 **Test.** `web/src/lib/keyboard.test.ts`.
 
 **Upstream.** Same fixed labels in v0.7.0. Upstream has it.
+
+### 7b. `newsreel devices add` says "scan the QR code" with no QR code printed
+
+**Bug.** Piped or with `--plain`, `devices add` prints no QR code (only a person at a terminal gets
+one) but still ends with `# scan the QR code with the phone's camera, …`
+(`~/.cache/nr-devtest/logs/devices-add-pipe.txt`, `devices-add.txt`).
+
+**Fix.** `offer_doc` takes whether a QR code was shown (`Qr::of(mode)`). Without one it says
+`open the address on the phone or TV and enter the code`. `server install` uses the same text.
+
+**Test.** `adding_shows_the_address_and_the_code_to_type` expected the QR wording in plain output,
+which is the bug; it now expects the plain wording there and the QR wording when one is shown.
+
+**Upstream.** Same text in v0.7.0. Upstream has it.
