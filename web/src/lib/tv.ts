@@ -3,17 +3,41 @@ export interface Signals {
   userAgent: string;
   /** The screen's width in CSS pixels. TV browsers report 960, 1280, or 1920. */
   width: number;
+  /** The screen's height in CSS pixels: 540, 720, or 1080 on a TV. */
+  height: number;
   touch: boolean;
   /** No pointing device at all, as a browser driven only by a remote's arrow keys reports. */
   pointerless: boolean;
+  /** The main pointer is coarse and cannot hover, as on a touchscreen, or a remote that Android TV calls one. */
+  coarseWithoutHover: boolean;
 }
 
-/** The names TV browsers put in their user agent: LG webOS, Samsung Tizen, Sony, Hisense, Google TV. */
-const TV_BROWSER = /web0s|webos|tizen|smart-?tv|bravia|netcast|hbbtv|vidaa|googletv|android tv/i;
+/** The names TV platforms put in their user agent: LG webOS, Samsung Tizen, Hisense VIDAA, and HbbTV sets. */
+const TV_PLATFORM = /web0s|webos|tizen|smart-?tv|netcast|hbbtv|vidaa/i;
 
-/** A big screen without touch, whose browser either has no pointer or names a TV platform. */
-export function looksLikeTv({ userAgent, width, touch, pointerless }: Signals): boolean {
-  return width >= 960 && !touch && (pointerless || TV_BROWSER.test(userAgent));
+/**
+ * The names Android-based TVs put in their user agent: Android TV and Google TV, Fire TV models
+ * (AFTMM, AFTKA, ...), Sony BRAVIA, NVIDIA SHIELD, Chromecast, and Xiaomi's Mi TV. Their browsers
+ * report touch points though they have no touchscreen.
+ */
+const ANDROID_TV = /android ?tv|google ?tv|\baft[a-z0-9]+|bravia|shield|crkey|chromecast|mitv/i;
+
+/** A TV screen is 16:9 and lies flat: 960 by 540, 1280 by 720, or 1920 by 1080 CSS pixels. */
+function tvShaped(width: number, height: number): boolean {
+  return height > 0 && Math.abs(width / height - 16 / 9) < 0.01;
+}
+
+/**
+ * A big screen whose browser names a TV, or has no pointer, or is driven by a coarse pointer that
+ * cannot hover on a TV-shaped screen. That last is how TV Bro on Android TV looks: its user agent is
+ * Chrome's reduced one, "Android 10; K", and it claims five touch points. Tablets, which look the same
+ * otherwise, are 16:10 or 4:3.
+ */
+export function looksLikeTv({ userAgent, width, height, touch, pointerless, coarseWithoutHover }: Signals): boolean {
+  if (width < 960) return false;
+  if (ANDROID_TV.test(userAgent)) return true;
+  if (!touch && (pointerless || TV_PLATFORM.test(userAgent))) return true;
+  return coarseWithoutHover && tvShaped(width, height) && !/iphone|ipad|mobile/i.test(userAgent);
 }
 
 const CHOICE = "newsreel:tv";
@@ -44,8 +68,10 @@ export function isTv(): boolean {
     looksLikeTv({
       userAgent: navigator.userAgent,
       width: screen.width,
+      height: screen.height,
       touch: navigator.maxTouchPoints > 0,
       pointerless: matchMedia("(any-pointer: none)").matches,
+      coarseWithoutHover: matchMedia("(pointer: coarse) and (hover: none)").matches,
     });
   return tv;
 }

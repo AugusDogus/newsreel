@@ -222,3 +222,29 @@ with its categories.
 
 **Upstream.** Upstream searched Torznab feeds, which have the same `/api` convention, through the
 same fixed hint. The fallback to `/api` is new here.
+
+## 5. TV Bro on Android TV is not taken for a TV
+
+**Bug.** On the Android TV emulator, TV Bro got the phone and computer layout: no remote focus
+rings, small type. Only `?tv=on` turned TV mode on.
+
+**Evidence.** A probe page opened in TV Bro 3.0.6 on `august_tv` reported (in
+`~/.cache/nr-devfix/signals/server.log`): user agent `Mozilla/5.0 (Linux; Android 10; K) …
+Chrome/157.0.0.0 Safari/537.36`, screen 960 by 540 at 2x, `maxTouchPoints` 5, `(pointer: coarse)`
+and `(hover: none)` true, `(any-pointer: fine)` true, `(any-pointer: none)` false. `looksLikeTv`
+needs no touch and either no pointer or a TV name in the user agent, so all three tests fail.
+
+**Fix** (`web/src/lib/tv.ts`).
+- Android-based TV names (Android TV, Google TV, Fire TV's `AFT…` models, BRAVIA, SHIELD,
+  Chromecast, Mi TV) count whatever touch the browser claims, since those browsers claim touch.
+- The other TV platforms (webOS, Tizen, SMART-TV, NetCast, HbbTV, VIDAA) and a missing pointer
+  count as before, without touch.
+- New: a coarse main pointer that cannot hover, on a 16:9 landscape screen at least 960 wide, with
+  no phone or iPad in the user agent. That is what TV Bro reports. Tablets report the same pointer,
+  but their screens are 16:10 or 4:3, so they stay out.
+- `?tv=on`, `?tv=off` and `?tv=auto` are unchanged.
+
+**Tests.** `web/src/lib/tv.test.ts`: TV Bro's signals and four Android TV-family user agents
+failed before and pass now; tablets in 16:10 and 4:3 stay out; the old cases still pass.
+
+**Upstream.** Same `looksLikeTv` in v0.7.0. Upstream has it.
