@@ -50,6 +50,11 @@ struct Screen {
     slow: Option<(&'static str, Duration)>,
     /// How long the TV takes to get where a seek sends it, after it answers the seek.
     seek_lag: Duration,
+    /// It plays but has not read the video's length yet, as gmrender-resurrect does for a moment
+    /// after it starts: it says no length and no position, and answers a seek but does not move.
+    length_unknown: bool,
+    /// Seeks it answers but does not do, after the one in `length_unknown`.
+    ignored_seeks: u32,
 }
 
 #[derive(Clone)]
@@ -250,6 +255,13 @@ fn act(screen: &Arc<Mutex<Screen>>, action: &str, body: &str, sink: &str) -> Str
             let target = argument("Target").unwrap_or_default();
             let position =
                 target.split(':').filter_map(|p| p.parse::<f64>().ok()).fold(0.0, |total, part| total * 60.0 + part);
+            if shown.length_unknown {
+                return String::new();
+            }
+            if shown.ignored_seeks > 0 {
+                shown.ignored_seeks -= 1;
+                return String::new();
+            }
             if shown.seek_lag.is_zero() {
                 shown.position = position;
             } else {
@@ -270,10 +282,11 @@ fn act(screen: &Arc<Mutex<Screen>>, action: &str, body: &str, sink: &str) -> Str
             );
         }
         "GetPositionInfo" => {
-            let whole = shown.position as u64;
+            let whole = if shown.length_unknown { 0 } else { shown.position as u64 };
             return format!(
-                "<Track>1</Track><TrackDuration>1:36:00</TrackDuration><TrackURI>{}</TrackURI>\
+                "<Track>1</Track><TrackDuration>{}</TrackDuration><TrackURI>{}</TrackURI>\
                  <RelTime>{}:{:02}:{:02}</RelTime><AbsTime>NOT_IMPLEMENTED</AbsTime>",
+                if shown.length_unknown { "0:00:00" } else { "1:36:00" },
                 shown.uri.replace('&', "&amp;"),
                 whole / 3600,
                 whole / 60 % 60,
@@ -677,6 +690,61 @@ async fn a_cast_that_resumes_shows_where_it_resumes_while_the_tv_seeks_there() {
     control(&h, CastAction::Stop).await.unwrap();
     watching.abort();
     assert_eq!(*shown.lock().unwrap(), [None, Some(2_473.0), Some(2_480.0)], "never the top of the film");
+}
+
+/// A cast that resumes, done, on a fake TV `tv` changes as `prepare` says.
+async fn resuming(seed: u8, prepare: impl FnOnce(&mut Screen)) -> (FakeTv, Harness) {
+    let tv = FakeTv::start(lan(), SINK).await;
+    let h = harness(&tv, fake::Search::new(Vec::new()));
+    let film = release(seed, "Night", &[("Night.mp4", 2 * MIB)]);
+    written(&h.downloads().join("Night/Night.mp4"), 2 * MIB);
+    h.network.set_rate(100 * GIB);
+    h.get(h.nzb_file(&film), &[]).await.unwrap();
+    h.until("done", |jobs| jobs[0].status.name() == "done").await;
+    tv.set(prepare);
+    let request =
+        CastRequest { video: Some(night()), start_at: Some(2_473.0), ..by_hand(Target::Prefix(prefix(&film))) };
+    cast(&h, request).await.unwrap();
+    (tv, h)
+}
+
+fn seeks(tv: &FakeTv) -> usize {
+    tv.actions().iter().filter(|action| *action == "Seek").count()
+}
+
+/// gmrender-resurrect says it plays before it has read the video's length, and a seek then is
+/// answered but lost, so the TV played from the top while the cast said it had resumed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cast_resumes_once_the_tv_knows_the_length_and_seeks_again_when_a_seek_is_lost() {
+    let (tv, h) = resuming(93, |screen| (screen.length_unknown, screen.ignored_seeks) = (true, 1)).await;
+    tv.until("playing", |screen| screen.transport == "PLAYING").await;
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(seeks(&tv), 0, "no seek before the TV knows the length");
+    tv.set(|screen| (screen.length_unknown, screen.position) = (false, 2.0));
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while tv.screen.lock().unwrap().position != 2_473.0 {
+        assert!(Instant::now() < deadline, "the TV never got there: {:?}", tv.actions());
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_eq!(seeks(&tv), 2, "the lost seek was sent again");
+    until(&h, "where it resumed", |cast| cast.position == Some(2_473.0)).await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_cast_whose_tv_never_takes_the_resume_shows_where_the_tv_really_is() {
+    let (tv, h) = resuming(94, |screen| (screen.position, screen.ignored_seeks) = (4.0, u32::MAX)).await;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let casts = tvs(&h, false).await.casts;
+        if casts.iter().any(|cast| cast.position == Some(4.0)) {
+            break;
+        }
+        assert!(Instant::now() < deadline, "the cast never said where the TV is: {casts:?}");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(seeks(&tv), 3, "three tries");
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert_eq!(until(&h, "the TV's place", |_| true).await.position, Some(4.0), "not where it meant to be");
 }
 
 #[tokio::test(flavor = "multi_thread")]

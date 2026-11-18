@@ -63,11 +63,14 @@ const ENDED_KEPT: Duration = Duration::from_secs(60);
 const REACHABLE_WITHIN: Duration = Duration::from_secs(5);
 /// Where the engine answers with its word, for anyone who asks.
 pub const HELLO: &str = "/.well-known/newsreel";
-/// Tries at the seek that resumes a video, since some TVs refuse one while they start.
+/// Tries at the seek that resumes a video, since some TVs refuse one while they start, and some
+/// answer one and lose it.
 const RESUME_TRIES: u32 = 3;
-/// How long a TV that took the seek that resumes a video may take to get there. Until then the
-/// cast shows where it resumes.
-const RESUME_WITHIN: Duration = Duration::from_secs(30);
+/// How long a TV that took the seek that resumes a video may take to get there before it is sent
+/// again. Until then the cast shows where it resumes. An LG TV takes about 3 seconds.
+const RESUME_WITHIN: Duration = Duration::from_secs(5);
+/// How far before where a video resumes a TV may land: a seek goes to the keyframe before it.
+const RESUME_SLACK: f64 = 10.0;
 
 /// The TVs on the home network, and a cast for each TV that plays one.
 pub struct Casts {
@@ -637,7 +640,19 @@ impl Run {
                             self.start(found);
                         }
                         let duration = polled.duration.or(known);
-                        resume = resume.filter(|resume| !resume.over(polled.position, now));
+                        resume = resume.and_then(|resume| match resume.check(polled.position, now) {
+                            Check::Landed => None,
+                            Check::Waiting(resume) => Some(resume),
+                            Check::Lost => {
+                                let at = upnp::clock(resume.at);
+                                let there = polled.position.map_or("where it is".into(), upnp::clock);
+                                log(&format!(
+                                    "{} did not go to {at} after {RESUME_TRIES} seeks, so it plays from {there}",
+                                    tv.name
+                                ));
+                                None
+                            }
+                        });
                         let position = resume.map(|resume| resume.at).or(polled.position);
                         self.view.send_modify(|cast| {
                             cast.state = if paused { CastState::Paused } else { CastState::Playing };
@@ -645,11 +660,22 @@ impl Run {
                             cast.duration = duration;
                             cast.volume = polled.volume.or(cast.volume);
                         });
-                        if !paused && let Some(Resume { at, seek: Seek::Due(tries) }) = resume {
+                        // A TV that says it plays may not have read the video yet, and loses a seek
+                        // then: it can seek once it knows the length, or once it is under way.
+                        let seekable = polled.duration.is_some() || polled.position.is_some_and(|at| at > 0.0);
+                        if !paused
+                            && seekable
+                            && let Some(Resume { at, seek: Seek::Due(tries) }) = resume
+                        {
+                            let left = tries - 1;
                             resume = match self.seek(at).await {
-                                Ok(()) => Some(Resume { at, seek: Seek::Taken(Instant::now()) }),
-                                Err(_) if tries > 1 => Some(Resume { at, seek: Seek::Due(tries - 1) }),
-                                Err(_) => None,
+                                Ok(()) => Some(Resume { at, seek: Seek::Taken(Instant::now(), left) }),
+                                Err(_) if left > 0 => Some(Resume { at, seek: Seek::Due(left) }),
+                                Err(failed) => {
+                                    let why = Error::from(failed).message;
+                                    log(&format!("{} refused to seek to {}: {why}", tv.name, upnp::clock(at)));
+                                    None
+                                }
                             };
                         }
                     }
@@ -794,10 +820,20 @@ struct Resume {
 
 #[derive(Clone, Copy, Debug)]
 enum Seek {
-    /// To send, with this many tries left.
+    /// To send once the TV can take it, with this many tries left, at least one.
     Due(u32),
-    /// The TV took it at this time.
-    Taken(Instant),
+    /// The TV took it at this time, with this many tries left should it not get there.
+    Taken(Instant, u32),
+}
+
+/// How resuming goes, by where the TV says it is.
+#[derive(Clone, Copy, Debug)]
+enum Check {
+    /// The TV got there.
+    Landed,
+    Waiting(Resume),
+    /// Every seek is spent and the TV is not there, so the cast shows where it is.
+    Lost,
 }
 
 impl Resume {
@@ -805,11 +841,19 @@ impl Resume {
         Self { at, seek: Seek::Due(RESUME_TRIES) }
     }
 
-    /// Whether the TV, at `position` at `now`, is done resuming: it got there, or it took the seek
-    /// `RESUME_WITHIN` ago and is still not there.
-    fn over(&self, position: Option<f64>, now: Instant) -> bool {
-        position.is_some_and(|position| position >= self.at)
-            || matches!(self.seek, Seek::Taken(at) if now.saturating_duration_since(at) >= RESUME_WITHIN)
+    /// Whether the TV, at `position` at `now`, got there, or took the seek `RESUME_WITHIN` ago
+    /// and is still not there, which sends it again while tries are left.
+    fn check(self, position: Option<f64>, now: Instant) -> Check {
+        if position.is_some_and(|position| position >= self.at - RESUME_SLACK) {
+            return Check::Landed;
+        }
+        match self.seek {
+            Seek::Taken(taken, left) if now.saturating_duration_since(taken) >= RESUME_WITHIN => match left {
+                0 => Check::Lost,
+                left => Check::Waiting(Self { seek: Seek::Due(left), ..self }),
+            },
+            _ => Check::Waiting(self),
+        }
     }
 }
 

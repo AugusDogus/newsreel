@@ -158,15 +158,23 @@ fn a_cast_gives_up_on_a_tv_that_stops_answering_fails_every_poll_or_never_plays(
 }
 
 #[test]
-fn a_cast_shows_where_it_resumes_until_the_tv_gets_there_or_has_had_half_a_minute_to() {
+fn a_cast_shows_where_it_resumes_until_the_tv_gets_there_and_seeks_again_until_its_tries_run_out() {
     let start = Instant::now();
     let after = |seconds| start + Duration::from_secs(seconds);
     let due = Resume::new(2_473.0);
-    assert!(!due.over(None, after(0)));
-    assert!(!due.over(Some(1.0), after(120)), "the TV has not taken the seek yet");
-    let taken = Resume { seek: Seek::Taken(after(10)), ..due };
-    assert!(!taken.over(Some(1.0), after(39)));
-    assert!(!taken.over(Some(2_472.0), after(39)));
-    assert!(taken.over(Some(2_473.0), after(11)));
-    assert!(taken.over(Some(1.0), after(40)), "a TV that took the seek and stayed at the top");
+    assert!(matches!(due.check(None, after(0)), Check::Waiting(_)));
+    assert!(matches!(due.check(Some(1.0), after(120)), Check::Waiting(_)), "the TV has not taken the seek yet");
+    let taken = Resume { seek: Seek::Taken(after(10), 1), ..due };
+    assert!(matches!(taken.check(Some(1.0), after(14)), Check::Waiting(Resume { seek: Seek::Taken(..), .. })));
+    assert!(matches!(taken.check(Some(2_466.0), after(11)), Check::Landed), "on the keyframe before it");
+    assert!(matches!(taken.check(Some(2_473.0), after(11)), Check::Landed));
+    assert!(
+        matches!(taken.check(Some(1.0), after(15)), Check::Waiting(Resume { seek: Seek::Due(1), .. })),
+        "a TV that took the seek and stayed at the top is sent it again"
+    );
+    let last = Resume { seek: Seek::Taken(after(10), 0), ..due };
+    assert!(
+        matches!(last.check(Some(1.0), after(15)), Check::Lost),
+        "with no tries left, the cast shows the TV's place"
+    );
 }
