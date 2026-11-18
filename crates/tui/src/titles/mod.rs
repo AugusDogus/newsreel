@@ -191,7 +191,9 @@ fn step_text(step: &AttemptEvent) -> Option<String> {
             format!("Finding sources of {}", title_name(title, video.episode))
         }
         AttemptEvent::Searched { found, .. } => format!("Found {}", count(*found as usize, "source")),
-        AttemptEvent::Trying { rank, of, release } => format!("Trying {rank} of {of}: {}", sanitize(&release.name)),
+        AttemptEvent::Trying { rank, of, release } => {
+            format!("{}: {}", newsreel_core::watching::trying(*rank, *of), sanitize(&release.name))
+        }
         AttemptEvent::Check { check: Check::FileList } => "Waiting for its file list".into(),
         AttemptEvent::Check { check: Check::Start } => "Starting the download".into(),
         AttemptEvent::Check { check: Check::FirstBytes } => "Waiting for the first bytes of the video".into(),

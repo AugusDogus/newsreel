@@ -1087,7 +1087,7 @@ fn a_title_play_says_each_step_and_why_it_skipped_a_source_in_plain_words() {
         [
             Some("Finding sources of Harbor Lights S01E02"),
             Some("Found 1 source"),
-            Some("Trying 1 of 1: ua1b2c3 Harbor.Lights.S01.1080p.WEB.x264, 1080p h264, 9.0 GiB"),
+            Some("Trying the best source: ua1b2c3 Harbor.Lights.S01.1080p.WEB.x264, 1080p h264, 9.0 GiB"),
             None,
             Some("Skipped ua1b2c3: its NZB did not arrive in 20s"),
             Some("Skipped ua1b2c3: none of its files is the video"),

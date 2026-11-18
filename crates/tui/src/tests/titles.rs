@@ -242,7 +242,7 @@ fn enter_on_what_you_were_watching_plays_it_from_where_you_stopped() {
     assert!(footer(&state).starts_with("              Looking up the title"), "{}", footer(&state));
     let trying = AttemptEvent::Trying { rank: 1, of: 3, release: super::night().remove(0) };
     state.update(Msg::PlayStep(Box::new(trying)));
-    assert!(footer(&state).starts_with("              Trying 1 of 3: Night of the Living Dead (1968)"));
+    assert!(footer(&state).starts_with("              Trying 1 of the best 3: Night of the Living Dead (1968)"));
     state.update(Msg::PlayStep(Box::new(AttemptEvent::Check { check: Check::FirstBytes })));
     assert!(footer(&state).starts_with("              Waiting for the first bytes of the video"));
     assert_eq!(state.update(key(KeyCode::Enter)), [], "one play at a time");

@@ -84,6 +84,14 @@ function PassedList({ title, passed }: { title: string; passed: Passed[] }) {
   );
 }
 
+/**
+ * Which source of a play this is: "source 2 of the best 6". A search finds more sources than a play
+ * tries, since it tries at most six, best first, and only those this screen plays.
+ */
+export function which({ rank, of }: { rank: number; of: number }): string {
+  return of === 1 ? "the best source" : `source ${rank} of the best ${of}`;
+}
+
 function steps(attempt: Attempt): Step[] {
   const { found, trying } = attempt;
   return [
@@ -92,7 +100,7 @@ function steps(attempt: Attempt): Step[] {
       detail: "Searching the indexers for this title's releases.",
     },
     {
-      title: trying ? `Trying source ${trying.rank} of ${trying.of}` : "Trying sources",
+      title: trying ? `Trying ${which(trying)}` : "Trying sources",
       detail: trying && (
         <>
           <span className="text-soft">{about(trying.release)}</span>
@@ -116,7 +124,7 @@ interface StartingProps {
 
 /** The screen before the first frame of a title: what plays, and what the engine is doing toward it. */
 export function TitleStarting({ attempt, naming, backdrop, step, readout }: StartingProps) {
-  const playing = step >= 2 && attempt.trying ? `Playing source ${attempt.trying.rank} of ${attempt.trying.of}` : null;
+  const playing = step >= 2 && attempt.trying ? `Playing ${which(attempt.trying)}` : null;
   return (
     <div className="absolute inset-0">
       <Backdrop src={backdrop} />

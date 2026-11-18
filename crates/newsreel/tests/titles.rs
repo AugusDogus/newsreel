@@ -222,7 +222,7 @@ fn play_hands_a_title_to_the_player_as_play_does_a_release() {
     // so it starts on the best of their six sources.
     assert_eq!(
         run.stderr,
-        "Finding sources of Night of the Living Dead (1968)\nFound 6 sources\nTrying 1 of 6: u4c1e9a Night of the Living \
+        "Finding sources of Night of the Living Dead (1968)\nFound 6 sources\nTrying 1 of the best 6: u4c1e9a Night of the Living \
          Dead (1968), 1.3 GiB\nPlaying u4c1e9a Night of the Living Dead (1968), 1.3 GiB\n"
     );
     let argv = home.path("argv");

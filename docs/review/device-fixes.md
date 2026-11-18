@@ -337,3 +337,22 @@ one) but still ends with `# scan the QR code with the phone's camera, …`
 which is the bug; it now expects the plain wording there and the QR wording when one is shown.
 
 **Upstream.** Same text in v0.7.0. Upstream has it.
+
+### 7c. "Found 10 sources", then "source 1 of 6"
+
+**Bug.** The play screen said "Found 10 sources", then "Trying source 1 of 6"
+(`~/.cache/nr-devtest/shots/tv-play-*.png`). The CLI and TUI say the same ("Found 6 sources",
+"Trying 1 of 6").
+
+**Which number is right.** Both. 10 is every release the search returned. 6 is how many this play
+will try: `MOST_TRIED` is 6, and `next_up` leaves out releases whose names say a codec this screen
+does not decode (`daemon/titles/attempt.rs`). The second number was only missing what it counts.
+
+**Fix.** The trying line says "Trying 2 of the best 6", or "Trying the best source" when there is
+one, in the web app (`which` in `TitleScreens.tsx`), the CLI and the TUI (`watching::trying` in
+core). "Playing source 1 of 6" reads "Playing source 1 of the best 6".
+
+**Tests.** `TitleScreens.test.ts`, `a_play_names_the_source_it_tries_among_the_best_it_tries` in
+core; the CLI, TUI and `tests/titles.rs` expectations of the old line now expect the new one.
+
+**Upstream.** Same wording in v0.7.0. Upstream has it.

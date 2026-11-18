@@ -212,6 +212,12 @@ pub enum AttemptEvent {
     },
 }
 
+/// "Trying 2 of the best 6": which of the sources a play tries this is. A search finds more than a
+/// play tries: it tries at most six, best first, and only those this screen plays.
+pub fn trying(rank: u32, of: u32) -> String {
+    if of == 1 { "Trying the best source".to_string() } else { format!("Trying {rank} of the best {of}") }
+}
+
 /// What a play waits for from the source under test.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -521,5 +527,14 @@ mod tests {
         assert_eq!(serde_json::from_str::<TitleLink>(&json).unwrap(), link);
         let unlisted = TitleLink { release: None, ..link };
         assert_eq!(serde_json::to_string(&unlisted).unwrap(), r#"{"title":"tt0903747","span":"s1","release":null}"#);
+    }
+}
+
+#[cfg(test)]
+mod trying_tests {
+    #[test]
+    fn a_play_names_the_source_it_tries_among_the_best_it_tries() {
+        assert_eq!(super::trying(2, 6), "Trying 2 of the best 6");
+        assert_eq!(super::trying(1, 1), "Trying the best source");
     }
 }

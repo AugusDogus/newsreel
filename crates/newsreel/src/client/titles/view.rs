@@ -240,7 +240,9 @@ pub fn step(step: &AttemptEvent, started: &str) -> Option<String> {
             Some(format!("Finding sources of {}", title_name(title, video.episode)))
         }
         AttemptEvent::Searched { found, .. } => Some(format!("Found {}", format::count(*found as usize, "source"))),
-        AttemptEvent::Trying { rank, of, release } => Some(format!("Trying {rank} of {of}: {}", described(release))),
+        AttemptEvent::Trying { rank, of, release } => {
+            Some(format!("{}: {}", newsreel_core::watching::trying(*rank, *of), described(release)))
+        }
         AttemptEvent::Skipped { release, reason } => {
             Some(format!("Skipped {}: {reason}", short_ref(&release.to_ref())))
         }
