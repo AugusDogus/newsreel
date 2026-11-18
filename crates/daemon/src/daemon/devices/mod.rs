@@ -484,7 +484,14 @@ impl Devices {
     }
 
     /// Lets a device in when `code` is the open offer's, and returns the token for its cookie.
-    pub fn pair(&self, code: &str, agent: Option<&str>, from: IpAddr, now: i64) -> Result<(Device, String), Refused> {
+    pub fn pair(
+        &self,
+        code: &str,
+        agent: Option<&str>,
+        shape: Shape,
+        from: IpAddr,
+        now: i64,
+    ) -> Result<(Device, String), Refused> {
         let mut state = self.state();
         if !state.tries.count(from, now, TRIES_PER_MINUTE) {
             return Err(Refused::TooManyTries);
@@ -511,7 +518,7 @@ impl Devices {
                 break id;
             }
         };
-        let name = unique_name(&state, device_name(agent));
+        let name = unique_name(&state, device_name(agent, shape));
         let device = Device { id, name, added_at: now, seen_at: now, seen_from: Some(from.to_string()) };
         self.conn()
             .execute(
@@ -642,28 +649,71 @@ fn same(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0, |differ, (x, y)| differ | (x ^ y)) == 0
 }
 
-/// What a browser's User-Agent says it runs on, the first match winning. TVs come first, since
-/// their browsers also name Linux or Android.
-const NAMES: [(&str, &str); 14] = [
+/// What the pair page saw of the screen it ran on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Shape {
+    /// A TV, by the signals the web app reads (`web/src/lib/tv.ts`), for a browser whose user agent
+    /// does not say so, as TV Bro's on Android TV does not.
+    Tv,
+    Unknown,
+}
+
+/// TVs that a browser's User-Agent names, the first match winning. They come before the rest,
+/// since their browsers also name Linux or Android.
+const TVS: [(&str, &str); 11] = [
     ("web0s", "LG TV"),
     ("webos", "LG TV"),
     ("tizen", "Samsung TV"),
     ("bravia", "Sony TV"),
     ("crkey", "Chromecast"),
     ("; aft", "Fire TV"),
+    ("shield", "SHIELD TV"),
+    ("googletv", "Google TV"),
+    ("google tv", "Google TV"),
     ("android tv", "Android TV"),
     ("smart-tv", "TV"),
+];
+
+/// What else a User-Agent says the browser runs on, the first match winning.
+const OTHERS: [(&str, &str); 5] = [
     ("iphone", "iPhone"),
     ("ipad", "iPad"),
-    ("android", "Android"),
     ("macintosh", "Mac"),
     ("windows", "Windows PC"),
     ("linux", "Linux computer"),
 ];
 
-fn device_name(agent: Option<&str>) -> String {
-    let agent = agent.unwrap_or_default().to_ascii_lowercase();
-    NAMES.iter().find(|(mark, _)| agent.contains(mark)).map_or("Browser", |(_, name)| name).to_string()
+fn device_name(agent: Option<&str>, shape: Shape) -> String {
+    let agent = agent.unwrap_or_default();
+    let lower = agent.to_ascii_lowercase();
+    let named =
+        |names: &[(&str, &'static str)]| names.iter().find(|(mark, _)| lower.contains(mark)).map(|(_, name)| *name);
+    if let Some(tv) = named(&TVS) {
+        return tv.into();
+    }
+    let mobile = lower.contains("mobile");
+    if lower.contains("android") {
+        return match android_model(agent) {
+            _ if shape == Shape::Tv && !mobile => "Android TV".into(),
+            Some(model) => model,
+            None if mobile => "Android phone".into(),
+            None => "Android tablet".into(),
+        };
+    }
+    match named(&OTHERS) {
+        Some(handheld @ ("iPhone" | "iPad")) => handheld.into(),
+        _ if shape == Shape::Tv => "TV".into(),
+        named => named.unwrap_or("Browser").into(),
+    }
+}
+
+/// The model an Android User-Agent names after its version, as in `Android 14; Pixel 8)`, without
+/// its build. `None` for Chrome's reduced User-Agent, which says `K` for every model.
+fn android_model(agent: &str) -> Option<String> {
+    let after = &agent[agent.to_ascii_lowercase().find("android")?..];
+    let model = after.split(';').nth(1)?.split(')').next()?;
+    let model = model.split(" Build/").next()?.trim();
+    (!model.is_empty() && model != "K").then(|| model.chars().filter(|c| !c.is_control()).take(40).collect())
 }
 
 /// `name`, or `name 2` and on when a paired device has it.

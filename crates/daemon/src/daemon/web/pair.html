@@ -47,6 +47,22 @@
     return /[.?]$/.test(text) ? text : text + ".";
   }
 
+  // Whether this is a TV, for the name the device gets, by what the web app reads
+  // (web/src/lib/tv.ts): ?tv=on or off kept from before, no pointer, or a coarse pointer that
+  // cannot hover on a 16:9 screen, as TV Bro on Android TV has.
+  function onTv() {
+    try {
+      var kept = localStorage.getItem("newsreel:tv");
+      if (kept === "on" || kept === "off") return kept === "on";
+    } catch (e) {}
+    var w = screen.width, h = screen.height;
+    var media = function (query) { return matchMedia(query).matches; };
+    if (w < 960) return false;
+    if (media("(any-pointer: none)")) return true;
+    return media("(pointer: coarse) and (hover: none)") && h > 0 && Math.abs(w / h - 16 / 9) < 0.01 &&
+      !/iphone|ipad|mobile/i.test(navigator.userAgent);
+  }
+
   function show(text, error) {
     status.textContent = text;
     status.className = error ? "error" : "";
@@ -83,7 +99,11 @@
       go.disabled = false;
       show("Cannot reach newsreel, so check that the computer running it is awake and on this network.", true);
     };
-    request.send(JSON.stringify({ code: code }));
+    var tv = false;
+    try {
+      tv = onTv();
+    } catch (e) {}
+    request.send(JSON.stringify({ code: code, tv: tv }));
   }
 
   form.addEventListener("submit", function (event) {

@@ -281,3 +281,30 @@ focus is, since no control uses them.
 wherever focus is` in `web/src/player/keys.test.ts` failed before and passes now.
 
 **Upstream.** Same `REMOTE` map in v0.7.0. Upstream has it.
+
+## 7. Wording and layout
+
+### 7g. Paired devices named "Android" and "Android 2"
+
+**Bug.** The phone (Chrome) and the TV (TV Bro) were both named from their user agents as
+"Android", so the devices list showed "Android" and "Android 2".
+
+**Evidence.** Both browsers send Chrome's reduced user agent, `Mozilla/5.0 (Linux; Android 10; K)
+…`, where `K` stands for every model. The phone's adds `Mobile`; TV Bro's does not, and neither
+names a TV (signals in fix 5).
+
+**Fix.**
+- A model in the user agent names the device (`Android 14; Pixel 8` gives "Pixel 8"; ` Build/…`
+  is dropped).
+- With no model, `Mobile` gives "Android phone", and its absence "Android tablet".
+- The pair page sends `tv: true` when it sees a TV by the web app's own signals (or a kept
+  `?tv=on`), which names a non-mobile Android browser "Android TV", and another non-handheld one
+  "TV". An iPhone stays an iPhone.
+- More TV names are read: SHIELD and Google TV.
+
+**Tests.** `a_device_is_named_by_what_its_browser_runs_on` gained the Pixel 8, a Samsung tablet
+model, both reduced user agents, SHIELD and Google TV (the Pixel 8 case expected "Android" before,
+which is the naming this fix replaces). `a_device_whose_pair_page_saw_a_tv_is_named_for_one` is new.
+`web/src/pair.test.ts` checks the page sends the field.
+
+**Upstream.** Same name table in v0.7.0, with `("android", "Android")`. Upstream has it.

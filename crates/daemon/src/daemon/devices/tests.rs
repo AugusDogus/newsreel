@@ -32,7 +32,7 @@ impl Home {
     }
 
     fn pair(&self, code: &str, agent: &str, now: i64) -> Result<(Device, String), Refused> {
-        self.devices.pair(code, Some(agent), PHONE, now)
+        self.devices.pair(code, Some(agent), Shape::Unknown, PHONE, now)
     }
 }
 
@@ -125,13 +125,17 @@ async fn five_wrong_codes_close_the_offer_so_guessing_six_digits_fails() {
 async fn one_address_gets_ten_pairing_tries_a_minute() {
     let home = Home::new();
     for _ in 0..10 {
-        assert_eq!(refusal(home.devices.pair("123456", None, PHONE, NOW)), "NoOffer");
+        assert_eq!(refusal(home.devices.pair("123456", None, Shape::Unknown, PHONE, NOW)), "NoOffer");
     }
     let code = home.code();
-    assert_eq!(refusal(home.devices.pair(&code, None, PHONE, NOW)), "TooManyTries", "even with the right code");
+    assert_eq!(
+        refusal(home.devices.pair(&code, None, Shape::Unknown, PHONE, NOW)),
+        "TooManyTries",
+        "even with the right code"
+    );
     let next_minute = NOW - NOW.rem_euclid(60) + 60;
     assert_eq!(
-        refusal(home.devices.pair(&code, None, PHONE, next_minute)),
+        refusal(home.devices.pair(&code, None, Shape::Unknown, PHONE, next_minute)),
         "paired",
         "the count starts again each minute"
     );
@@ -236,7 +240,28 @@ fn a_device_is_named_by_what_its_browser_runs_on() {
     let cases = [
         (IPHONE, "iPhone"),
         ("Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X)", "iPad"),
-        ("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36", "Android"),
+        ("Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36", "Pixel 8"),
+        (
+            "Mozilla/5.0 (Linux; Android 13; SM-X710 Build/TP1A.220624.014) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+            "SM-X710",
+        ),
+        // Chrome's reduced user agent says "K" for every Android model.
+        (
+            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
+            "Android phone",
+        ),
+        (
+            "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36",
+            "Android tablet",
+        ),
+        (
+            "Mozilla/5.0 (Linux; Android 11; SHIELD Android TV Build/RQ1A.210105.003) AppleWebKit/537.36 Chrome/120 Safari/537.36",
+            "SHIELD TV",
+        ),
+        (
+            "Mozilla/5.0 (Linux; Android 12; Chromecast) AppleWebKit/537.36 Chrome/120 Safari/537.36 GoogleTV",
+            "Google TV",
+        ),
         ("Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 Chrome/94 Safari/537.36 WebAppManager", "LG TV"),
         (
             "Mozilla/5.0 (SMART-TV; LINUX; Tizen 6.5) AppleWebKit/537.36 SamsungBrowser/4.0 TV Safari/537.36",
@@ -248,9 +273,20 @@ fn a_device_is_named_by_what_its_browser_runs_on() {
         ("curl/8.7.1", "Browser"),
     ];
     for (agent, name) in cases {
-        assert_eq!(device_name(Some(agent)), name, "{agent}");
+        assert_eq!(device_name(Some(agent), Shape::Unknown), name, "{agent}");
     }
-    assert_eq!(device_name(None), "Browser");
+    assert_eq!(device_name(None, Shape::Unknown), "Browser");
+}
+
+/// TV Bro on Android TV sends Chrome's reduced user agent, which a tablet sends too, so the pair
+/// page says it is on a TV.
+#[test]
+fn a_device_whose_pair_page_saw_a_tv_is_named_for_one() {
+    let tv_bro =
+        "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Safari/537.36";
+    assert_eq!(device_name(Some(tv_bro), Shape::Tv), "Android TV");
+    assert_eq!(device_name(Some("Mozilla/5.0 (X11; Linux x86_64) Chrome/120"), Shape::Tv), "TV");
+    assert_eq!(device_name(Some(IPHONE), Shape::Tv), "iPhone", "a phone is a phone");
 }
 
 #[tokio::test]
@@ -259,8 +295,10 @@ async fn a_second_iphone_is_named_iphone_2() {
     let first = home.code();
     home.pair(&first, IPHONE, NOW).unwrap();
     let second = home.code();
-    let (device, _) =
-        home.devices.pair(&second, Some(IPHONE), IpAddr::V4(Ipv4Addr::new(192, 168, 1, 41)), NOW).unwrap();
+    let (device, _) = home
+        .devices
+        .pair(&second, Some(IPHONE), Shape::Unknown, IpAddr::V4(Ipv4Addr::new(192, 168, 1, 41)), NOW)
+        .unwrap();
     assert_eq!(device.name, "iPhone 2");
     let names: Vec<String> = home.devices.list(PORT).devices.into_iter().map(|d| d.name).collect();
     assert_eq!(names.len(), 2);

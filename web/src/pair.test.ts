@@ -95,5 +95,5 @@ test("OK on the code pairs once it has six digits, and the sixth digit moves to 
   expect(page.activeElement?.id).toBe("go");
   page.element("code").focus();
   page.press("Enter");
-  expect(page.posted).toEqual(['{"code":"123456"}']);
+  expect(page.posted).toEqual(['{"code":"123456","tv":false}']);
 });

@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::super::ctx::Ctx;
-use super::super::devices::{Asker, COOKIE};
+use super::super::devices::{Asker, COOKIE, Shape};
 use super::super::http::{Connection, Method, Request};
 use super::{ErrorBody, body, value};
 use crate::qr::qr;
@@ -60,14 +60,17 @@ pub async fn stranger(conn: &mut Connection<'_>, request: &Request, removed: boo
 #[derive(Deserialize)]
 struct Pair {
     code: String,
+    /// The pair page saw a TV.
+    #[serde(default)]
+    tv: bool,
 }
 
 async fn pair(conn: &mut Connection<'_>, request: &Request) -> io::Result<bool> {
-    let code = match body::<Pair>(request) {
-        Ok(Pair { code }) => code,
+    let (code, shape) = match body::<Pair>(request) {
+        Ok(Pair { code, tv }) => (code, if tv { Shape::Tv } else { Shape::Unknown }),
         Err(error) => return conn.json("400 Bad Request", &ErrorBody { error: &error }, request).await,
     };
-    match conn.ctx.devices.pair(&code, request.agent.as_deref(), conn.peer.ip(), now()) {
+    match conn.ctx.devices.pair(&code, request.agent.as_deref(), shape, conn.peer.ip(), now()) {
         Ok((device, token)) => {
             let body = serde_json::to_vec(&Paired { device }).map_err(io::Error::other)?;
             let secure = conn.ctx.devices.addressing().exposure.secure(request.host());
