@@ -27,13 +27,13 @@ import { SAVE_EVERY_MS } from "../wire";
 import { Button } from "../ui/Button";
 import { ControlButton } from "../ui/ControlButton";
 import { PlayerActions } from "./actions";
-import { Buffering, Ended, type Heading, PlayingReadout, Problem, TopBar } from "./Chrome";
+import { blockingRepair, Buffering, Ended, type Heading, PlayingReadout, Problem, TopBar } from "./Chrome";
 import { Controls } from "./Controls";
 import { type PlayerParts, PlayerContext, Scrub } from "./context";
 import { CueTrack } from "./cues";
 import { FeedbackLayer } from "./FeedbackLayer";
 import { FeedbackStore } from "./feedback";
-import { useVanished } from "../lib/jobs";
+import { useJobValue, useVanished } from "../lib/jobs";
 import { FilesPanel } from "./FilesPanel";
 import { decodedFrames, type Moved, watch } from "./frozen";
 import { type Command, command } from "./keys";
@@ -274,6 +274,8 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
   // A browser can play a file's sound and show no picture, without an error: its clock and frames stand still. Read
   // directly, the engine repackages it; repackaged, a title moves to its next source, and a file says so.
   const { onFrozen } = shown;
+  const repairing = useRef(false);
+  repairing.current = useJobValue(id, (job) => job !== null && blockingRepair(job) !== null);
   useEffect(() => {
     if (howKind === "blocked") return;
     let moved: Moved = null;
@@ -284,6 +286,8 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
         time: element.currentTime,
         frames: decodedFrames(element),
         playing: !element.paused && !element.ended && !element.seeking && !document.hidden,
+        waiting: element.readyState < HTMLMediaElement.HAVE_FUTURE_DATA,
+        repairing: repairing.current,
         ahead: range ? range[1] - element.currentTime : 0,
       });
       moved = seen.moved;

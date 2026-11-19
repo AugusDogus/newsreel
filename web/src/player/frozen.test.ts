@@ -3,7 +3,7 @@ import { FROZEN_MS, type Look, type Moved, watch } from "./frozen";
 
 /** The video plays at 600 s with 5 s buffered and 14,400 frames decoded, unless `seen` says otherwise. */
 function look(now: number, seen: Partial<Look> = {}): Look {
-  return { now, time: 600, frames: 14_400, playing: true, ahead: 5, ...seen };
+  return { now, time: 600, frames: 14_400, playing: true, waiting: false, repairing: false, ahead: 5, ...seen };
 }
 
 function run(looks: Look[]): boolean[] {
@@ -30,4 +30,16 @@ test("a clock or frames that move, a pause, a hidden page, or a wait for data is
   expect(run([look(0), look(FROZEN_MS, { ahead: 0.3 })])).toEqual([false, false]);
   // A browser that does not count frames goes by the clock.
   expect(run([look(0, { frames: null }), look(FROZEN_MS, { frames: null })])).toEqual([false, true]);
+});
+
+test("a video that waits for data, with seconds buffered ahead, is not frozen", () => {
+  // Chrome fed a quarter as fast as it plays (two plays sharing the link): it waits, readyState 2, with one 2 s fragment
+  // buffered, until the next arrives 8 s later. Its clock and frames stand still the while.
+  const starved = (now: number) => look(now, { time: 7.9, frames: 200, ahead: 2.12, waiting: true });
+  expect(run([starved(0), starved(4000), starved(FROZEN_MS), starved(8000)])).toEqual([false, false, false, false]);
+});
+
+test("a video whose download waits on a repair is not frozen", () => {
+  const repairing = (now: number) => look(now, { repairing: true });
+  expect(run([repairing(0), repairing(FROZEN_MS), repairing(2 * FROZEN_MS)])).toEqual([false, false, false]);
 });

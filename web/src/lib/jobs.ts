@@ -75,6 +75,11 @@ export function useVanished(id: string): boolean {
   return useSyncExternalStore(subscribe, () => vanished(view, id));
 }
 
+/** One value of the download with this ID, or of none. The component renders again only when that value changes. */
+export function useJobValue<T>(id: string, select: (job: Job | null) => T): T {
+  return useSyncExternalStore(subscribe, () => select(find(id)));
+}
+
 /**
  * The download with this ID, or whose ID starts with it. A job keeps its object until an event
  * changes it, so news about other downloads renders nothing here.

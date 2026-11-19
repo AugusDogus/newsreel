@@ -20,6 +20,13 @@ export interface Look {
   frames: number | null;
   /** Not paused, ended, seeking, or in a hidden page, where browsers stop decoding the picture. */
   playing: boolean;
+  /**
+   * The element waits for data (readyState under HAVE_FUTURE_DATA). Chrome waits so with seconds buffered: fed slower
+   * than it plays, it holds a 2 s fragment until the next one comes.
+   */
+  waiting: boolean;
+  /** A read of the download waits on a PAR2 repair, so its data comes once the repair ends. */
+  repairing: boolean;
   /** Seconds buffered ahead of the playhead. */
   ahead: number;
 }
@@ -27,9 +34,13 @@ export interface Look {
 /** When the video last moved, and where it was then. Null while it is not meant to move. */
 export type Moved = { since: number; time: number; frames: number | null } | null;
 
-/** Where the video last moved after `look`, and whether it has stood still too long. */
+/**
+ * Where the video last moved after `look`, and whether it has stood still too long. Only a decoder that stalls counts:
+ * a video that plays, in a page in view, with data to play, whose clock and frames stand still.
+ */
 export function watch(last: Moved, look: Look): { moved: Moved; frozen: boolean } {
-  if (!look.playing || look.ahead < FED_S) return { moved: null, frozen: false };
+  const fed = !look.waiting && !look.repairing && look.ahead >= FED_S;
+  if (!look.playing || !fed) return { moved: null, frozen: false };
   const here = { since: look.now, time: look.time, frames: look.frames };
   if (!last || look.time !== last.time || look.frames !== last.frames) return { moved: here, frozen: false };
   return { moved: last, frozen: look.now - last.since >= FROZEN_MS };
