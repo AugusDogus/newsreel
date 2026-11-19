@@ -119,6 +119,12 @@ export interface PlaybackProps {
   shown: Shown;
 }
 
+/**
+ * Android's WebView, which TV browsers such as TV Bro are, draws a large grey play symbol over a video without a
+ * poster until it plays. A transparent pixel keeps the picture behind it black, under the player's own controls.
+ */
+const NO_POSTER = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+
 /** Safari on iPhone fills the screen only with its own player, which this opens. */
 type IPhoneVideo = HTMLVideoElement & { webkitEnterFullscreen?: () => void };
 type Lockable = ScreenOrientation & { lock?: (orientation: "landscape") => Promise<void> };
@@ -180,7 +186,7 @@ export const Playback = memo(function Playback(props: PlaybackProps) {
   const [element, setElement] = useState<HTMLVideoElement | null>(null);
   return (
     <div ref={frame} className="relative size-full overflow-hidden bg-black select-none">
-      <video ref={setElement} playsInline poster={props.shown.poster ?? undefined} className="absolute inset-0 size-full" />
+      <video ref={setElement} playsInline poster={props.shown.poster ?? NO_POSTER} className="absolute inset-0 size-full" />
       {element && <Stage element={element} frame={frame} {...props} />}
     </div>
   );
@@ -577,16 +583,23 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
         <FeedbackLayer />
 
         {/* Shown while it waits too: iOS buffers nothing until a tap starts the video. */}
+        {/* The browser would not start the video without a press of its own, which a TV's browser asks of every video. */}
         {!stuck && paused && needsClick && (
-          <button
-            type="button"
-            aria-label="Play"
-            autoFocus={isTv()}
-            onClick={() => actions.toggle()}
-            className="absolute top-1/2 left-1/2 flex size-20 -translate-1/2 items-center justify-center rounded-full bg-black/55 inset-ring inset-ring-white/20 backdrop-blur-sm hover:bg-black/70"
-          >
-            <PlayIcon className="size-6 fill-ink" />
-          </button>
+          <div className="absolute top-1/2 left-1/2 flex -translate-1/2 flex-col items-center gap-4">
+            <button
+              type="button"
+              aria-label="Play"
+              aria-describedby="start-prompt"
+              autoFocus={isTv()}
+              onClick={() => actions.toggle()}
+              className="flex size-20 items-center justify-center rounded-full bg-black/55 inset-ring inset-ring-white/20 backdrop-blur-sm hover:bg-black/70"
+            >
+              <PlayIcon className="size-6 fill-ink" />
+            </button>
+            <p id="start-prompt" className="rounded-lg bg-black/55 px-3 py-1 text-sm text-ink backdrop-blur-sm">
+              {isTv() ? "Press OK to start the video" : "Press play to start the video"}
+            </p>
+          </div>
         )}
         {!stuck && ended && (
           <Ended
