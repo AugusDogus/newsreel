@@ -636,3 +636,359 @@ connections busy and a seek queues behind one of their articles; the gain is sma
 A release whose PAR2 files are posted under obfuscated names is not repaired, since `Par2Files::find`
 goes by name.
 
+
+# Second retest
+
+Fixes for what the second round of device tests found (Android phone and TV emulators and the Linux
+engine on 2026-11-19, and the Intel Mac, whose evidence stays on the Mac). One commit each. The
+retest's screenshots and logs are in `~/.cache/nr-retest/shots/`; the before and after screenshots
+and logs for these fixes are in `~/.cache/nr-retest2/shots/`, named by section (`7-tv-start-before.png`,
+`7-tv-start-prompt-after.png`). The `usenet` crate's part is on its `par2-priority` branch
+(`dbdd261`, `ceb8860`, `7f67175`), and newsreel pins `7f67175`.
+
+## 11. A repair's recovery files, and its ETA
+
+**Bug.** On the Mac (10 to 50 MiB/s, 105 connections) the player said "fetching its recovery files"
+for the whole wait, status stayed `{"stage":"preparing","blocking":true}` with no ETA, and the log said
+the PAR2 index, headers and recovery blocks took 35.8 s and 36.1 s (5.3 to 7.2 s on Linux).
+
+**Cause.** Three things.
+- The repair's fetches were already urgent, but an urgent request goes to the connection with the
+  fewest requests in flight, and when every connection carries background requests it queues
+  behind one of them. Replies come in the order commands went out, so it waits for that article.
+  A Mac link where each connection is slow, and the pool's background limit had grown past the
+  number of connections, makes that seconds per round, and the repair fetches in rounds (the
+  index, the volumes' first articles, their headers, the recovery blocks).
+- The repair fetched each volume's first article twice: once to match it to the PAR2 set by size
+  and first bytes, then again for its RAR headers.
+- Status gave a repair an ETA only in the `waiting` stage, and the download's own ETA disappeared
+  whenever one second landed nothing (section 12).
+
+**Fix.**
+- Crate (`dbdd261`): an urgent request never queues behind a background one. With no connection
+  free of background requests it waits for the first to free up, which is never later than
+  queueing behind the least loaded one, since background requests wait while an urgent one does.
+  Test: `an_urgent_request_waits_for_a_connection_without_background_requests_rather_than_queue_behind_one`
+  (3.04 s before, behind the slow article; about 0.3 s now).
+- The repair's fetches go at urgent priority while a reader waits on the damaged bytes
+  (`blocking`), and beside the download otherwise, so a repair nobody waits on does not slow a seek.
+  The first articles fetched to match volumes are kept for their headers.
+- A repair has the download's ETA while it fetches its recovery files too: rebuilding reads the
+  whole release, so it is done when the rest of the release is in, and the recovery files are a
+  few dozen articles beside it. With the rest already in, nothing says how long they take, so it
+  shows none. The player says "Repairing a damaged part of this video · about 1m 55s left" in both
+  stages.
+
+**Tests.** `a_repair_has_the_downloads_eta_while_it_fetches_its_recovery_files_and_waits_for_the_rest`
+(`daemon/book.rs`), `a_repair_says_what_it_waits_for_in_plain_words` (core), and `format.test.ts`;
+the repair integration tests still pass.
+
+**Live check** (a fresh test home playing the real NZB; a reader asks for bytes
+930,000,289..930,868,289 at once, and status is read every second;
+`1-2-repair-timeline-after-*.log`):
+
+| | 12 MiB/s cap | no cap |
+|---|---|---|
+| Recovery files fetched (log) | 20.1 s | 2.2 s (the retest: 5.3 to 7.2 s) |
+| First ETA | 18 s after the play started, still `preparing`: 136 s | 17 s: 16 s |
+| Read across the gap returned | 127.2 s, all 868,001 bytes | 32.9 s |
+
+Under the cap the recovery fetch took longer than the retest's 12.2 s, but that run found the
+damage with 70% of the release still to come and no reader waiting yet; here the reader waits from
+the start and the release is 115 s from done, so the fetch is never what the reader waits on. The
+Mac was not tested again: its evidence and engine stay on the Mac.
+
+**Upstream.** libtorrent has no PAR2 and the pool is newsreel's: newsreel's own.
+
+## 12. The ETA jumps around
+
+**Bug.** The repair ETA read 125, 492, 726, 102 and 465 s within 12 s (`repair-api-timeline.log`).
+
+**Cause.** The engine measures the rate as the bytes that landed in the last second, and articles
+land whole, about 768 KB each, so one second's rate swung between 0.7 and 13.7 MB/s while the mean
+was about 5. The ETA was the bytes left over that one second's rate, and a second with nothing
+landed reset the 10 s wait before any ETA shows.
+
+**Fix** (`daemon/eta.rs`). The rate is the mean over the last 30 s. The ETA shows once bytes have
+arrived for 10 s, and a second with nothing is part of the mean, not the end of the estimate. The
+time shown counts down by itself and moves toward a new estimate by at most a fortieth a second (at
+least 2 s), so the minutes change gradually.
+
+**Tests.** `the_time_left_moves_gradually_through_a_rate_that_swings_and_follows_the_mean` feeds
+the retest's own 3 s rates: over the 12 s in which the old ETA said 125 to 726 s the new one stays
+within a fifth, every step is the countdown plus at most a fortieth a second, and it starts within
+a fifth of the mean. `an_eta_waits_until_the_rate_has_held_for_ten_seconds` asserted the reset on a
+second with nothing, which is the behaviour replaced; it is now
+`an_eta_waits_until_bytes_have_arrived_for_ten_seconds_and_outlasts_a_second_without_any`.
+
+**Live check.** Under the cap the ETA went 136, 128, 125, 123, 114, 109 ... 4, 1 s, one reading a
+second, never up by more than the step, and the repair finished 115 s after the first reading.
+
+**Upstream.** v0.7.0 has the same rule and formula (`ETA_AFTER`, bytes left over the rate), but
+libtorrent's rate is already averaged, so the jumps are newsreel's.
+
+## 13. PAR2 files posted under obfuscated names
+
+**Bug.** A release whose PAR2 files have hidden names was not repaired: `Par2Files::find` goes by
+`.par2` names.
+
+**Fix.** The resolver already reads every posted file's first article (it skips only files named
+`.par2`), and dropped those starting with `PAR2\0PKT`. Crate (`ceb8860`): it now lists them in
+`Manifest::par2` with the recovery set ID from their first packet's header, and
+`Par2Files::find_resolved` finds those sets beside the named ones, grouped by set, so a sample's set
+stays apart. Each file of such a set is a volume whose blocks are estimated from its size, and the
+smallest is read for the description. A manifest with none writes no `par2` field. newsreel keeps
+the NZB when either finds a set, and its repair skips the set's files when it matches posted files
+to the set by size and first bytes.
+
+**Tests.** Crate: `par2_files_posted_under_obfuscated_names_are_found_by_their_first_article`.
+newsreel: `a_damaged_article_is_rebuilt_from_par2_files_posted_under_obfuscated_names` (RAR volumes
+and PAR2 files all under hex names) failed before (the read got `503`) and passes now.
+
+**Upstream.** No PAR2 upstream: newsreel's own.
+
+## 14. A log that says two things
+
+**Bug.** The engine log said "the article is damaged, so fetch another copy; the copy on the server is
+bad, so another posting of the release may be needed. It is repaired from the release's PAR2 files".
+
+**Cause.** Three layers each added advice: the crate's yEnc error ("fetch another copy"), its
+article error ("another posting may be needed"), and newsreel ("It is repaired").
+
+**Fix.** Crate (`7f67175`): a yEnc error says what is wrong and no longer what to do, since only the
+caller knows whether another copy exists. newsreel builds the line from the error's parts: what
+arrived, then one conclusion, "so it is rebuilt from the release's PAR2 files", or, without PAR2
+files, that another posting may be needed. Live (`1-4-engine-log-after.txt`):
+
+```
+c17883 cannot fetch bytes 930050289..930818289 of Charade.1963.BluRay.720p.H264.mp4: article <…> arrived damaged: yEnc data for "…part09.rar" decoded to 767999 bytes, but its header declares 768000, so it is rebuilt from the release's PAR2 files
+c17883 repairs 1 damaged article from its PAR2 files: 2 slices of 384000 bytes, 2 recovery blocks fetched in 2.2s
+c17883 repaired 1 damaged article in 0.8s once the rest of the release was in, 32.6s after it was found
+```
+
+**Tests.** The crate's `a_damaged_article_is_sent_cut_short_every_time_and_does_not_decode` and
+newsreel's `a_damaged_or_missing_article_is_set_aside…` failed before; the PAR2 integration test
+now checks the log line ends with the rebuild and says nothing of another copy or posting.
+
+**Upstream.** newsreel's own.
+
+## 15. Charade plays sound and no picture
+
+**Bug.** Charade's top-ranked release (`Charade.1963.BluRay.720p.H264-20-40`) played sound with a
+black picture in Safari (iOS 18.1 Simulator and macOS) and never decoded a frame in Chrome on the
+Android emulator; nothing told the user.
+
+**Root cause.** The file's `avcC` record has `lengthSizeMinusOne` 2, so every H.264 NAL unit is
+prefixed by a 3-byte length. ISO/IEC 14496-15 allows only 1, 2 or 4 bytes (`lengthSizeMinusOne`
+0, 1 or 3). ffmpeg reads it anyway (`ffprobe`: `nal_length_size=3`); the browsers that failed hand
+the stream to platform decoders (MediaCodec on Android, VideoToolbox in Safari), which got no frame
+out of it. Repackaged as fragmented MP4 with 4-byte lengths, the same stream decodes on the same
+emulator (below). The length size is the one way the file departs from the format. Nothing else is odd: Main profile, level 4.1,
+1216x720, no edit list, AAC LC; the `M4A ` major brand is cosmetic. Found with ffprobe and a box dump
+(`~/.cache/nr-retest2/scripts/avcc.py`): `avcC 014d4029fee1…`, the `fe` carrying the 2.
+
+**Fix.**
+- `Media` reads `nal_length_size`; a file with another size than 1, 2 or 4 has no `direct` type, so
+  the player asks the engine to repackage it. Repackaging copies the stream through
+  `h264_mp4toannexb` (or `hevc_mp4toannexb`), and the MP4 muxer writes 4-byte lengths for Annex B
+  input. A plain `-c:v copy` keeps the 3-byte lengths (checked with ffprobe on both outputs).
+- Watchdog (`web/src/player/frozen.ts`): when the video is not paused, has a second buffered, its
+  page is visible, and neither its clock nor its decoded frames move for 6 s, the player says so. A
+  file the browser read directly is repackaged first (as a decode error already was); one that
+  freezes repackaged moves a title to its next source, saying "This browser shows no picture of
+  this source. Trying another one."; a file of a release says the picture stopped.
+- Ranking: not changed. The length size is in the `moov`, which only the download reads, not the
+  release's name, so it cannot be ranked by cheaply; the engine routes such files to repackaging as
+  soon as it reads them.
+
+**Live check.**
+- Android emulator (`spotify-play-api29`, Chrome 101), the file read directly
+  (`5-android-chrome-direct-before*.png`): not paused, readyState 4, 1216x720, clock at 0 and 0
+  frames decoded after 25 s, sound playing (the speaker in the status bar). The newsreel player on
+  this branch (`5-android-chrome-player-after.png`): repackaged through a Media Source, 1575 to 1648
+  frames in 3 s, and a frame read back from the video (`5-…-after-decoded-frame.jpg`) is the title
+  sequence. This emulator's screenshots do not capture the hardware video layer, so its screen is
+  black in both; the frame counts and the read-back frame are the evidence.
+- Desktop Chromium on this host through the preview tools: repackaged, 271 to 368 frames in 4 s
+  (`5-desktop-chromium-player-after.png`).
+- TV Bro on `august_tv` showed Charade's picture through the same path (`7-tv-start-prompt-after.png`).
+- Safari was not tested again (the Mac's simulators); it takes the same repackaged stream as Chrome.
+- The watchdog's live trigger was not reproduced, since the engine now repackages Charade; the
+  frozen pattern it watches for is the one measured above.
+
+**Tests.** `a_container_browsers_read_names_the_type_to_try` (a 3-byte length has no direct type),
+`a_stream_copies_what_browsers_decode_and_converts_the_rest` (the bitstream filter), `frozen.test.ts`
+and `recovery.test.ts`.
+
+**Upstream.** v0.7.0 reads no NAL length size and has no watchdog. Upstream has it, for any
+torrent posted the same way.
+
+## 16. Stop on a remote loses the place
+
+**Bug.** On Android, Chromium sends a remote's Stop to the Media Session, which had no `stop`
+handler, so Chromium's own stop rewound to 0:00 and Play started over.
+
+**Fix.** A `stop` handler leaves the player as Back does, which saves the place first. An action
+a browser does not know no longer throws out of setting up the others. The page's own key
+map is still right for TVs that send keydown: LG webOS and Samsung Tizen send 415 Play, 19 Pause,
+413 Stop, 412 Rewind, 417 Fast Forward and 10252 Play/Pause (Tizen), which map as before, and
+`MediaStop` leaves the player as this handler does.
+
+**Test.** `system.test.ts`: the session's `stop` leaves the player and does nothing else.
+
+**Upstream.** v0.7.0's `useMediaSession` has no `stop`. Upstream has it.
+
+## 17. On a TV the first Play does not start the film
+
+**Bug.** After Play on the title page, TV Bro sat paused at 0:00 behind a grey placeholder until the
+centre Play was pressed (`7-tv-start-before.png`).
+
+**Cause.** TV Bro is Android's WebView, which wants a press of its own for every video: the press on
+the title page was seconds and a page earlier. The player already focused its centre Play on a TV,
+but the only cue was a small symbol, under WebView's own grey play placeholder for a video without a
+poster.
+
+**Fix.** The centre Play says "Press OK to start the video" under it on a TV ("Press play to start
+the video" elsewhere), and the video gets a transparent poster, so WebView draws no placeholder and
+the picture behind is the film's (`7-tv-start-prompt-after.png`). Making the first press start it
+would need the same video element from the title page on, which the player does not keep.
+
+**Upstream.** Same player in v0.7.0. Upstream has it.
+
+## 18. A play whose download was removed spins forever
+
+**Bug.** `newsreel rm` of a play's download, then an engine restart, left the phone on "Buffering
+the first seconds · 0 B/s · 0%" (`8-phone-removed-before.png`).
+
+**Cause.** The player follows its download in the jobs feed, and falls back to the job it started
+with when the feed no longer has it, so it waited on a download that was gone.
+
+**Fix.** When the engine answers and has no download with the play's ID (`vanished` in
+`lib/jobs.ts`), the player pauses and says "This download was removed: newsreel no longer has the
+download this video plays from … Try again to download it anew", with Try again and Back. While a
+title replaces its source, the old one going is expected and says nothing. Found on the emulator: the
+broken stream's own "The video stopped" drew over it, so that one now gives way
+(`8-phone-removed-after.png`).
+
+**Test.** `lib/jobs.test.ts`; on the emulator as above.
+
+**Upstream.** v0.7.0 falls back the same way. Upstream has it.
+
+## 19. Chapter names that are a timestamp
+
+**Bug.** His Girl Friday's chapters are named `00:00:00.000` and so on, so the bar read
+"0:34 / 1:32:08  00:00:00.000" (`9-phone-chapter-before.png`).
+
+**Fix.** The engine leaves out a chapter name that is only a time (digits, colons and dots, with a
+colon) or `Chapter N`; the chapters themselves stay on the seek bar.
+
+**Test.** `a_chapter_named_only_by_its_time_or_number_has_no_name` (and that "Chapter 1: The Ride"
+and "1963" stay). Not shown on a device: the test home has no film with such chapters.
+
+**Upstream.** Same in v0.7.0. Upstream has it.
+
+## 20. The title page's sources still say `--timeout`
+
+**Bug.** The title page's Sources list and `/api/title/sources` said "retry with a longer --timeout"
+(`10-12-phone-hint-and-count-before.png`), though section 4a fixed the play screen.
+
+**Cause.** Both `/api/search` and `/api/title/sources` stream their results and end with the error as
+their last line, which `results` sent as the search gave it. Only the routes' other failures went
+through `for_browser`.
+
+**Fix.** The last line goes through `for_browser` too. The fake search port now fails a search whose
+every source failed, as the real one does, so the web tests reach this path.
+
+**Test.** `a_search_and_a_titles_sources_that_every_indexer_failed_hint_at_what_a_browser_can_do`
+failed before ("check the network connection, or retry with a longer --timeout") and passes now.
+On the phone, with the indexer pointed at a closed port: "All sources failed (hydra). Check that the
+computer running newsreel is online, then search again." (`10-phone-sources-hint-after.png`).
+
+**Upstream.** v0.7.0 streams the error the same way, with the `--timeout` hint. Upstream has it.
+
+## 21. Pairing cookies collide across engines on one host
+
+**Bug.** A browser that never paired with this engine was told it "was removed", from another
+engine's cookie on the same host (`11-tv-pair-removed-before.png`); cookies ignore ports, so pairing
+with one engine also replaced another's cookie.
+
+**Fix.**
+- Each engine has an ID in its database (new `engine` table), and its cookie is
+  `newsreel_device_<id>`. The engine reads only its own from the `Cookie` header. The remote CLI keeps
+  the name with the token, since it pulls files with that cookie.
+- The engine keeps the token hashes of the devices it removed (`removed_devices`). Only one of those
+  reads as "removed"; any other token is "not paired". Guessed tokens still count toward the
+  per-address limit, which used to count only "removed" ones.
+
+**Tests.** `each_engine_names_its_own_cookie_and_only_a_token_it_removed_reads_as_removed` and, over
+HTTP with two engines, `a_browser_paired_with_another_engine_on_the_host_is_not_paired_here_and_can_pair_with_both`.
+The existing device tests use the engine's cookie name. Not tried on a device: the emulators reach
+the engine over loopback, which needs no pairing.
+
+**Upstream.** v0.7.0 has one `torrential_device` cookie and the same "removed" for any unknown token.
+Upstream has it.
+
+## 22. "9 sources" and "Found 10 sources"
+
+**Cause.** Two counts. The title page lists the play's line: a download here first, and a release
+posted twice under the same name once (Charade's FraMeSToR remux is listed twice, `ubacff2` and
+`u51c7bb`). The play counted every release the search returned.
+
+**Fix.** The play counts the same line the page lists. Live, the page said "7 sources, in the order
+Play tries them" and the play "Found 7 sources" (`12-phone-*-after.png`). An indexer that answers
+differently between the page's search and the play's can still make them differ.
+
+**Tests.** `a_play_counts_its_sources_as_the_title_page_lists_them_with_a_release_posted_twice_once`
+failed before (3 against the page's 2). `replace_skips_a_release_whose_nzb_turns_out_to_be_the_stalled_download`
+expected the search's 2, and now expects the page's 3: the download here, listed by its own name,
+and the search's two.
+
+**Upstream.** v0.7.0 counts the search too, but lists releases once by ID, not by name, so its
+counts differ only with a download here or more than 12 results.
+
+## 23. `update --check` before the first release
+
+**Bug.** "returned 404 Not Found without a release version … run newsreel update again later".
+
+**Fix.** GitHub answers `/releases/latest` with 404 until a repository has a release. That is now
+"no release": `update --check` prints `latest: none published` and "no release of newsreel is
+published yet, so there is nothing to update" (JSON `"latest": null`), `update` prints "No release
+of newsreel is published yet, so there is nothing to install; 0.1.0 stays." and exits 0, and the
+engine's daily check no longer logs a failure. Once a release exists `/latest` redirects, as
+before.
+
+**Test.** `with_no_release_published_update_says_so_and_that_there_is_nothing_to_do` failed before
+(exit 5 with the old message) and passes now.
+
+**Upstream.** Same check in v0.7.0. Upstream has it.
+
+## 24. Minor
+
+- **Pair page error.** The "six digits" error stayed after the sixth digit. It clears once the code
+  is whole. `pair.test.ts`. Upstream has it (v0.7.0 shows the same error and clears it only on the
+  next submit).
+- **`engine status` and `engine run`.** Status named `state/engine.log`, which an engine run in the
+  foreground never writes. The engine notes at start whether its stderr is that file (by file
+  identity: device and inode on Unix, volume and file index on Windows; a first version asked
+  Windows only whether stderr was a console, which Windows CI showed misses a file sent elsewhere), and status then says "this engine logs
+  where newsreel engine run was started, not to …/engine.log" and gives no `log`.
+  `engine_status_of_an_engine_run_in_the_foreground_says_where_it_logs_not_engine_log` failed
+  before. Upstream has it.
+- **`verify` then `wait`.** A wait that saw its download checked now ends with "c17883 was checked:
+  every piece of its selected files is intact"; damage ends it with the verification error, as
+  before. Only a check of data already there counts, and downloading after it undoes it: a new
+  download is checked too, before it has anything (macOS CI caught that). `a_wait_that_saw_its_download_checked_says_the_check_found_it_intact`. A wait started
+  after the check ended cannot know there was one. Upstream has it.
+- **`indexers add` of an indexer already there.** It matched entries by exact URL, so the base
+  address the retest had in config.yaml and the `/api` address `add` found made a second entry with
+  the key in plain text; and a match replaced a key variable and renamed silently. Now an entry
+  written without `/api` matches too and takes the `/api` address, a key its variable already holds
+  keeps the variable, and the reply says what changed ("updated hydra: renamed from hydrabase, and
+  its key is now written in config.yaml, in place of $HYDRA_KEY", or "unchanged"). `added` lists
+  new entries only. `adding_an_indexer_already_there_keeps_its_name_and_key_variable_and_says_what_changed`
+  failed before; the existing test's "adding it again changes nothing" now checks `updated`.
+  Upstream replaces the key and renames the same way, without the `/api` match, which is newsreel's.
+- **Title heading blank between the name and the logo** (`14e-tv-title-blank-before.png`). Section
+  7f's name went the moment the logo was measured, while the logo took 300 ms to fade in. The name
+  now fades out over the logo on the same 300 ms. Layout only, no test. Upstream showed no name at
+  all until the logo (section 7f), so this gap is newsreel's.
