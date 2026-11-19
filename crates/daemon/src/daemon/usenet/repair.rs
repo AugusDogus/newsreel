@@ -38,7 +38,7 @@ const HELD_MOST: u64 = 256 << 20;
 /// How often a repair looks for slices that have landed, besides being woken when a piece lands.
 const LOOK_EVERY: Duration = Duration::from_secs(1);
 /// Articles a repair fetches at once.
-const FETCH_AT_ONCE: usize = 8;
+const FETCH_AT_ONCE: usize = 16;
 /// Slices fed in one go off the async threads.
 const FEED_AT_ONCE: usize = 64;
 
@@ -230,7 +230,10 @@ async fn repair(job: &Arc<Job>, epoch: u64) -> Result<(), Stop> {
                     job.journal.record(piece, crc);
                 }
                 Ok(None) => {
-                    return Err(Stop::Cannot(format!("{} was not on disk after the repair wrote it", job.place(piece))));
+                    return Err(Stop::Cannot(format!(
+                        "{} was not on disk after the repair wrote it",
+                        job.place(piece)
+                    )));
                 }
                 Err(e) => return Err(Stop::Cannot(e.message)),
             }
@@ -378,12 +381,13 @@ impl Plan {
         let mut posted_as: Vec<Option<usize>> = nzb.files.iter().map(|f| set.file_named(&f.filename)).collect();
         let named: BTreeSet<usize> = posted_as.iter().flatten().copied().collect();
         if named.len() < set.files().len() {
-            for (n, file) in nzb.files.iter().enumerate() {
-                if posted_as[n].is_some() || file.filename.to_ascii_lowercase().ends_with(".par2") {
-                    continue;
-                }
-                let Some(first) = file.segments.first() else { continue };
-                if let Some(part) = fetch(job, epoch, urgent, &first.message_ids).await? {
+            let unnamed: Vec<usize> = (0..nzb.files.len())
+                .filter(|&n| posted_as[n].is_none() && !nzb.files[n].filename.to_ascii_lowercase().ends_with(".par2"))
+                .filter(|&n| !nzb.files[n].segments.is_empty())
+                .collect();
+            let ids = unnamed.iter().map(|&n| nzb.files[n].segments[0].message_ids.clone()).collect();
+            for (n, part) in unnamed.into_iter().zip(fetch_all(job, epoch, urgent, ids).await?) {
+                if let Some(part) = part {
                     posted_as[n] = set.file_starting(part.file_size, &part.data).filter(|k| !named.contains(k));
                 }
             }
@@ -418,53 +422,56 @@ impl Plan {
                 }
             }
         }
-        // The rest of each set file is fetched from the articles that hold it.
+        // The rest of each set file is fetched from the articles that hold it, all at once.
         let mut held_bytes = 0;
+        let mut missing: Vec<Vec<(u64, u64)>> = vec![Vec::new(); set.files().len()];
+        let mut wanted_articles: Vec<(usize, Vec<String>)> = Vec::new();
         for (k, file) in set.files().iter().enumerate() {
             runs[k].sort_by_key(|r| r.at);
-            let mut missing: Vec<(u64, u64)> = Vec::new();
             let mut at = 0;
             for run in &runs[k] {
                 if run.at < at {
                     return Err(Stop::Cannot(format!("pieces overlap at byte {} of {}", run.at, file.name)));
                 }
                 if run.at > at {
-                    missing.push((at, run.at));
+                    missing[k].push((at, run.at));
                 }
                 at = run.at + run.len;
             }
             if at < file.size {
-                missing.push((at, file.size));
+                missing[k].push((at, file.size));
             }
-            if missing.is_empty() {
+            if missing[k].is_empty() {
                 continue;
             }
-            let Some(n) = posted_as.iter().position(|&posted| posted == Some(k)) else {
-                runs[k].extend(missing.iter().map(|&(s, e)| Span { at: s, len: e - s, from: Source::Gone }));
-                continue;
-            };
-            held_bytes += missing.iter().map(|(s, e)| e - s).sum::<u64>();
+            let Some(n) = posted_as.iter().position(|&posted| posted == Some(k)) else { continue };
+            held_bytes += missing[k].iter().map(|(s, e)| e - s).sum::<u64>();
             if held_bytes > HELD_MOST {
                 return Err(Stop::Cannot(format!(
                     "rebuilding would hold more than {} of files this download does not keep in memory; select every file of the release and resume it",
                     newsreel_core::units::format_size(HELD_MOST)
                 )));
             }
-            let segments = spanning(&nzb.files[n], &begins[n], file.size, &missing);
-            let ids = segments.into_iter().map(|i| nzb.files[n].segments[i].message_ids.clone()).collect();
-            let parts = fetch_all(job, epoch, urgent, ids).await?;
-            let mut held: Vec<Span> = Vec::new();
-            for part in parts.into_iter().flatten() {
-                for &(s, e) in &missing {
-                    let (x, y) = (s.max(part.begin), e.min(part.end()));
-                    if x < y {
-                        let bytes = &part.data[(x - part.begin) as usize..(y - part.begin) as usize];
-                        held.push(Span { at: x, len: y - x, from: Source::Held(bytes.into()) });
-                    }
+            let segments = spanning(&nzb.files[n], &begins[n], file.size, &missing[k]);
+            wanted_articles.extend(segments.into_iter().map(|i| (k, nzb.files[n].segments[i].message_ids.clone())));
+        }
+        let (from, ids): (Vec<usize>, Vec<Vec<String>>) = wanted_articles.into_iter().unzip();
+        let parts = fetch_all(job, epoch, urgent, ids).await?;
+        let mut held: Vec<Vec<Span>> = vec![Vec::new(); set.files().len()];
+        for (k, part) in from.into_iter().zip(parts) {
+            let Some(part) = part else { continue };
+            for &(s, e) in &missing[k] {
+                let (x, y) = (s.max(part.begin), e.min(part.end()));
+                if x < y {
+                    let bytes = &part.data[(x - part.begin) as usize..(y - part.begin) as usize];
+                    held[k].push(Span { at: x, len: y - x, from: Source::Held(bytes.into()) });
                 }
             }
+        }
+        // What no article sent is gone.
+        for (k, mut held) in held.into_iter().enumerate() {
             held.sort_by_key(|r| r.at);
-            for &(s, e) in &missing {
+            for &(s, e) in &missing[k] {
                 let mut at = s;
                 for run in held.iter().filter(|r| r.at >= s && r.at < e) {
                     if run.at > at {
