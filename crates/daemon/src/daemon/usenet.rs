@@ -131,13 +131,20 @@ struct Job {
     files: Vec<OutputFile>,
     state: Mutex<State>,
     journal: Journal,
-    /// The release's NZB, when it posts PAR2 files to repair damaged articles from.
-    nzb: Option<Arc<Nzb>>,
+    /// The release's PAR2 files, when it posts any, to repair damaged articles from.
+    recovery: Option<Arc<Recovery>>,
     /// Background priority; reads a player waits on go through `with_priority(Urgent)`.
     pool: Pool,
     events: mpsc::Sender<EngineEvent>,
     /// Woken whenever a piece lands, for a repair waiting on the rest of the release.
     landed: tokio::sync::Notify,
+}
+
+/// What a repair reads a release's PAR2 files from: the NZB that posts them, and which of its
+/// files hold the recovery set, by name or, posted under obfuscated names, by content.
+struct Recovery {
+    nzb: Nzb,
+    par2: Par2Files,
 }
 
 struct OutputFile {
@@ -303,7 +310,7 @@ impl Job {
 
     /// Why no repair rebuilds pieces set aside, to end a sentence that names one.
     fn unrepaired(&self, state: &State) -> String {
-        match (&self.nzb, state.repair.impossible()) {
+        match (&self.recovery, state.repair.impossible()) {
             (None, _) => "; the release posts no PAR2 files to rebuild it from".into(),
             (Some(_), Some(why)) => format!("; the release's PAR2 files cannot rebuild it: {why}"),
             (Some(_), None) => String::new(),
@@ -676,11 +683,11 @@ impl Fetched {
 fn unrecoverable(job: &Arc<Job>, state: &mut State, piece: PieceRef, why: String) {
     if state.named < NAMED_MOST {
         state.named += 1;
-        let repairs = if job.nzb.is_some() { ". It is repaired from the release's PAR2 files" } else { "" };
+        let repairs = if job.recovery.is_some() { ". It is repaired from the release's PAR2 files" } else { "" };
         log(&format!("{} cannot fetch {}: {why}{repairs}", short(job.id), job.place(piece)));
     }
     state.failed.insert(piece, why);
-    if job.nzb.is_some()
+    if job.recovery.is_some()
         && let Some(epoch) = repair::lost(state, piece)
     {
         tokio::spawn(repair::run(job.clone(), epoch));
@@ -752,7 +759,10 @@ impl EnginePort for Usenet {
             return Err(Error::internal(format!("the engine already has download {id}")));
         }
         let (manifest, nzb) = decode_release(&bytes)?;
-        let nzb = nzb.filter(|nzb| !Par2Files::find(nzb).is_empty()).map(Arc::new);
+        let recovery = nzb.and_then(|nzb| {
+            let par2 = Par2Files::find_resolved(&nzb, &manifest).into_iter().next()?;
+            Some(Arc::new(Recovery { nzb, par2 }))
+        });
         let meta = layout(&manifest, Vec::new())?;
         let files: Vec<OutputFile> = manifest
             .files
@@ -782,7 +792,7 @@ impl EnginePort for Usenet {
                     Some(Recorded::Landed(crc)) => journaled[f][p] = Some(crc),
                     // A repair rebuilds it again, without asking the servers again; without
                     // PAR2 files it is asked for as if new.
-                    Some(Recorded::Lost) if nzb.is_some() => {
+                    Some(Recorded::Lost) if recovery.is_some() => {
                         failed.insert((f, p), "no server sent it intact when the engine last ran".to_string());
                     }
                     Some(Recorded::Lost) | None => {}
@@ -817,7 +827,7 @@ impl EnginePort for Usenet {
             files,
             state: Mutex::new(state),
             journal,
-            nzb,
+            recovery,
             pool: self.pool.clone(),
             events: self.sender.clone(),
             landed: tokio::sync::Notify::new(),
@@ -1108,7 +1118,7 @@ impl NzbPort for Resolver {
                 manifest.files.len()
             ));
             // A repair reads the PAR2 files' articles from the NZB, which the manifest leaves out.
-            let par2 = !Par2Files::find(&nzb).is_empty();
+            let par2 = !Par2Files::find_resolved(&nzb, &manifest).is_empty();
             Ok(encode_release(&manifest.to_bytes(), par2.then_some(bytes.as_slice())))
         })
     }
@@ -1153,7 +1163,13 @@ mod tests {
                 ManifestFile { path: path.to_string(), size: at, pieces }
             })
             .collect();
-        Manifest { release_id: "ab".repeat(20), title: "Some Release".into(), packing: Packing::Direct, files }
+        Manifest {
+            release_id: "ab".repeat(20),
+            title: "Some Release".into(),
+            packing: Packing::Direct,
+            files,
+            par2: Vec::new(),
+        }
     }
 
     fn job(files: &[(&str, &[u64])]) -> Job {
@@ -1197,7 +1213,7 @@ mod tests {
             files,
             state: Mutex::new(state),
             journal: Journal::new(&std::env::temp_dir(), id),
-            nzb: None,
+            recovery: None,
             pool: Pool::new(Vec::new()),
             events: mpsc::channel().0,
             landed: tokio::sync::Notify::new(),

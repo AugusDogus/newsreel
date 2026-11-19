@@ -134,11 +134,8 @@ pub(super) async fn run(job: Arc<Job>, epoch: u64) {
 }
 
 async fn repair(job: &Arc<Job>, epoch: u64) -> Result<(), Stop> {
-    let nzb = job.nzb.clone().ok_or_else(|| Stop::Cannot("the release posts no PAR2 files".into()))?;
-    let par2 = Par2Files::find(&nzb)
-        .into_iter()
-        .next()
-        .ok_or_else(|| Stop::Cannot("the release posts no PAR2 files".into()))?;
+    let recovery = job.recovery.clone().ok_or_else(|| Stop::Cannot("the release posts no PAR2 files".into()))?;
+    let (nzb, par2) = (&recovery.nzb, &recovery.par2);
     let started = std::time::Instant::now();
     let index = fetch_whole(job, epoch, &nzb.files[par2.index]).await?;
     let set = RecoverySet::parse(&index.concat())
@@ -148,7 +145,7 @@ async fn repair(job: &Arc<Job>, epoch: u64) -> Result<(), Stop> {
     let mut fetched = BTreeSet::from([par2.index]);
     let mut bad: BTreeSet<u32> = BTreeSet::new();
     loop {
-        let plan = Plan::new(job, epoch, &nzb, &set).await?;
+        let plan = Plan::new(job, epoch, nzb, par2, &set).await?;
         let lost: BTreeSet<PieceRef> = match &guard(job, epoch)?.repair {
             Repairing::Active { pieces, .. } => pieces.clone(),
             _ => return Err(Stop::Cancelled),
@@ -371,7 +368,7 @@ struct Plan {
 impl Plan {
     /// Maps the set's files to the posted files and the pieces of the download, and fetches the
     /// bytes of the set that no file on disk holds.
-    async fn new(job: &Arc<Job>, epoch: u64, nzb: &Nzb, set: &RecoverySet) -> Result<Self, Stop> {
+    async fn new(job: &Arc<Job>, epoch: u64, nzb: &Nzb, par2: &Par2Files, set: &RecoverySet) -> Result<Self, Stop> {
         let wanted = guard(job, epoch)?.wanted.clone();
         // The set's file each posted file is, by name, or else by its size and first bytes, since
         // posters rename files.
@@ -380,8 +377,10 @@ impl Plan {
         let mut first: HashMap<usize, Part> = HashMap::new();
         let named: BTreeSet<usize> = posted_as.iter().flatten().copied().collect();
         if named.len() < set.files().len() {
+            let recovery: BTreeSet<usize> = par2.files().collect();
             let unnamed: Vec<usize> = (0..nzb.files.len())
-                .filter(|&n| posted_as[n].is_none() && !nzb.files[n].filename.to_ascii_lowercase().ends_with(".par2"))
+                .filter(|&n| posted_as[n].is_none() && !recovery.contains(&n))
+                .filter(|&n| !nzb.files[n].filename.to_ascii_lowercase().ends_with(".par2"))
                 .filter(|&n| !nzb.files[n].segments.is_empty())
                 .collect();
             let ids = unnamed.iter().map(|&n| nzb.files[n].segments[0].message_ids.clone()).collect();

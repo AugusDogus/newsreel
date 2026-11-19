@@ -915,6 +915,44 @@ fn a_damaged_article_inside_rar_volumes_is_rebuilt_from_the_volumes_par2_set() {
     assert!(home.log().contains("repaired 1 damaged article"), "{}", home.log());
 }
 
+/// Posters often hide every name, the PAR2 files' too, so nothing says `.par2`. The resolver
+/// reads each file's first article, which for a PAR2 file starts with its packet magic, and the
+/// repair finds the set by that, and the volumes it protects by their sizes and first bytes.
+#[test]
+fn a_damaged_article_is_rebuilt_from_par2_files_posted_under_obfuscated_names() {
+    let server = FakeServer::start();
+    let film: Vec<u8> = (0..(3u32 << 20)).map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8).collect();
+    let volumes = usenet::fake::rar_volumes("Film.2024", "Film.2024.mkv", &film, 1 << 20);
+    let named: Vec<(&str, &[u8])> = volumes.iter().map(|(n, v)| (n.as_str(), v.as_slice())).collect();
+    let par2 = usenet::fake::par2("Film.2024", &named, 30_000, 6);
+    let all: Vec<(String, &[u8])> = named
+        .iter()
+        .copied()
+        .chain(par2.iter().map(|(n, b)| (n.as_str(), b.as_slice())))
+        .enumerate()
+        .map(|(k, (_, bytes))| (format!("{:032x}", 0x9e37_79b9_7f4a_7c15u128.wrapping_mul(k as u128 + 1)), bytes))
+        .collect();
+    let obfuscated: Vec<(&str, &[u8])> = all.iter().map(|(n, b)| (n.as_str(), *b)).collect();
+    let posting = Posting::new("Film.2024", &obfuscated, PART);
+    server.add(&posting);
+    // The second volume is the second file posted.
+    server.damage(&posting.files[1].1[30]);
+    let home = Home::served(&server);
+    let dir = tempfile::tempdir().unwrap();
+    let nzb = dir.path().join("film.nzb");
+    std::fs::write(&nzb, &posting.nzb).unwrap();
+    let id = hex(&usenet::Nzb::parse(&posting.nzb).unwrap().id);
+    let url = play(&home, nzb.display().to_string(), 1);
+
+    let at = (1 << 20) + 30 * PART - 200;
+    let (head, body) = get_range(&url, &format!("bytes={at}-{}", at + 3 * PART));
+    assert!(head.starts_with("HTTP/1.1 206 Partial Content\r\n"), "{head}{}", home.log());
+    assert!(body == film[at..=at + 3 * PART], "the repaired bytes match the film");
+    let job = home.until(&id, "the download is done", |j| state(j) == "done");
+    assert_eq!(state(&job), "done");
+    assert!(home.log().contains("repaired 1 damaged article"), "{}", home.log());
+}
+
 /// With fewer recovery blocks than the damaged slices, a reader waiting on them fails at once,
 /// as before repair, so a title play moves to its next source, and a plain download stops at the
 /// end with the reason.
