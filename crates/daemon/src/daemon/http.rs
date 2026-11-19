@@ -1284,6 +1284,19 @@ mod tests {
         assert!(!allowed(Some("other.example.com"), None, None));
     }
 
+    /// The engine read every header in lower case, so a Pixel 8 paired as "pixel 8", and Chrome's
+    /// reduced user agent, whose model is "K", as "k".
+    #[test]
+    fn a_request_keeps_its_user_agent_as_sent() {
+        let agent = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36";
+        let head = format!("GET /pair HTTP/1.1\r\nHost: 192.168.1.23:47919\r\nuser-agent:  {agent} \r\n\r\n");
+        let mut headers = [httparse::EMPTY_HEADER; 16];
+        let mut parsed = httparse::Request::new(&mut headers);
+        parsed.parse(head.as_bytes()).unwrap();
+        let Head::Request(request) = super::head(&parsed) else { panic!("refused") };
+        assert_eq!(request.agent.as_deref(), Some(agent));
+    }
+
     #[test]
     fn a_request_a_local_proxy_forwards_comes_from_the_network_and_never_from_this_mac() {
         let request = |host: &str, forwarded: Option<&str>| {

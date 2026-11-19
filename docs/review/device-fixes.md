@@ -323,8 +323,10 @@ names a TV (signals in fix 5).
 **Found while checking it on the emulators.** The first build named the phone "k": the HTTP layer
 lowercases every header value, the User-Agent too, so the reduced UA's `K` was not recognised and
 models would read "pixel 8". The request now keeps the User-Agent as sent (it is only used for the
-name). `a_device_paired_over_the_network_is_named_by_its_user_agent_as_it_was_sent` pairs over
-HTTP and failed with "pixel 8" before that change.
+name). `a_request_keeps_its_user_agent_as_sent` (`daemon/http.rs`) failed before that change. A
+first version of this test paired over the network with a second engine listening on every
+address; on macOS CI it made `the_engine_keeps_trying_the_home_network_while_another_program_holds_its_port`
+fail twice (main passed the same job), since macOS lets 127.0.0.1 and 0.0.0.0 sockets share a port.
 
 **Tests.** `a_device_is_named_by_what_its_browser_runs_on` gained the Pixel 8, a Samsung tablet
 model, both reduced user agents, SHIELD and Google TV (the Pixel 8 case expected "Android" before,
