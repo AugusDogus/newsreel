@@ -321,6 +321,7 @@ fn downloading() -> Progress {
         down_rate: 32_715_571,
         connections: 48,
         eta: Some(49),
+        repair: None,
     }
 }
 
@@ -1122,4 +1123,20 @@ fn a_title_list_shows_ratings_only_when_a_title_has_one() {
         "ID\tKIND\tYEAR\tRATING\tNAME\ntt1727587\tfilm\t2010\t7.4\tSintel\ntt0000001\tfilm\t2010\t?\tSintel Two\n\
          # 2 titles\nnext: newsreel title tt1727587\n"
     );
+}
+
+#[test]
+fn status_says_a_download_repairs_a_damaged_part_and_how_long_it_has_left() {
+    let repair = newsreel_core::Repair {
+        articles: 1,
+        stage: newsreel_core::RepairStage::Waiting,
+        blocking: true,
+        eta: Some(42),
+    };
+    let progress = Progress { repair: Some(repair), ..downloading() };
+    let job = job(ARCH, "Charade.1963.BluRay.720p.H264-20-40", JobStatus::Downloading, progress);
+    let plain = render(Mode::Plain, &super::status::job(&job), &Response::Jobs { jobs: vec![job.clone()] });
+    assert!(plain.contains("repairing a damaged part, about 42s left"), "{plain}");
+    let json = render(Mode::Json, &super::status::job(&job), &Response::Jobs { jobs: vec![job] });
+    assert!(json.contains(r#""repair":{"articles":1,"stage":"waiting","blocking":true,"eta":42}"#), "{json}");
 }

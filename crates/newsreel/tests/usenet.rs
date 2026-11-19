@@ -111,6 +111,17 @@ impl Release {
         Self { dir: tempfile::tempdir().unwrap(), name, files: contents, posting }
     }
 
+    /// A release posted with PAR2 files of `blocks` recovery blocks of `slice` bytes, protecting
+    /// its files as posted.
+    fn with_par2(name: &'static str, files: &[(&'static str, usize)], seed: u64, slice: usize, blocks: u16) -> Self {
+        let plain = Self::new(name, files, seed);
+        let posted: Vec<(&str, &[u8])> = plain.files.iter().map(|(f, b)| (*f, b.as_slice())).collect();
+        let par2 = usenet::fake::par2(name, &posted, slice, blocks);
+        let mut all = posted.clone();
+        all.extend(par2.iter().map(|(n, b)| (n.as_str(), b.as_slice())));
+        Self { posting: Posting::new(name, &all, PART), ..plain }
+    }
+
     fn on(self, server: &FakeServer) -> Self {
         server.add(&self.posting);
         self
@@ -129,6 +140,11 @@ impl Release {
 
     fn id(&self) -> String {
         hex(&usenet::Nzb::parse(&self.posting.nzb).unwrap().id)
+    }
+
+    /// Downloads the release with `newsreel get` into the home's downloads folder.
+    fn get_into(&self, home: &Home) {
+        home.get(&self.nzb_file(), &[]);
     }
 
     fn short(&self) -> String {
@@ -797,7 +813,9 @@ fn a_read_across_an_article_no_server_has_fails_at_once_and_the_download_says_wh
 
     let (head, body) = get_range(&url, "bytes=1048576-1100000");
     assert!(head.starts_with("HTTP/1.1 503 Service Unavailable\r\n"), "{head}");
-    assert!(String::from_utf8_lossy(&body).contains(&gone), "the answer names the article: {head}");
+    let body = String::from_utf8_lossy(&body);
+    assert!(body.contains(&gone), "the answer names the article: {head}");
+    assert!(body.contains("posts no PAR2 files"), "and says nothing can rebuild it: {body}");
     let (head, body) = get_range(&url, "bytes=1040000-1100000");
     let before_the_gap = &release.files["film.mkv"][1_040_000..1 << 20];
     assert!(head.starts_with("HTTP/1.1 503") || body == before_the_gap, "nothing past the gap: {head}");
@@ -824,4 +842,128 @@ fn a_film_stored_in_rar_volumes_streams_from_the_middle_without_extracting() {
     let job = home.job(&id);
     assert!(verified(&job) < film.len() as u64 / 2, "{} of {} bytes verified", verified(&job), film.len());
     assert!(!snapshot(&home.downloads()).keys().any(|p| p.extension().is_some_and(|e| e == "rar")), "no volume lands");
+}
+
+/// Where a play's read of the damaged bytes stands, from its download's status.
+fn repair(job: &Value) -> &Value {
+    &job["progress"]["repair"]
+}
+
+/// Charade (1963) has one article every server stores cut short. SABnzbd rebuilds such an
+/// article from the release's PAR2 files, and so does newsreel now: a read across it waits for
+/// the rest of the release and the repair, then gets the bytes as posted.
+#[test]
+fn a_damaged_article_is_rebuilt_from_par2_and_a_read_across_it_gets_the_posted_bytes() {
+    let server = slow();
+    // Slices of 20,000 bytes do not line up with the articles, so the article spans two.
+    let release = Release::with_par2("film", &[("film.mkv", 3 << 20)], 31, 20_000, 4).on(&server);
+    let damaged = release.articles("film.mkv")[100].clone();
+    server.damage(&damaged);
+    let home = Home::served(&server);
+    let url = play(&home, release.nzb_file(), 0);
+    let at = 100 * PART;
+    let reading = std::thread::spawn({
+        let url = url.clone();
+        move || get_range(&url, &format!("bytes={}-{}", at - 1000, at + PART + 1000))
+    });
+    let job = home.until(&release.id(), "the read waits on the repair", |j| repair(j)["blocking"] == true);
+    assert_eq!(state(&job), "downloading", "{job:#}");
+    assert_eq!(repair(&job)["articles"], 1, "{job:#}");
+    let (head, body) = reading.join().unwrap();
+    assert!(head.starts_with("HTTP/1.1 206 Partial Content\r\n"), "{head}");
+    assert!(body == release.files["film.mkv"][at - 1000..=at + PART + 1000], "the repaired bytes match the post");
+    let job = home.until(&release.id(), "the download is done", |j| state(j) == "done");
+    assert!(repair(&job).is_null(), "{job:#}");
+    let kept = std::fs::read(home.downloads().join("film.mkv")).unwrap();
+    assert!(kept == release.files["film.mkv"], "the whole file matches its post");
+    let log = home.log();
+    assert!(log.contains(&damaged) && log.contains("repaired 1 damaged article"), "{log}");
+    assert_eq!(server.served(&damaged), 1, "a damaged copy is not asked for again");
+}
+
+/// A release stored in RAR volumes is protected volume by volume, so a damaged piece of the film
+/// is rebuilt from the slices of the volume it is in, read back from the film on disk and from
+/// the volumes' own headers and the sample, which the play does not keep.
+#[test]
+fn a_damaged_article_inside_rar_volumes_is_rebuilt_from_the_volumes_par2_set() {
+    let server = FakeServer::start();
+    let film: Vec<u8> = (0..(3u32 << 20)).map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8).collect();
+    let volumes = usenet::fake::rar_volumes("Film.2024", "Film.2024.mkv", &film, 1 << 20);
+    let mut posted: Vec<(&str, &[u8])> = volumes.iter().map(|(n, v)| (n.as_str(), v.as_slice())).collect();
+    let par2 = usenet::fake::par2("Film.2024", &posted, 30_000, 6);
+    posted.extend(par2.iter().map(|(n, b)| (n.as_str(), b.as_slice())));
+    let posting = Posting::new("Film.2024", &posted, PART);
+    server.add(&posting);
+    let volume = &posting.files.iter().find(|(n, _)| n == "Film.2024.part02.rar").unwrap().1;
+    server.damage(&volume[30]);
+    let home = Home::served(&server);
+    let dir = tempfile::tempdir().unwrap();
+    let nzb = dir.path().join("film.nzb");
+    std::fs::write(&nzb, &posting.nzb).unwrap();
+    let id = hex(&usenet::Nzb::parse(&posting.nzb).unwrap().id);
+    let url = play(&home, nzb.display().to_string(), 1);
+
+    // Article 30 of the second volume holds about 0.47 MiB into its share of the film.
+    let at = (1 << 20) + 30 * PART - 200;
+    let (head, body) = get_range(&url, &format!("bytes={at}-{}", at + 3 * PART));
+    assert!(head.starts_with("HTTP/1.1 206 Partial Content\r\n"), "{head}");
+    assert!(body == film[at..=at + 3 * PART], "the repaired bytes match the film");
+    let job = home.until(&id, "the download is done", |j| state(j) == "done");
+    assert_eq!(state(&job), "done");
+    let kept = home.downloads().join("Film.2024").join("Film.2024.mkv");
+    assert!(std::fs::read(kept).unwrap() == film, "the whole film matches");
+    assert!(home.log().contains("repaired 1 damaged article"), "{}", home.log());
+}
+
+/// With fewer recovery blocks than the damaged slices, a reader waiting on them fails at once,
+/// as before repair, so a title play moves to its next source, and a plain download stops at the
+/// end with the reason.
+#[test]
+fn too_few_recovery_blocks_fail_a_waiting_read_at_once_and_stop_a_download_with_the_reason() {
+    let server = FakeServer::start();
+    let release = Release::with_par2("film", &[("film.mkv", 2 << 20)], 37, 20_000, 1).on(&server);
+    let damaged = release.articles("film.mkv")[64].clone();
+    server.damage(&damaged);
+    let home = Home::served(&server);
+    let url = play(&home, release.nzb_file(), 0);
+    let range = format!("bytes={}-{}", 64 * PART, 64 * PART + 100);
+    let asked = Instant::now();
+    let (_, body) = get_range(&url, &range);
+    assert!(body.is_empty(), "nothing is sent from the damaged article");
+    assert!(asked.elapsed() < Duration::from_secs(30), "the read took {:?}", asked.elapsed());
+    let job = home.until(&release.id(), "the play stops", |j| state(j) == "error");
+    assert_eq!(job["error"]["code"], "no_source", "{job:#}");
+    let (head, body) = get_range(&url, &range);
+    let body = String::from_utf8_lossy(&body);
+    assert!(head.starts_with("HTTP/1.1 503 Service Unavailable\r\n"), "{head}{body}");
+    assert!(body.contains(&damaged) && body.contains("PAR2 files cannot rebuild it"), "{body}");
+    assert!(body.contains("1 recovery block"), "{body}");
+
+    let other = Release::with_par2("other", &[("other.mkv", 2 << 20)], 41, 20_000, 1).on(&server);
+    server.damage(&other.articles("other.mkv")[10]);
+    other.get_into(&home);
+    let job = home.until(&other.id(), "the download stops", |j| state(j) == "error");
+    let message = job["error"]["message"].as_str().unwrap();
+    assert!(message.contains("hold 1 recovery block"), "the reason is the blocks: {job:#}");
+    assert!(verified(&job) >= other.total() - 2 * PART as u64, "the rest was downloaded: {job:#}");
+}
+
+/// An engine killed while it waits to repair goes on repairing when it starts again, without
+/// asking the servers for the damaged article again.
+#[test]
+fn a_repair_cut_short_by_an_engine_restart_goes_on_and_finishes() {
+    let server = slow();
+    let release = Release::with_par2("big", &[("big.bin", 4 << 20)], 43, 20_000, 4).on(&server);
+    let damaged = release.articles("big.bin")[3].clone();
+    server.damage(&damaged);
+    let home = Home::served(&server);
+    release.get_into(&home);
+    home.until(&release.id(), "the repair waits for the rest", |j| repair(j)["stage"] == "waiting");
+    home.kill_engine();
+    let job = home.until(&release.id(), "the download is done", |j| state(j) == "done");
+    assert_eq!(state(&job), "done", "{job:#}");
+    let kept = std::fs::read(home.downloads().join("big.bin")).unwrap();
+    assert!(kept == release.files["big.bin"], "the repaired file matches its post");
+    assert_eq!(server.served(&damaged), 1, "the restarted engine did not ask for the damaged article again");
+    assert!(home.log().contains("goes on repairing"), "{}", home.log());
 }

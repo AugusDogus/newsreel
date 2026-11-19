@@ -82,6 +82,9 @@ pub fn job(job: &Job) -> Doc {
     }
     if downloading {
         fields.push(("eta", Cell::new(format::eta(p.eta))));
+        if let Some(repair) = &p.repair {
+            fields.push(("repair", Cell::new(repair.text())));
+        }
     }
     fields.push(("files", Cell::new(selection(&job.selection))));
     fields.push(("path", Cell::new(job.path.display().to_string())));

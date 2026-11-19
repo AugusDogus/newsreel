@@ -79,7 +79,8 @@ function StallWatch({ play, element, dispatch }: { play: PlayInfo; element: RefO
         time: playing.currentTime,
         waiting: parts.video.snapshot().waiting && !playing.paused,
         ahead: range ? range[1] - playing.currentTime : 0,
-        receiving: progress.down_rate > 0 || state === "done",
+        // A repair waits for the rest of the release, so the source is not stalled.
+        receiving: progress.down_rate > 0 || state === "done" || progress.repair != null,
         failed: state === "error",
       });
     }, 1000);

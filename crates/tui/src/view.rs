@@ -649,6 +649,7 @@ fn tail_text(state: &State, job: &Job) -> String {
     let p = &job.progress;
     match &job.status {
         JobStatus::Downloading => match p.eta {
+            _ if p.repair.is_some_and(|r| r.blocking) => "repairing".into(),
             Some(secs) if p.down_rate >= 1024 => format!("{} left", format_duration(Duration::from_secs(secs))),
             _ if state.stalled(job) => "stalled".into(),
             _ => String::new(),
@@ -698,6 +699,9 @@ fn download_detail(buf: &mut Buffer, state: &State, job: &Job, g: &Grid, (y, vie
     }
     if job.status == JobStatus::Downloading {
         facts.push(count(p.connections as usize, "connection"));
+    }
+    if let (JobStatus::Downloading, Some(repair)) = (&job.status, &p.repair) {
+        facts.insert(1, repair.text());
     }
     while facts.len() > 1 && width(&facts.join(" · ")) > usize::from(room) {
         facts.pop();

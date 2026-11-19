@@ -70,6 +70,8 @@ pub fn declarations(cfg: &Config) -> Vec<String> {
         Place::decl(cfg),
         Selection::decl(cfg),
         JobStatus::decl(cfg),
+        RepairStage::decl(cfg),
+        Repair::decl(cfg),
         Progress::decl(cfg),
         TitleLink::decl(cfg),
         Job::decl(cfg),

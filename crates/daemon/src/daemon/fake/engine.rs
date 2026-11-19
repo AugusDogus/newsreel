@@ -356,7 +356,7 @@ impl engine_port::Engine for Engine {
             if stats_due || done {
                 let down_rate = if done { 0 } else { rate };
                 let (verified, piece_map, missing) = (landing.verified, landing.piece_map, Some(landing.missing));
-                let stats = Stats { verified, piece_map, missing, down_rate, connections: 3 };
+                let stats = Stats { verified, piece_map, missing, down_rate, connections: 3, repair: None };
                 self.events.push_back(EngineEvent::Stats { id, stats });
             }
             if done {

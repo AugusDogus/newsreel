@@ -1,6 +1,12 @@
 //! The Usenet engine. A job is a resolved release ([`Manifest`]); its pieces are the parts of
 //! articles that land in its files. Workers fetch pieces in file order, and the pieces under a
 //! byte range a player asks for first, then continue from there, as streaming needs.
+//!
+//! The pieces a reader waits on now are fetched at once at urgent priority, beside the workers,
+//! whose requests the pool holds to the few that keep the link full. A piece no server sends
+//! intact is rebuilt from the release's PAR2 files ([`repair`]).
+
+mod repair;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{File, OpenOptions};
@@ -12,12 +18,14 @@ use std::time::{Duration, Instant};
 use newsreel_core::{DownloadId, Error, ErrorCode, PieceMap, Slice};
 use usenet::article::ArticleError;
 use usenet::manifest::Piece;
+use usenet::nntp::Priority;
+use usenet::par2::Par2Files;
 use usenet::yenc::Part;
 use usenet::{Manifest, Nzb, Pool, ResolveError, article};
 
 use super::BoxFuture;
-use super::engine_port::{self, Activity, AddDownload, EngineEvent, EnginePort, Missing, Stats};
-use super::journal::Journal;
+use super::engine_port::{self, Activity, AddDownload, EngineEvent, EnginePort, Missing, RepairStats, Stats};
+use super::journal::{Journal, Recorded};
 use super::layout::{Layout, LayoutFile};
 use super::nzb_port::NzbPort;
 use crate::log::log;
@@ -36,10 +44,46 @@ const PACE_CHECK: Duration = Duration::from_millis(200);
 const NAMED_MOST: u32 = 3;
 /// The least time between log lines about one download's fetches that will be tried again.
 const RETRY_LOG_EVERY: Duration = Duration::from_secs(60);
+/// The most pieces one read fetches at urgent priority at once; the rest go first to the workers.
+const RUSHED_MOST: usize = 16;
+/// How long after a reader last asked for a piece being repaired it counts as waiting on it.
+const READER_WAITS: Duration = Duration::from_secs(3);
 
-/// Reads a manifest: the files a download writes, and where each article lands in them.
+/// What a resolved release is stored as: its manifest, then its NZB when the NZB posts PAR2
+/// files, which a repair reads. The manifest's length comes first, as 8 bytes little-endian.
+const RELEASE: &[u8] = b"NRR1";
+
+fn encode_release(manifest: &[u8], nzb: Option<&[u8]>) -> Vec<u8> {
+    let mut out = RELEASE.to_vec();
+    out.extend((manifest.len() as u64).to_le_bytes());
+    out.extend_from_slice(manifest);
+    out.extend_from_slice(nzb.unwrap_or_default());
+    out
+}
+
+/// The manifest, and the NZB when it posts PAR2 files.
+fn decode_release(bytes: &[u8]) -> Result<(Manifest, Option<Nzb>), Error> {
+    let unreadable = |why: String| {
+        Error::new(ErrorCode::InvalidRelease, format!("the stored release does not read: {why}"))
+            .with_hint("read the NZB again with newsreel get <nzb file or URL>")
+    };
+    let body =
+        bytes.strip_prefix(RELEASE).ok_or_else(|| unreadable("it is not in newsreel's release format".into()))?;
+    let (length, body) = body.split_first_chunk::<8>().ok_or_else(|| unreadable("it is cut short".into()))?;
+    let length = usize::try_from(u64::from_le_bytes(*length)).unwrap_or(usize::MAX);
+    let (manifest, nzb) = (body.get(..length), body.get(length..));
+    let (Some(manifest), Some(nzb)) = (manifest, nzb) else { return Err(unreadable("it is cut short".into())) };
+    let manifest = Manifest::from_bytes(manifest).map_err(|e| Error::new(ErrorCode::InvalidRelease, e.to_string()))?;
+    let nzb = match nzb {
+        [] => None,
+        nzb => Some(Nzb::parse(nzb).map_err(|e| unreadable(e.to_string()))?),
+    };
+    Ok((manifest, nzb))
+}
+
+/// Reads a stored release: the files a download writes, and where each article lands in them.
 pub fn parse(bytes: &[u8]) -> Result<Layout, Error> {
-    let manifest = Manifest::from_bytes(bytes).map_err(|e| Error::new(ErrorCode::InvalidRelease, e.to_string()))?;
+    let (manifest, _) = decode_release(bytes)?;
     layout(&manifest, bytes.to_vec())
 }
 
@@ -87,6 +131,13 @@ struct Job {
     files: Vec<OutputFile>,
     state: Mutex<State>,
     journal: Journal,
+    /// The release's NZB, when it posts PAR2 files to repair damaged articles from.
+    nzb: Option<Arc<Nzb>>,
+    /// Background priority; reads a player waits on go through `with_priority(Urgent)`.
+    pool: Pool,
+    events: mpsc::Sender<EngineEvent>,
+    /// Woken whenever a piece lands, for a repair waiting on the rest of the release.
+    landed: tokio::sync::Notify,
 }
 
 struct OutputFile {
@@ -106,8 +157,16 @@ struct State {
     /// CRC32 an earlier run journaled for a piece not in `have`: read back before fetching.
     journaled: Vec<Vec<Option<u32>>>,
     in_flight: BTreeSet<PieceRef>,
+    /// Pieces a reader waits on, fetched at urgent priority beside any worker fetching them.
+    rushed: BTreeSet<PieceRef>,
     /// Pieces no server can send intact, and why, which asking again will not change.
     failed: BTreeMap<PieceRef, String>,
+    /// The repair of pieces in `failed` from the release's PAR2 files.
+    repair: repair::Repairing,
+    /// Bumped whenever `failed` is cleared or the download goes, which ends a running repair.
+    repair_epoch: u64,
+    /// When a reader last waited on a piece being repaired.
+    reader_on_repair: Option<Instant>,
     urgent: VecDeque<PieceRef>,
     /// Where the last requested range ended; readahead continues from here.
     focus: Option<PieceRef>,
@@ -139,6 +198,7 @@ impl State {
         self.wanted.get(f) == Some(&true)
             && self.have[f].get(p) == Some(&None)
             && !self.in_flight.contains(&(f, p))
+            && !self.rushed.contains(&(f, p))
             && !self.failed.contains_key(&(f, p))
     }
 
@@ -157,6 +217,7 @@ impl State {
         (0..files.len()).flat_map(|f| (0..files[f].pieces.len()).map(move |p| (f, p))).find(|r| self.usable(*r))
     }
 
+    /// Pieces still to land, and those of them no server can send that no repair rebuilds.
     fn remaining(&self) -> (u32, u32) {
         let mut pieces = 0;
         for (f, have) in self.have.iter().enumerate() {
@@ -164,7 +225,14 @@ impl State {
                 pieces += have.iter().filter(|h| h.is_none()).count() as u32;
             }
         }
-        (pieces, self.failed.keys().filter(|(f, _)| self.wanted[*f]).count() as u32)
+        let unavailable = self.failed.keys().filter(|&&(f, p)| self.wanted[f] && !self.repair.covers((f, p)));
+        (pieces, unavailable.count() as u32)
+    }
+
+    fn repair_stats(&self) -> Option<RepairStats> {
+        let repair::Repairing::Active { pieces, stage } = &self.repair else { return None };
+        let blocking = self.reader_on_repair.is_some_and(|at| at.elapsed() < READER_WAITS);
+        Some(RepairStats { articles: pieces.len() as u32, stage: *stage, blocking })
     }
 }
 
@@ -199,17 +267,21 @@ impl Job {
         })))
     }
 
-    /// `open` is how many connections the pool holds, which a download's requests share.
-    fn stats(&self, state: &State, down_rate: u64, open: u32) -> Stats {
+    /// `pool` is what the pool holds now: its connections, which a download's requests share,
+    /// and how many background requests it lets go out at once.
+    fn stats(&self, state: &State, down_rate: u64, pool: usenet::nntp::PoolStats) -> Stats {
         let (verified, _) = self.verified(state);
         let (pieces, unavailable) = state.remaining();
+        // Background requests past the pool's limit wait for a turn without a connection, and
+        // each connection carries several requests at once, so requests overcount connections.
+        let sent = (state.in_flight.len() as u32).min(pool.background_limit) + state.rushed.len() as u32;
         Stats {
             verified,
             piece_map: self.piece_map(state),
             missing: Some(Missing { pieces, unavailable }),
             down_rate,
-            // Each connection carries several requests at once, so requests overcount them.
-            connections: (state.in_flight.len() as u32).min(open),
+            connections: sent.min(pool.connections),
+            repair: state.repair_stats(),
         }
     }
 
@@ -220,12 +292,22 @@ impl Job {
         format!("bytes {}..{} of {name}", piece.offset, piece.offset + piece.length)
     }
 
-    /// The error a reader gets for a piece no server can send.
-    fn unrecoverable(&self, piece: PieceRef, why: &str) -> Error {
-        Error::new(ErrorCode::NoSource, format!("no server can send {}: {why}", self.place(piece))).with_hint(format!(
+    /// The error a reader gets for a piece no server can send, which no repair rebuilds.
+    fn unrecoverable(&self, state: &State, piece: PieceRef, why: &str) -> Error {
+        let message = format!("no server can send {}: {why}{}", self.place(piece), self.unrepaired(state));
+        Error::new(ErrorCode::NoSource, message).with_hint(format!(
             "this release cannot play past that point; pick another release, or run newsreel resume {} to ask the servers again",
             short(self.id)
         ))
+    }
+
+    /// Why no repair rebuilds pieces set aside, to end a sentence that names one.
+    fn unrepaired(&self, state: &State) -> String {
+        match (&self.nzb, state.repair.impossible()) {
+            (None, _) => "; the release posts no PAR2 files to rebuild it from".into(),
+            (Some(_), Some(why)) => format!("; the release's PAR2 files cannot rebuild it: {why}"),
+            (Some(_), None) => String::new(),
+        }
     }
 
     /// Pieces of `file` under `[offset, offset + length)`.
@@ -250,6 +332,11 @@ impl Job {
     }
 
     fn write(&self, (f, p): PieceRef, bytes: &[u8]) -> std::io::Result<()> {
+        self.write_range(f, self.files[f].pieces[p].offset, bytes)
+    }
+
+    /// Writes bytes of file `f` at `offset`, making the file on its first write.
+    fn write_range(&self, f: usize, offset: u64, bytes: &[u8]) -> std::io::Result<()> {
         let file = &self.files[f];
         let mut handle = file.handle.lock().unwrap();
         if handle.is_none() {
@@ -266,7 +353,7 @@ impl Job {
             *handle = Some(opened);
         }
         let opened = handle.as_ref().expect("opened above");
-        write_at(opened, bytes, file.pieces[p].offset)
+        write_at(opened, bytes, offset)
     }
 
     /// The CRC of a piece's bytes on disk. None when they are not there: the file is missing
@@ -372,17 +459,17 @@ impl Usenet {
             return;
         }
         let generation = state.generation;
+        // More than the pool lets go out at once, so it can tell when the link is full.
         let wanted = self.pool.capacity().max(1);
         while state.workers < wanted {
             state.workers += 1;
-            let (job, pool, events) = (job.clone(), self.pool.clone(), self.sender.clone());
-            self.runtime.spawn(worker(job, pool, events, generation));
+            self.runtime.spawn(worker(job.clone(), generation));
         }
     }
 
     fn stats(&mut self) {
         let elapsed = self.stats_at.elapsed().as_secs_f64().max(0.001);
-        let open = self.pool.stats().connections;
+        let open = self.pool.stats();
         self.stats_at = Instant::now();
         for (id, job) in &self.jobs {
             let state = job.state.lock().unwrap();
@@ -398,7 +485,7 @@ impl Usenet {
 
 /// Fetches pieces until none is left for this worker, then reports a finish or a failure
 /// if it was the last worker out.
-async fn worker(job: Arc<Job>, pool: Pool, events: mpsc::Sender<EngineEvent>, generation: u64) {
+async fn worker(job: Arc<Job>, generation: u64) {
     loop {
         let (next, journaled) = {
             let mut state = job.state.lock().unwrap();
@@ -409,7 +496,7 @@ async fn worker(job: Arc<Job>, pool: Pool, events: mpsc::Sender<EngineEvent>, ge
                     state.in_flight.insert(r);
                     if !state.announced_downloading {
                         state.announced_downloading = true;
-                        let _ = events.send(EngineEvent::Activity { id: job.id, activity: Activity::Downloading });
+                        let _ = job.events.send(EngineEvent::Activity { id: job.id, activity: Activity::Downloading });
                     }
                     (r, state.journaled[r.0][r.1].take())
                 }
@@ -418,7 +505,7 @@ async fn worker(job: Arc<Job>, pool: Pool, events: mpsc::Sender<EngineEvent>, ge
                     if state.generation == generation {
                         state.workers -= 1;
                         if state.workers == 0 && state.run == Run::Running {
-                            finish(&job, &mut state, &events);
+                            finish(&job, &mut state);
                         }
                     }
                     return;
@@ -454,46 +541,91 @@ async fn worker(job: Arc<Job>, pool: Pool, events: mpsc::Sender<EngineEvent>, ge
                 tokio::time::sleep((start - now).min(PACE_CHECK)).await;
             }
         }
-        let landed = match Fetched::of(piece, article::fetch(&pool, &piece.ids).await) {
-            Fetched::Landed(bytes) => Ok(bytes),
-            Fetched::Unrecoverable(why) => Err(why),
-            Fetched::Retry(why) => {
-                {
-                    let mut state = job.state.lock().unwrap();
-                    state.in_flight.remove(&next);
-                    let now = Instant::now();
-                    if state.retry_logged_at.is_none_or(|at| now - at >= RETRY_LOG_EVERY) {
-                        state.retry_logged_at = Some(now);
-                        let place = job.place(next);
-                        log(&format!("{} cannot fetch {place} yet, trying again every 2s: {why}", short(job.id)));
-                    }
-                }
-                tokio::time::sleep(RETRY_AFTER).await;
-                continue;
-            }
-        };
-        let mut state = job.state.lock().unwrap();
-        state.in_flight.remove(&next);
-        if state.generation != generation {
-            continue;
+        let fetched = Fetched::of(piece, article::fetch(&job.pool, &piece.ids).await);
+        if settle(&job, next, fetched, generation, Fetcher::Worker) {
+            tokio::time::sleep(RETRY_AFTER).await;
         }
-        match landed {
-            Ok(bytes) => {
-                if let Err(e) = job.write(next, &bytes) {
-                    state.run = Run::Stopped;
-                    state.generation += 1;
-                    let path = job.files[f].path.display();
-                    let error = Error::new(ErrorCode::StorageError, format!("cannot write {path}: {e}"))
-                        .with_hint("check free space and permissions in the downloads folder");
-                    let _ = events.send(EngineEvent::Failed { id: job.id, error });
-                    continue;
-                }
-                let crc = crc32fast::hash(&bytes);
-                state.have[f][p] = Some(crc);
-                state.landed += bytes.len() as u64;
-                job.journal.record(next, crc);
+    }
+}
+
+/// Fetches a piece a reader waits on at urgent priority, beside the workers, until it lands or
+/// is set aside. Reports a finish if the workers are all done by then.
+async fn rush(job: Arc<Job>, piece: PieceRef, generation: u64) {
+    let pool = job.pool.with_priority(Priority::Urgent);
+    let ids = &job.files[piece.0].pieces[piece.1].ids;
+    loop {
+        let fetched = Fetched::of(&job.files[piece.0].pieces[piece.1], article::fetch(&pool, ids).await);
+        if !settle(&job, piece, fetched, generation, Fetcher::Rush) {
+            break;
+        }
+        tokio::time::sleep(RETRY_AFTER).await;
+        let mut state = job.state.lock().unwrap();
+        let wanted = state.have[piece.0][piece.1].is_none() && !state.failed.contains_key(&piece);
+        if state.generation != generation || state.run != Run::Running || !wanted || !state.rushed.insert(piece) {
+            return;
+        }
+    }
+    let mut state = job.state.lock().unwrap();
+    if state.generation == generation && state.workers == 0 && state.run == Run::Running {
+        finish(&job, &mut state);
+    }
+}
+
+/// Which fetch of a piece a result comes from.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Fetcher {
+    /// A worker, which took it in `in_flight`.
+    Worker,
+    /// A reader's urgent fetch, which took it in `rushed`.
+    Rush,
+}
+
+/// Lands a fetched piece, or sets it aside. True when the fetch should be tried again; the
+/// piece is then no longer taken.
+fn settle(job: &Arc<Job>, next: PieceRef, fetched: Fetched, generation: u64, by: Fetcher) -> bool {
+    let mut state = job.state.lock().unwrap();
+    match by {
+        Fetcher::Worker => state.in_flight.remove(&next),
+        Fetcher::Rush => state.rushed.remove(&next),
+    };
+    if state.generation != generation {
+        return false;
+    }
+    // The other fetch of the piece may have settled it already.
+    if state.have[next.0][next.1].is_some() || state.failed.contains_key(&next) {
+        return false;
+    }
+    match fetched {
+        Fetched::Retry(why) => {
+            let now = Instant::now();
+            if state.retry_logged_at.is_none_or(|at| now - at >= RETRY_LOG_EVERY) {
+                state.retry_logged_at = Some(now);
+                let place = job.place(next);
+                log(&format!("{} cannot fetch {place} yet, trying again every 2s: {why}", short(job.id)));
             }
-            Err(why) => unrecoverable(&job, &mut state, next, why),
+            true
+        }
+        Fetched::Landed(bytes) => {
+            if let Err(e) = job.write(next, &bytes) {
+                state.run = Run::Stopped;
+                state.generation += 1;
+                let path = job.files[next.0].path.display();
+                let error = Error::new(ErrorCode::StorageError, format!("cannot write {path}: {e}"))
+                    .with_hint("check free space and permissions in the downloads folder");
+                let _ = job.events.send(EngineEvent::Failed { id: job.id, error });
+                return false;
+            }
+            let crc = crc32fast::hash(&bytes);
+            state.have[next.0][next.1] = Some(crc);
+            state.landed += bytes.len() as u64;
+            job.journal.record(next, crc);
+            job.landed.notify_one();
+            false
+        }
+        Fetched::Unrecoverable(why) => {
+            job.journal.lost(next);
+            unrecoverable(job, &mut state, next, why);
+            false
         }
     }
 }
@@ -536,25 +668,31 @@ impl Fetched {
     }
 }
 
-/// Sets aside a piece no server can send, and names it in the log. A reader waiting on it then
-/// fails instead of waiting ([`EnginePort::want_range`]), and the download stops once only such
-/// pieces are left ([`finish`]).
-///
-/// PAR2 repair hooks in here: a piece the release's recovery files can rebuild is queued for
-/// repair instead of set aside.
-fn unrecoverable(job: &Job, state: &mut State, piece: PieceRef, why: String) {
+/// Sets aside a piece no server can send, and names it in the log. When the release posts
+/// PAR2 files, a repair rebuilds it ([`repair`]), and a reader waiting on it waits for that.
+/// Otherwise, or when the repair cannot work, a reader waiting on it fails instead
+/// ([`EnginePort::want_range`]), and the download stops once only such pieces are left
+/// ([`finish`]).
+fn unrecoverable(job: &Arc<Job>, state: &mut State, piece: PieceRef, why: String) {
     if state.named < NAMED_MOST {
         state.named += 1;
-        log(&format!("{} cannot fetch {}: {why}", short(job.id), job.place(piece)));
+        let repairs = if job.nzb.is_some() { ". It is repaired from the release's PAR2 files" } else { "" };
+        log(&format!("{} cannot fetch {}: {why}{repairs}", short(job.id), job.place(piece)));
     }
     state.failed.insert(piece, why);
+    if job.nzb.is_some()
+        && let Some(epoch) = repair::lost(state, piece)
+    {
+        tokio::spawn(repair::run(job.clone(), epoch));
+    }
 }
 
 fn short(id: DownloadId) -> String {
     id.to_hex()[..6].to_string()
 }
 
-fn finish(job: &Job, state: &mut State, events: &mpsc::Sender<EngineEvent>) {
+fn finish(job: &Job, state: &mut State) {
+    let events = &job.events;
     let (pieces, unavailable) = state.remaining();
     if pieces == 0 {
         if let Err(e) = job.sync() {
@@ -565,12 +703,13 @@ fn finish(job: &Job, state: &mut State, events: &mpsc::Sender<EngineEvent>) {
             return;
         }
         state.run = Run::Finished;
-        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, 0) });
+        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, Default::default()) });
         let _ = events.send(EngineEvent::Finished { id: job.id });
     } else if unavailable == pieces {
         state.run = Run::Stopped;
         let first = state.failed.iter().find(|((f, _), _)| state.wanted[*f]);
         let why = first.map(|(piece, why)| format!("; {}: {why}", job.place(*piece))).unwrap_or_default();
+        let why = format!("{why}{}", job.unrepaired(state));
         let error = Error::new(
             ErrorCode::NoSource,
             format!("no server can send {unavailable} of the release's articles, so the download cannot finish{why}"),
@@ -579,7 +718,7 @@ fn finish(job: &Job, state: &mut State, events: &mpsc::Sender<EngineEvent>) {
             "the release has expired, been taken down, or was posted damaged; search again and pick another release",
         );
         log(&format!("{} stopped: {}", short(job.id), error.message));
-        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, 0) });
+        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, Default::default()) });
         let _ = events.send(EngineEvent::Failed { id: job.id, error });
     }
 }
@@ -612,8 +751,8 @@ impl EnginePort for Usenet {
         if self.jobs.contains_key(&id) {
             return Err(Error::internal(format!("the engine already has download {id}")));
         }
-        let manifest =
-            Manifest::from_bytes(&bytes).map_err(|e| Error::new(ErrorCode::InvalidRelease, e.to_string()))?;
+        let (manifest, nzb) = decode_release(&bytes)?;
+        let nzb = nzb.filter(|nzb| !Par2Files::find(nzb).is_empty()).map(Arc::new);
         let meta = layout(&manifest, Vec::new())?;
         let files: Vec<OutputFile> = manifest
             .files
@@ -633,10 +772,21 @@ impl EnginePort for Usenet {
             log(&format!("{id} has unreadable resume data, so it downloads again"));
         }
         let journal = Journal::new(&self.journals, id);
-        let mut journaled = journal.read(&files.iter().map(|f| f.pieces.len()).collect::<Vec<_>>());
-        for (slot, known) in journaled.iter_mut().flatten().zip(have.iter().flatten()) {
-            if known.is_some() {
-                *slot = None;
+        let recorded = journal.read(&files.iter().map(|f| f.pieces.len()).collect::<Vec<_>>());
+        let mut journaled: Vec<Vec<Option<u32>>> = files.iter().map(|f| vec![None; f.pieces.len()]).collect();
+        let mut failed = BTreeMap::new();
+        for (f, file) in recorded.into_iter().enumerate() {
+            for (p, record) in file.into_iter().enumerate() {
+                match record {
+                    _ if have[f][p].is_some() => {}
+                    Some(Recorded::Landed(crc)) => journaled[f][p] = Some(crc),
+                    // A repair rebuilds it again, without asking the servers again; without
+                    // PAR2 files it is asked for as if new.
+                    Some(Recorded::Lost) if nzb.is_some() => {
+                        failed.insert((f, p), "no server sent it intact when the engine last ran".to_string());
+                    }
+                    Some(Recorded::Lost) | None => {}
+                }
             }
         }
         let wanted = wanted.unwrap_or_else(|| vec![true; files.len()]);
@@ -647,7 +797,11 @@ impl EnginePort for Usenet {
             have,
             journaled,
             in_flight: BTreeSet::new(),
+            rushed: BTreeSet::new(),
             failed: BTreeMap::new(),
+            repair: repair::Repairing::Idle,
+            repair_epoch: 0,
+            reader_on_repair: None,
             urgent: VecDeque::new(),
             focus: None,
             workers: 0,
@@ -658,7 +812,26 @@ impl EnginePort for Usenet {
             limit: None,
             paced_until: None,
         };
-        let job = Arc::new(Job { id, files, state: Mutex::new(state), journal });
+        let job = Arc::new(Job {
+            id,
+            files,
+            state: Mutex::new(state),
+            journal,
+            nzb,
+            pool: self.pool.clone(),
+            events: self.sender.clone(),
+            landed: tokio::sync::Notify::new(),
+        });
+        {
+            let mut state = job.state.lock().unwrap();
+            let lost: Vec<PieceRef> = failed.keys().copied().collect();
+            state.failed = failed;
+            let started = lost.into_iter().filter_map(|piece| repair::lost(&mut state, piece)).next();
+            if let Some(epoch) = started {
+                log(&format!("{} goes on repairing the articles no server sent intact when it last ran", short(id)));
+                self.runtime.spawn(repair::run(job.clone(), epoch));
+            }
+        }
         self.queued.push(EngineEvent::Activity { id, activity: Activity::Checking });
         self.jobs.insert(id, job.clone());
         self.start_workers(&job);
@@ -690,7 +863,7 @@ impl EnginePort for Usenet {
             state.workers = 0;
             state.announced_downloading = false;
         }
-        self.queued.push(EngineEvent::Stats { id, stats: job.stats(&state, 0, 0) });
+        self.queued.push(EngineEvent::Stats { id, stats: job.stats(&state, 0, Default::default()) });
         self.queued.push(EngineEvent::Paused { id });
         Ok(())
     }
@@ -705,6 +878,8 @@ impl EnginePort for Usenet {
                 state.workers = 0;
                 state.failed.clear();
                 state.named = 0;
+                state.repair = repair::Repairing::Idle;
+                state.repair_epoch += 1;
             }
         }
         self.start_workers(&job);
@@ -779,6 +954,7 @@ impl EnginePort for Usenet {
             let mut state = job.state.lock().unwrap();
             state.run = Run::Stopped;
             state.generation += 1;
+            state.repair_epoch += 1;
         }
         self.landed_at_last_stats.remove(&id);
         self.queued.push(EngineEvent::Removed { id });
@@ -810,9 +986,14 @@ impl EnginePort for Usenet {
         if let Some(why) = state.failed.get(&(f, first))
             && arrived == 0
         {
+            if state.repair.covers((f, first)) {
+                // It comes once the repair rebuilds it, which status and the player say.
+                state.reader_on_repair = Some(Instant::now());
+                return Ok(0);
+            }
             // The reader cannot go on, so neither can a play of this download: stop it, which
             // says why in its status and lets a player move to another source.
-            let error = job.unrecoverable((f, first), why);
+            let error = job.unrecoverable(&state, (f, first), why);
             if state.run == Run::Running {
                 state.run = Run::Stopped;
                 state.generation += 1;
@@ -822,11 +1003,23 @@ impl EnginePort for Usenet {
             }
             return Err(error);
         }
-        for r in missing.iter().rev() {
-            state.urgent.push_front(*r);
-        }
         if state.run == Run::Finished {
             state.run = Run::Running;
+        }
+        // The first pieces go out at once at urgent priority, past the background requests;
+        // the rest go first to the workers.
+        let (generation, running) = (state.generation, state.run == Run::Running);
+        let mut queue = Vec::new();
+        let open: Vec<PieceRef> = missing.into_iter().filter(|r| !state.failed.contains_key(r)).collect();
+        for (k, r) in open.into_iter().enumerate() {
+            if !running || k >= RUSHED_MOST {
+                queue.push(r);
+            } else if state.rushed.insert(r) {
+                self.runtime.spawn(rush(job.clone(), r, generation));
+            }
+        }
+        for r in queue.into_iter().rev() {
+            state.urgent.push_front(r);
         }
         drop(state);
         self.start_workers(&job);
@@ -886,14 +1079,15 @@ impl engine_port::Engine for Usenet {
     }
 }
 
-/// Resolves NZBs over the pool's servers.
+/// Resolves NZBs over the pool's servers, at urgent priority: a release about to play waits on
+/// these first reads, and they are few.
 pub struct Resolver {
     pool: Pool,
 }
 
 impl Resolver {
     pub fn new(pool: Pool) -> Self {
-        Self { pool }
+        Self { pool: pool.with_priority(Priority::Urgent) }
     }
 }
 
@@ -901,7 +1095,8 @@ impl NzbPort for Resolver {
     fn resolve(&self, nzb: Vec<u8>) -> BoxFuture<'_, Result<Vec<u8>, Error>> {
         Box::pin(async move {
             let started = Instant::now();
-            let nzb = Nzb::parse(&nzb).map_err(|e| {
+            let bytes = nzb;
+            let nzb = Nzb::parse(&bytes).map_err(|e| {
                 Error::new(ErrorCode::InvalidRelease, e.to_string())
                     .with_hint("pass an .nzb file or URL, or an ID from newsreel search")
             })?;
@@ -912,7 +1107,9 @@ impl NzbPort for Resolver {
                 started.elapsed().as_secs_f32(),
                 manifest.files.len()
             ));
-            Ok(manifest.to_bytes())
+            // A repair reads the PAR2 files' articles from the NZB, which the manifest leaves out.
+            let par2 = !Par2Files::find(&nzb).is_empty();
+            Ok(encode_release(&manifest.to_bytes(), par2.then_some(bytes.as_slice())))
         })
     }
 }
@@ -969,7 +1166,11 @@ mod tests {
             journaled: have.clone(),
             have,
             in_flight: BTreeSet::new(),
+            rushed: BTreeSet::new(),
             failed: BTreeMap::new(),
+            repair: repair::Repairing::Idle,
+            repair_epoch: 0,
+            reader_on_repair: None,
             urgent: VecDeque::new(),
             focus: None,
             workers: 0,
@@ -991,17 +1192,30 @@ mod tests {
             })
             .collect();
         let id = DownloadId::from_bytes([1; 20]);
-        Job { id, files, state: Mutex::new(state), journal: Journal::new(&std::env::temp_dir(), id) }
+        Job {
+            id,
+            files,
+            state: Mutex::new(state),
+            journal: Journal::new(&std::env::temp_dir(), id),
+            nzb: None,
+            pool: Pool::new(Vec::new()),
+            events: mpsc::channel().0,
+            landed: tokio::sync::Notify::new(),
+        }
+    }
+
+    fn release(m: &Manifest) -> Vec<u8> {
+        encode_release(&m.to_bytes(), None)
     }
 
     #[test]
     fn one_file_is_saved_as_itself_and_several_in_a_folder() {
-        let one = parse(&manifest(&[("Movie.mkv", &[10])]).to_bytes()).unwrap();
+        let one = parse(&release(&manifest(&[("Movie.mkv", &[10])]))).unwrap();
         assert_eq!((one.name.as_str(), one.single_file), ("Movie.mkv", true));
         assert_eq!(one.id, DownloadId::from_bytes([0xab; 20]));
-        let nested = parse(&manifest(&[("Set/Movie.mkv", &[10])]).to_bytes()).unwrap();
+        let nested = parse(&release(&manifest(&[("Set/Movie.mkv", &[10])]))).unwrap();
         assert_eq!((nested.name.as_str(), nested.single_file), ("Some Release", false));
-        let two = parse(&manifest(&[("a.mkv", &[10]), ("b.nfo", &[2])]).to_bytes()).unwrap();
+        let two = parse(&release(&manifest(&[("a.mkv", &[10]), ("b.nfo", &[2])]))).unwrap();
         assert_eq!((two.name.as_str(), two.files.len()), ("Some Release", 2));
     }
 

@@ -869,7 +869,7 @@ enum Arrived {
 
 /// Waits until the engine has written bytes of a file at `offset`, up to `length` of them.
 async fn arrived(ctx: &Ctx, id: DownloadId, index: u32, offset: u64, length: u64) -> io::Result<Arrived> {
-    let started = Instant::now();
+    let mut started = Instant::now();
     loop {
         match unfetchable(ctx.engine.ask(move |e| e.want_range(id, index, offset, length)).await) {
             Ok(Some(bytes @ 1..)) => return Ok(Arrived::Bytes(bytes)),
@@ -879,6 +879,8 @@ async fn arrived(ctx: &Ctx, id: DownloadId, index: u32, offset: u64, length: u64
         match ctx.owner.ask(|reply| Command::StreamFile { id, index, reply }).await {
             Ok(file) if file.complete => return Ok(Arrived::Done),
             Ok(StreamFile { stopped: Some(error), .. }) => return Err(io::Error::other(error.message)),
+            // A repair waits for the rest of the release, which may take longer than a stall.
+            Ok(StreamFile { repairing: true, .. }) => started = Instant::now(),
             Ok(_) => {}
             Err(e) => return Err(io::Error::other(e.message)),
         }

@@ -31,11 +31,23 @@ pub struct Stats {
     pub missing: Option<Missing>,
     pub down_rate: u64,
     pub connections: u32,
+    /// Pieces no server sends intact, being rebuilt from the release's PAR2 files.
+    pub repair: Option<RepairStats>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct RepairStats {
+    /// Articles being rebuilt.
+    pub articles: u32,
+    pub stage: newsreel_core::RepairStage,
+    /// A reader waits on the bytes being rebuilt.
+    pub blocking: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Missing {
     pub pieces: u32,
+    /// Pieces no server can send, and no repair rebuilds.
     pub unavailable: u32,
 }
 

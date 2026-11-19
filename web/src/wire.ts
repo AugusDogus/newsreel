@@ -60,6 +60,22 @@ export type Selection = { "kind": "all" } | { "kind": "patterns", "value": Array
 
 export type JobStatus = { "state": "queued" } | { "state": "checking" } | { "state": "downloading" } | { "state": "paused" } | { "state": "done", finished_at: number, } | { "state": "error", error: Error, };
 
+export type RepairStage = "preparing" | "waiting" | "rebuilding";
+
+export type Repair = {
+/**
+ * Articles being rebuilt.
+ */
+articles: number, stage: RepairStage,
+/**
+ * A player waits on the damaged bytes now.
+ */
+blocking: boolean,
+/**
+ * Seconds until the rebuilt bytes are on disk, at the current rate. `None` while unknown.
+ */
+eta?: number | null, };
+
 export type Progress = {
 /**
  * Bytes selected for download.
@@ -81,7 +97,11 @@ connections: number,
  * Seconds to completion at the current rate. `None` until the rate has stayed
  * above zero for ten seconds.
  */
-eta: number | null, };
+eta: number | null,
+/**
+ * Articles no server sent intact, being rebuilt from the release's PAR2 files.
+ */
+repair?: Repair | null, };
 
 export type TitleLink = { title: string, span: string,
 /**

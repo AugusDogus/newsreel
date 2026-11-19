@@ -94,11 +94,58 @@ pub struct Progress {
     /// Seconds to completion at the current rate. `None` until the rate has stayed
     /// above zero for ten seconds.
     pub eta: Option<u64>,
+    /// Articles no server sent intact, being rebuilt from the release's PAR2 files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub repair: Option<Repair>,
 }
 
 impl Progress {
     pub fn fraction(&self) -> f64 {
         if self.size == 0 { 1.0 } else { self.verified as f64 / self.size as f64 }
+    }
+}
+
+/// Damaged or missing articles the engine rebuilds from the release's PAR2 files, as SABnzbd
+/// does. Rebuilding reads every other byte the PAR2 set covers, so it waits for the rest of the
+/// release to arrive first.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub struct Repair {
+    /// Articles being rebuilt.
+    pub articles: u32,
+    pub stage: RepairStage,
+    /// A player waits on the damaged bytes now.
+    pub blocking: bool,
+    /// Seconds until the rebuilt bytes are on disk, at the current rate. `None` while unknown.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub eta: Option<u64>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum RepairStage {
+    /// Reading the release's PAR2 index and fetching the recovery blocks the repair needs.
+    Preparing,
+    /// Waiting for the rest of the release, which rebuilding reads.
+    Waiting,
+    /// Rebuilding the damaged bytes and writing them.
+    Rebuilding,
+}
+
+impl Repair {
+    /// What the repair is doing, in a few words a status line or a player shows.
+    pub fn text(&self) -> String {
+        let what = if self.articles == 1 { "a damaged part" } else { "damaged parts" };
+        match (self.stage, self.eta) {
+            (RepairStage::Preparing, _) => format!("repairing {what}, fetching its recovery files"),
+            (RepairStage::Waiting, Some(secs)) => {
+                let left = crate::units::format_duration(std::time::Duration::from_secs(secs.max(1)));
+                format!("repairing {what}, about {left} left")
+            }
+            (RepairStage::Waiting, None) => format!("repairing {what} once the rest of the release arrives"),
+            (RepairStage::Rebuilding, _) => format!("repairing {what}, almost done"),
+        }
     }
 }
 
@@ -313,5 +360,18 @@ mod tests {
     fn an_empty_selection_is_complete() {
         assert_eq!(Progress::default().fraction(), 1.0);
         assert_eq!(Progress { size: 200, verified: 50, ..Progress::default() }.fraction(), 0.25);
+    }
+
+    #[test]
+    fn a_repair_says_what_it_waits_for_in_plain_words() {
+        let repair = |articles, stage, eta| Repair { articles, stage, blocking: true, eta }.text();
+        assert_eq!(repair(1, RepairStage::Waiting, Some(42)), "repairing a damaged part, about 42s left");
+        assert_eq!(repair(3, RepairStage::Waiting, Some(150)), "repairing damaged parts, about 2m left");
+        assert_eq!(
+            repair(1, RepairStage::Waiting, None),
+            "repairing a damaged part once the rest of the release arrives"
+        );
+        assert_eq!(repair(1, RepairStage::Preparing, None), "repairing a damaged part, fetching its recovery files");
+        assert_eq!(repair(1, RepairStage::Rebuilding, Some(0)), "repairing a damaged part, almost done");
     }
 }

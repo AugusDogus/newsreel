@@ -1,7 +1,7 @@
 import { ArrowDownIcon, ArrowLeftIcon, CheckIcon } from "@heroicons/react/16/solid";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
 import type { ApiError, Job, PlayInfo } from "../api";
-import { bytes, count, percent, rate, sentence } from "../lib/format";
+import { bytes, count, percent, rate, repairing, sentence } from "../lib/format";
 import { useJob } from "../lib/jobs";
 import { readable } from "../lib/release";
 import { isTv } from "../lib/tv";
@@ -211,6 +211,8 @@ export function Buffering({ play, quiet = false }: { play: PlayInfo; quiet?: boo
 
   if (!waiting || patient) return null;
   const { progress } = job;
+  // The read waits for the release's PAR2 files to rebuild what no server sent intact.
+  const repair = progress.repair?.blocking ? progress.repair : null;
   return (
     <div role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center">
       <div className="flex flex-col items-center gap-3 rounded-2xl bg-black/55 px-6 py-5 backdrop-blur-md">
@@ -219,9 +221,11 @@ export function Buffering({ play, quiet = false }: { play: PlayInfo; quiet?: boo
           <p className="max-w-[40ch] text-sm text-pretty text-white/90 tabular-nums">
             {job.state !== "downloading"
               ? "This part of the video has not downloaded, and the download is not running."
-              : stalled
-                ? "No server is sending this part right now. Playback continues as soon as one does."
-                : `Waiting for articles · ${rate(progress.down_rate)} from ${count(progress.connections, "connection")}`}
+              : repair
+                ? repairing(repair)
+                : stalled
+                  ? "No server is sending this part right now. Playback continues as soon as one does."
+                  : `Waiting for articles · ${rate(progress.down_rate)} from ${count(progress.connections, "connection")}`}
           </p>
         )}
       </div>

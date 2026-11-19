@@ -44,6 +44,7 @@ fn job(short: &str, name: &str, status: JobStatus, size: u64, done: u64, rate: u
             down_rate: rate,
             connections: if rate > 0 { 27 } else { 0 },
             eta,
+            repair: None,
         },
         selection: Selection::All,
         added_at: CLOCK - days_ago * 86_400,

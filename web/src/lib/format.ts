@@ -1,3 +1,5 @@
+import type { Repair } from "../api";
+
 const UNITS = ["B", "KiB", "MiB", "GiB", "TiB"];
 
 /** A size in at most three figures, in binary units: `512 B`, `1.5 GiB`, `100 MiB`. */
@@ -31,6 +33,21 @@ export function span(seconds: number): string {
   if (whole >= 3600) return `${Math.floor(whole / 3600)}h ${Math.floor((whole % 3600) / 60)}m`;
   if (whole >= 60) return `${Math.floor(whole / 60)}m ${whole % 60}s`;
   return `${whole}s`;
+}
+
+/** What a repair of damaged articles from the release's PAR2 files is doing, for a player waiting on it. */
+export function repairing(repair: Repair): string {
+  const what = repair.articles === 1 ? "a damaged part" : "damaged parts";
+  switch (repair.stage) {
+    case "preparing":
+      return `Repairing ${what} of this video. Fetching its recovery files.`;
+    case "waiting":
+      return repair.eta == null
+        ? `Repairing ${what} of this video once the rest of it arrives.`
+        : `Repairing ${what} of this video · about ${span(Math.max(1, repair.eta))} left`;
+    case "rebuilding":
+      return `Repairing ${what} of this video · almost done`;
+  }
 }
 
 /** How long ago a Unix time was, in one unit: `now` under a minute, then `5h`, `40d`, `2y`. */

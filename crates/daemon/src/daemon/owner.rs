@@ -173,6 +173,9 @@ pub struct StreamFile {
     /// The download stopped with this error, so no byte it has not written comes until it is
     /// resumed. Once its progress is saved it leaves the engine, which then knows nothing of it.
     pub stopped: Option<Error>,
+    /// The engine rebuilds damaged articles from the release's PAR2 files, which waits for the
+    /// rest of the release, so a read waiting on them is not stalled.
+    pub repairing: bool,
 }
 
 /// A change to the library.
@@ -605,6 +608,7 @@ impl Owner {
                     Intent::Failed { error } => Some(error.clone()),
                     _ => None,
                 },
+                repairing: job.observed.in_engine() && job.stats.repair.is_some(),
             })
         });
         found.ok_or_else(|| Error::new(ErrorCode::NotFound, format!("no download has file {index} of {} selected", id)))

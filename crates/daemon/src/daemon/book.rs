@@ -3,7 +3,9 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime};
 
-use newsreel_core::{DownloadId, Error, Job, JobStatus, PieceMap, Place, Progress, Selection, TitleLink};
+use newsreel_core::{
+    DownloadId, Error, Job, JobStatus, PieceMap, Place, Progress, Repair, RepairStage, Selection, TitleLink,
+};
 
 use super::admission::Cap;
 use super::engine_port::Stats;
@@ -232,6 +234,13 @@ impl JobEntry {
                 down_rate: s.down_rate,
                 connections: s.connections,
                 eta,
+                repair: s.repair.map(|r| Repair {
+                    articles: r.articles,
+                    stage: r.stage,
+                    blocking: r.blocking,
+                    // Rebuilding waits for the rest of the release.
+                    eta: (r.stage == RepairStage::Waiting).then_some(eta).flatten(),
+                }),
             },
             selection: self.record.selection.clone(),
             added_at: self.record.added_at,
