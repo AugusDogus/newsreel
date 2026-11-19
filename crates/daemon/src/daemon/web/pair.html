@@ -130,7 +130,10 @@
     }
   });
   input.addEventListener("input", function () {
-    if (input.value.replace(/\D/g, "").length === 6) go.focus();
+    if (input.value.replace(/\D/g, "").length !== 6) return;
+    // A short code's error says nothing once the code is whole.
+    if (status.className === "error") show("", false);
+    go.focus();
   });
 
   // The QR code on the Mac carries the code after #, which never reaches the server.

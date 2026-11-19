@@ -97,3 +97,17 @@ test("OK on the code pairs once it has six digits, and the sixth digit moves to 
   page.press("Enter");
   expect(page.posted).toEqual(['{"code":"123456","tv":false}']);
 });
+
+test("the error about a short code goes once all six digits are in", () => {
+  const page = open();
+  const code = page.element("code");
+  code.value = "482";
+  page.press("Enter");
+  expect([page.element("status").textContent, page.element("status").className]).toEqual(["The code has six digits, so enter all six.", "error"]);
+  code.value = "48291";
+  code.fire("input", { prevented: false, preventDefault() {} });
+  expect(page.element("status").className).toBe("error");
+  code.value = "482913";
+  code.fire("input", { prevented: false, preventDefault() {} });
+  expect([page.element("status").textContent, page.element("status").className]).toEqual(["", ""]);
+});
