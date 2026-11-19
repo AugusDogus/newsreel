@@ -20,7 +20,7 @@ use tokio::sync::{oneshot, watch};
 
 use super::cast::{Dlna, HELLO};
 use super::ctx::Ctx;
-use super::devices::{Addressing, Asker, CAST, COOKIE, Devices, Reach};
+use super::devices::{Addressing, Asker, CAST, Devices, Reach};
 use super::owner::{Command, Lease, StreamFile};
 use super::web;
 use crate::log::log;
@@ -410,7 +410,9 @@ pub struct Request {
     /// The body of a POST, which the guard has checked is JSON.
     pub body: Vec<u8>,
     from: Sender,
-    /// The device token in the request's cookie.
+    /// The request's `Cookie` header, lowercased.
+    cookies: Option<String>,
+    /// The device token in this engine's cookie, once the guard has read it from `cookies`.
     pub cookie: Option<String>,
     /// The token in an `Authorization: Bearer` header, which this user's newsreel sends.
     bearer: Option<String>,
@@ -476,6 +478,7 @@ impl Connection<'_> {
                 }
                 Some(Head::Request(mut request)) => {
                     let ctx = self.ctx;
+                    request.cookie = request.cookies.as_deref().and_then(|all| cookie(all, ctx.devices.cookie()));
                     self.peer = self.accepted.of_request(&request, &ctx.devices.addressing());
                     let peer = self.peer;
                     let now = newsreel_core::time::now();
@@ -509,7 +512,7 @@ impl Connection<'_> {
                     // Asked again, since a device may have been removed, or a cast dropped, while
                     // the body arrived.
                     let asker = ask_now(&request);
-                    if matches!(asker, Ok(Asker::Stranger { removed: true }))
+                    if matches!(asker, Ok(Asker::Stranger { .. })) && request.cookie.is_some()
                         || matches!(asker, Err(Refusal::Unauthorized)) && request.bearer.is_some()
                     {
                         ctx.devices.missed(peer.ip(), now);
@@ -614,7 +617,7 @@ impl Connection<'_> {
                         && asset.content_type.starts_with("text/html")
                     {
                         let secure = self.ctx.devices.addressing().exposure.secure(request.host());
-                        headers.push_str(&web::devices::set_cookie(token, secure));
+                        headers.push_str(&web::devices::set_cookie(self.ctx.devices.cookie(), token, secure));
                     }
                     self.send("200 OK", asset.content_type, &headers, asset.bytes, &request).await
                 }
@@ -936,6 +939,12 @@ pub async fn read(
     Ok(bytes)
 }
 
+/// The value of the cookie `name` in a `Cookie` header. Other engines' cookies on the same host
+/// come too, since cookies ignore ports.
+fn cookie(cookies: &str, name: &str) -> Option<String> {
+    cookies.split(';').find_map(|pair| Some(pair.trim().strip_prefix(name)?.strip_prefix('=')?.to_string()))
+}
+
 fn head(parsed: &httparse::Request) -> Head {
     let header = |name: &str| {
         let value = parsed.headers.iter().find(|h| h.name.eq_ignore_ascii_case(name))?.value;
@@ -946,10 +955,6 @@ fn head(parsed: &httparse::Request) -> Head {
         None => (parsed.path.unwrap_or_default().to_string(), String::new()),
     };
     let from = Sender { host: header("host"), site: header("sec-fetch-site"), origin: header("origin") };
-    let cookie = header("cookie").and_then(|cookies| {
-        let token = cookies.split(';').find_map(|cookie| cookie.trim().strip_prefix(COOKIE)?.strip_prefix('='));
-        token.map(String::from)
-    });
     let bearer = header("authorization").and_then(|value| Some(value.strip_prefix("bearer ")?.trim().to_string()));
     let forwarded = header("x-forwarded-for").map(|list| {
         let last = list.rsplit(',').next().unwrap_or_default().trim();
@@ -986,7 +991,8 @@ fn head(parsed: &httparse::Request) -> Head {
         range: header("range"),
         body: Vec::new(),
         from,
-        cookie,
+        cookies: header("cookie"),
+        cookie: None,
         bearer,
         // As sent: a device is named from it, and models keep their capitals.
         agent: parsed
@@ -1059,7 +1065,8 @@ fn ask(peer: Peer, request: &Request, port: u16, devices: &Devices, now: i64) ->
     }
     Ok(match request.cookie.as_deref() {
         Some(token) => {
-            devices.holder(token, peer.ip(), now).map_or(Asker::Stranger { removed: true }, |d| Asker::Device(d.id))
+            let removed = || Asker::Stranger { removed: devices.removed(token) };
+            devices.holder(token, peer.ip(), now).map_or_else(removed, |d| Asker::Device(d.id))
         }
         None => Asker::Stranger { removed: false },
     })

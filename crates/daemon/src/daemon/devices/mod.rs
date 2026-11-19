@@ -11,7 +11,7 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::Duration;
 
 use newsreel_core::{Device, DeviceList, DownloadId, Error, ErrorCode, PairingOffer};
-use rusqlite::{Connection, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 use tokio::time::Instant;
@@ -35,8 +35,9 @@ const MISSES_PER_MINUTE: u32 = 30;
 const TRIES_KEPT: usize = 1024;
 /// How often a device's last request is written to the database, in seconds.
 const SEEN_EVERY: i64 = 60;
-/// The cookie that holds a device's token.
-pub const COOKIE: &str = "newsreel_device";
+/// The start of the name of the cookie that holds a device's token. The engine's ID follows, since
+/// browsers send a host's cookies to every port on it, so to every engine there.
+pub const COOKIE: &str = "newsreel_device_";
 /// Where a cast grant's file is served.
 pub const CAST: &str = "/cast/";
 
@@ -50,7 +51,7 @@ pub enum Asker {
     /// A TV playing a cast: the one file its grant names.
     Cast(Granted),
     /// Anyone else on the network: the pairing page and nothing more. `removed` when it holds the
-    /// cookie of a device that is no longer paired.
+    /// cookie of a device this engine paired and has since removed.
     Stranger { removed: bool },
 }
 
@@ -182,6 +183,8 @@ struct Grant {
 
 struct State {
     paired: HashMap<Key, Paired>,
+    /// The tokens of devices removed from this engine.
+    removed: std::collections::HashSet<Key>,
     offer: Option<Offer>,
     grants: HashMap<Key, Grant>,
     tries: Tries,
@@ -289,6 +292,8 @@ pub struct Devices {
     revocations: watch::Sender<u64>,
     /// The token this user's newsreel sends, new each time the engine starts.
     local: Token,
+    /// The name of this engine's cookie.
+    cookie: String,
 }
 
 impl Devices {
@@ -321,8 +326,29 @@ impl Devices {
             }
             paired
         };
+        let removed = {
+            let mut stmt = conn.prepare("SELECT token_hash FROM removed_devices").map_err(|e| sql_error(path, e))?;
+            let rows = stmt.query_map([], |r| r.get::<_, Vec<u8>>(0)).map_err(|e| sql_error(path, e))?;
+            let mut removed = std::collections::HashSet::new();
+            for row in rows {
+                let hash = row.map_err(|e| sql_error(path, e))?;
+                removed.extend(<[u8; 32]>::try_from(hash).ok().map(Key));
+            }
+            removed
+        };
+        let engine: Option<String> =
+            conn.query_row("SELECT id FROM engine", [], |r| r.get(0)).optional().map_err(|e| sql_error(path, e))?;
+        let engine = match engine {
+            Some(id) => id,
+            None => {
+                let id = Token::new()?.hex()[..8].to_string();
+                conn.execute("INSERT INTO engine (one, id) VALUES (1, ?1)", [&id]).map_err(|e| sql_error(path, e))?;
+                id
+            }
+        };
         let state = State {
             paired,
+            removed,
             offer: None,
             grants: HashMap::new(),
             tries: Tries::default(),
@@ -340,7 +366,19 @@ impl Devices {
             reach,
             revocations: watch::Sender::new(0),
             local: Token::new()?,
+            cookie: format!("{COOKIE}{engine}"),
         })
+    }
+
+    /// The name of the cookie that holds a device's token for this engine, lowercase.
+    pub fn cookie(&self) -> &str {
+        &self.cookie
+    }
+
+    /// Whether `token` was a device's that this engine removed, as opposed to one it never paired,
+    /// such as another engine's on the same host.
+    pub fn removed(&self, token: &str) -> bool {
+        Token::parse(token).is_some_and(|token| self.state().removed.contains(&token.key()))
     }
 
     /// The token this user's newsreel sends, as 64 hex digits, for the engine to write where only
@@ -476,8 +514,18 @@ impl Devices {
             return Err(Error::new(ErrorCode::NotFound, format!("no device has the ID {id}"))
                 .with_hint("run newsreel devices to list them"));
         };
-        self.conn().execute("DELETE FROM devices WHERE id = ?1", [id]).map_err(|e| self.fail(e))?;
+        let conn = self.conn();
+        let tx = conn.unchecked_transaction().map_err(|e| self.fail(e))?;
+        tx.execute("DELETE FROM devices WHERE id = ?1", [id]).map_err(|e| self.fail(e))?;
+        tx.execute(
+            "INSERT OR REPLACE INTO removed_devices (token_hash, removed_at) VALUES (?1, ?2)",
+            params![key.0.as_slice(), newsreel_core::time::now()],
+        )
+        .map_err(|e| self.fail(e))?;
+        tx.commit().map_err(|e| self.fail(e))?;
+        drop(conn);
         state.paired.remove(&key);
+        state.removed.insert(key);
         self.publish(&state);
         self.revoke();
         Ok(state.list(port))

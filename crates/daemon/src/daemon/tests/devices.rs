@@ -365,11 +365,12 @@ async fn an_address_that_offers_tokens_that_open_nothing_gets_no_more_checked_th
     assert_eq!(seen_from().await, Some(ip.to_string()));
     early_in_a_minute().await;
 
+    let cookie = h.running.ctx.devices.cookie();
     for n in 0..31 {
-        let guess = Browser { cookie: Some(format!("newsreel_device={:064x}", n + 1)), ..Browser::on(ip, &h) };
+        let guess = Browser { cookie: Some(format!("{cookie}={:064x}", n + 1)), ..Browser::on(ip, &h) };
         assert_eq!(guess.get("/api/jobs").await.error().1, "not_paired", "guess {n}");
     }
-    let refused = Browser { cookie: Some(format!("newsreel_device={:064x}", 99)), ..Browser::on(ip, &h) };
+    let refused = Browser { cookie: Some(format!("{cookie}={:064x}", 99)), ..Browser::on(ip, &h) };
     let refused = refused.get("/api/jobs").await;
     assert_eq!((refused.status, refused.header("retry-after")), (429, Some("60")));
     assert_eq!(phone.get("/api/jobs").await.status, 429, "a device at that address waits the minute out too");
@@ -477,7 +478,8 @@ async fn a_paired_machine_reaches_what_a_device_may_ask_and_a_stranger_reaches_n
     listening(&h, ip, true).await;
     let mut laptop = Browser::on(ip, &h);
     laptop.pair(&offer.code).await;
-    let token = laptop.cookie.unwrap().strip_prefix("newsreel_device=").unwrap().to_string();
+    let token =
+        laptop.cookie.unwrap().strip_prefix(&format!("{}=", h.running.ctx.devices.cookie())).unwrap().to_string();
     let ask = |request| from_another_machine(ip, port, &token, request);
 
     assert!(matches!(ask(Request::Hello).await, Ok(Response::Hello { wire: WIRE_VERSION, .. })));
@@ -528,7 +530,8 @@ async fn only_this_machine_and_its_paired_machines_reach_the_indexers() {
     listening(&h, ip, true).await;
     let mut laptop = Browser::on(ip, &h);
     laptop.pair(&offer.code).await;
-    let token = laptop.cookie.unwrap().strip_prefix("newsreel_device=").unwrap().to_string();
+    let token =
+        laptop.cookie.unwrap().strip_prefix(&format!("{}=", h.running.ctx.devices.cookie())).unwrap().to_string();
     let ask = |request| from_another_machine(ip, port, &token, request);
 
     let Ok(Response::Indexers { list }) = ask(Request::Indexers).await else { panic!("a paired machine lists them") };
@@ -849,4 +852,32 @@ async fn this_mac_alone_adds_and_removes_devices_and_loopback_keeps_its_checks()
 
 fn mac_again(port: u16) -> Browser {
     Browser { ip: IpAddr::V4(Ipv4Addr::LOCALHOST), port, host: format!("127.0.0.1:{port}"), cookie: None }
+}
+
+/// Cookies ignore ports, so a browser sends every engine on a host the cookies of all of them. One
+/// that had only paired with another engine there was told it "was removed", and pairing with one
+/// engine replaced the cookie another had set.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_browser_paired_with_another_engine_on_the_host_is_not_paired_here_and_can_pair_with_both() {
+    let ip = lan();
+    let (one, two) = (Harness::new(), Harness::new());
+    let first = devices(&one, Request::AddDevice).await.offer.unwrap();
+    let second = devices(&two, Request::AddDevice).await.offer.unwrap();
+    listening(&one, ip, true).await;
+    listening(&two, ip, true).await;
+    let mut at_one = Browser::on(ip, &one);
+    at_one.pair(&first.code).await;
+    let mut at_two = Browser { cookie: at_one.cookie.clone(), ..Browser::on(ip, &two) };
+
+    let not_paired =
+        "this device is not paired with newsreel, so open /pair and enter the code that Add a device shows".to_string();
+    assert_eq!(at_two.get("/api/jobs").await.error(), (401, "not_paired".into(), not_paired));
+    assert!(at_two.get("/pair").await.text().contains("Enter the code that Add a device shows"));
+
+    at_two.pair(&second.code).await;
+    let both = format!("{}; {}", at_one.cookie.clone().unwrap(), at_two.cookie.clone().unwrap());
+    for h in [&one, &two] {
+        let browser = Browser { cookie: Some(both.clone()), ..Browser::on(ip, h) };
+        assert_eq!(browser.get("/api/me").await.json()["device"]["name"], "iPhone", "paired with both at once");
+    }
 }

@@ -6,7 +6,8 @@ use std::time::Duration;
 use newsreel_core::{Error, ErrorCode};
 use rusqlite::Connection;
 
-pub(super) const MIGRATIONS: &[&str] = &[r#"
+pub(super) const MIGRATIONS: &[&str] = &[
+    r#"
 CREATE TABLE jobs (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -106,7 +107,18 @@ CREATE TABLE deletions (
     inode INTEGER NOT NULL,
     bytes INTEGER NOT NULL
 ) STRICT;
-"#];
+"#,
+    r#"
+CREATE TABLE engine (
+    one INTEGER PRIMARY KEY CHECK (one = 1),
+    id TEXT NOT NULL
+) STRICT;
+CREATE TABLE removed_devices (
+    token_hash BLOB PRIMARY KEY CHECK (length(token_hash) = 32),
+    removed_at INTEGER NOT NULL
+) STRICT;
+"#,
+];
 
 /// The engine's database file, checked and migrated to this version's schema. The store, the
 /// shelf and the devices each open their own connection to it, so none can reach it unmigrated.

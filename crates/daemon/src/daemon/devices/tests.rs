@@ -310,6 +310,7 @@ fn an_offer_leads_with_the_public_address_then_a_servers_tailnet_then_the_local_
         let offer = Offer { code: "482913".into(), expires_at: NOW + 600, deadline: Instant::now() + OFFER, wrong: 0 };
         let state = State {
             paired: HashMap::new(),
+            removed: Default::default(),
             offer: Some(offer),
             grants: HashMap::new(),
             tries: Tries::default(),
@@ -364,4 +365,26 @@ fn an_offer_leads_with_the_public_address_then_a_servers_tailnet_then_the_local_
             "http://box.tail1234.ts.net:47919"
         ]
     );
+}
+
+/// Cookies ignore ports, so a browser sends every engine on a host the cookies of all of them. One
+/// that never paired with this engine was told it "was removed", from another engine's cookie.
+#[tokio::test]
+async fn each_engine_names_its_own_cookie_and_only_a_token_it_removed_reads_as_removed() {
+    let (home, other) = (Home::new(), Home::new());
+    assert!(home.devices.cookie().starts_with("newsreel_device_"), "{}", home.devices.cookie());
+    assert_ne!(home.devices.cookie(), other.devices.cookie());
+    assert_eq!(home.reopened().cookie(), home.devices.cookie(), "a device stays paired across restarts");
+    // Browsers send cookie names as set, and the engine reads headers lowercased.
+    assert_eq!(home.devices.cookie(), home.devices.cookie().to_ascii_lowercase());
+
+    let code = home.code();
+    let (device, token) = home.pair(&code, IPHONE, NOW).unwrap();
+    assert!(!other.devices.removed(&token), "another engine's token is not one this engine removed");
+    assert!(!home.devices.removed(&token));
+    assert!(!home.devices.removed("not a token"));
+    home.devices.remove(&device.id, PORT).unwrap();
+    assert!(home.devices.removed(&token));
+    assert!(home.reopened().removed(&token), "and after a restart");
+    assert!(!other.devices.removed(&token));
 }

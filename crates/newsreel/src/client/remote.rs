@@ -32,6 +32,8 @@ pub struct Remotes {
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct Remote {
     pub address: Address,
+    /// The name of the engine's cookie, which names the engine, so engines on one host differ.
+    pub cookie: String,
     pub token: String,
     /// This machine's device ID on that engine.
     pub device: String,
@@ -167,12 +169,14 @@ fn pair(address: &Address, code: &str) -> Result<Remote, Error> {
     struct Failed {
         error: Error,
     }
-    let token = head.header("set-cookie").and_then(|cookie| {
-        let pair = cookie.split(';').next()?.trim();
-        Some(pair.strip_prefix(COOKIE)?.strip_prefix('=')?.to_string())
+    let cookie = head.header("set-cookie").and_then(|cookie| {
+        let (name, token) = cookie.split(';').next()?.trim().split_once('=')?;
+        name.starts_with(COOKIE).then(|| (name.to_string(), token.to_string()))
     });
-    match (head.status, token, serde_json::from_slice::<Paired>(&answer)) {
-        (200, Some(token), Ok(Paired { device })) => Ok(Remote { address: address.clone(), token, device: device.id }),
+    match (head.status, cookie, serde_json::from_slice::<Paired>(&answer)) {
+        (200, Some((cookie, token)), Ok(Paired { device })) => {
+            Ok(Remote { address: address.clone(), cookie, token, device: device.id })
+        }
         _ => Err(match serde_json::from_slice::<Failed>(&answer) {
             Ok(Failed { error }) => error,
             Err(_) => {

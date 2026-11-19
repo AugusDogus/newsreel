@@ -18,7 +18,6 @@ use crate::cli::PullArgs;
 use crate::output::theme::Token;
 use crate::output::{Body, Cell, Doc, DocKind, Mode, Typed};
 use newsreel_daemon::config::{self, Config};
-use newsreel_daemon::daemon::devices::COOKIE;
 use newsreel_daemon::env::Env;
 use newsreel_daemon::paths::Paths;
 use newsreel_daemon::wire::{self, Address};
@@ -175,7 +174,7 @@ fn copy(remote: &Remote, route: &str, size: u64, path: &Path, bar: &ProgressBar)
             break;
         }
         let have = if have > size { 0 } else { have };
-        match fetch(&remote.address, &remote.token, route, have, &mut out, bar) {
+        match fetch(remote, route, have, &mut out, bar) {
             Ok(received) if received > 0 => idle = 0,
             Ok(_) => {
                 idle += 1;
@@ -206,15 +205,8 @@ fn partial(path: &Path) -> PathBuf {
 
 /// Asks for the file at `route` from byte `have` on, writes what arrives to `out` from there, and
 /// returns how many bytes that was. A connection that fails or ends early returns what came.
-fn fetch(
-    address: &Address,
-    token: &str,
-    route: &str,
-    have: u64,
-    out: &mut File,
-    bar: &ProgressBar,
-) -> Result<u64, Error> {
-    let cookie = format!("{COOKIE}={token}");
+fn fetch(remote: &Remote, route: &str, have: u64, out: &mut File, bar: &ProgressBar) -> Result<u64, Error> {
+    let (address, cookie) = (&remote.address, format!("{}={}", remote.cookie, remote.token));
     let range = format!("bytes={have}-");
     let mut headers = vec![("Cookie", cookie.as_str())];
     if have > 0 {
@@ -287,6 +279,8 @@ fn shown(pulled: &[Pulled], from: &Address) -> Doc {
 
 #[cfg(test)]
 mod tests {
+    use newsreel_daemon::daemon::devices::COOKIE;
+
     use super::*;
     use std::net::TcpListener;
 
@@ -323,7 +317,7 @@ mod tests {
                     head.push(byte[0]);
                 }
                 let head = String::from_utf8(head).unwrap();
-                assert!(head.contains(&format!("Cookie: {COOKIE}={}", "ab".repeat(32))), "{head}");
+                assert!(head.contains(&format!("Cookie: {COOKIE}1a2b3c4d={}", "ab".repeat(32))), "{head}");
                 let range = head.lines().find_map(|line| line.strip_prefix("Range: bytes=")).map(String::from);
                 let start: usize = range.as_deref().map_or(0, |range| range.trim_end_matches('-').parse().unwrap());
                 ranges.push(range);
@@ -364,7 +358,8 @@ mod tests {
         let path = dir.path().join("Sintel.mkv");
         let bytes = film();
         let (address, served) = engine(bytes.clone(), Some(1_200_000));
-        let remote = Remote { address, token: "ab".repeat(32), device: "3f9a0c2e".into() };
+        let remote =
+            Remote { address, cookie: format!("{COOKIE}1a2b3c4d"), token: "ab".repeat(32), device: "3f9a0c2e".into() };
 
         let resumed_at =
             copy(&remote, "/9b52/0/Sintel.mkv", bytes.len() as u64, &path, &ProgressBar::hidden()).unwrap();
@@ -380,7 +375,8 @@ mod tests {
         let path = dir.path().join("Sintel.mkv");
         let bytes = film();
         let (address, served) = engine(bytes.clone(), None);
-        let remote = Remote { address, token: "ab".repeat(32), device: "3f9a0c2e".into() };
+        let remote =
+            Remote { address, cookie: format!("{COOKIE}1a2b3c4d"), token: "ab".repeat(32), device: "3f9a0c2e".into() };
         let mut first = OpenOptions::new().create(true).write(true).truncate(false).open(partial(&path)).unwrap();
         first.try_lock().unwrap();
         first.write_all(&bytes[..700_000]).unwrap();
@@ -408,7 +404,8 @@ mod tests {
         let bytes = film();
         std::fs::write(partial(&path), &bytes[..700_000]).unwrap();
         let (address, served) = engine(bytes.clone(), None);
-        let remote = Remote { address, token: "ab".repeat(32), device: "3f9a0c2e".into() };
+        let remote =
+            Remote { address, cookie: format!("{COOKIE}1a2b3c4d"), token: "ab".repeat(32), device: "3f9a0c2e".into() };
 
         let resumed_at =
             copy(&remote, "/9b52/0/Sintel.mkv", bytes.len() as u64, &path, &ProgressBar::hidden()).unwrap();
