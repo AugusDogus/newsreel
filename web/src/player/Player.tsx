@@ -86,6 +86,7 @@ function releaseShown(play: PlayInfo): Shown {
     poster: null,
     overlay: null,
     replacing: false,
+    onFrozen: null,
   };
 }
 

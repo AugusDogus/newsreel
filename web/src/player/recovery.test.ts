@@ -24,7 +24,7 @@ test("a source that sends nothing for 45 seconds while the video waits is replac
     { kind: "suspect", since: 1000 },
     { kind: "suspect", since: 1000 },
     { kind: "suspect", since: 1000 },
-    { kind: "switching", at: 313 },
+    { kind: "switching", at: 313, why: "stalled" },
   ]);
 });
 
@@ -45,15 +45,15 @@ test("a video that plays, is paused, or has a second buffered is not suspected",
 });
 
 test("a download that fails is replaced at once, buffered or not", () => {
-  expect(run([sample(0, { failed: true, waiting: false, ahead: 20, time: 90 })])).toEqual([{ kind: "switching", at: 90 }]);
+  expect(run([sample(0, { failed: true, waiting: false, ahead: 20, time: 90 })])).toEqual([{ kind: "switching", at: 90, why: "stalled" }]);
   expect(run([sample(0), sample(3000, { failed: true })])).toEqual([
     { kind: "suspect", since: 0 },
-    { kind: "switching", at: 312.5 },
+    { kind: "switching", at: 312.5, why: "stalled" },
   ]);
 });
 
 test("the engine's answer ends a switch", () => {
-  const switching: Recovery = { kind: "switching", at: 312.5 };
+  const switching: Recovery = { kind: "switching", at: 312.5, why: "stalled" };
   expect(run([sample(60_000), { type: "playing" }], switching)).toEqual([switching, { kind: "watching" }]);
   expect(run([{ type: "failed", error: NO_SOURCE }], switching)).toEqual([{ kind: "exhausted", error: NO_SOURCE }]);
 });
@@ -65,7 +65,7 @@ test("with no other source, the player keeps waiting on this one until Retry", (
     exhausted,
     { kind: "suspect", since: 91_000 },
     { kind: "suspect", since: 91_000 },
-    { kind: "switching", at: 312.5 },
+    { kind: "switching", at: 312.5, why: "stalled" },
   ]);
 });
 
@@ -81,3 +81,17 @@ test("answers and Retry outside their state change nothing", () => {
   ]);
 });
 
+
+test("a source whose picture froze is replaced at the playhead, and the switch says why", () => {
+  expect(run([sample(0, { waiting: false, ahead: 30 }), { type: "frozen", at: 610 }])).toEqual([
+    { kind: "watching" },
+    { kind: "switching", at: 610, why: "frozen" },
+  ]);
+  const suspect: Recovery = { kind: "suspect", since: 0 };
+  expect(run([{ type: "frozen", at: 610 }], suspect)).toEqual([{ kind: "switching", at: 610, why: "frozen" }]);
+  // Already switching, or with no other source left, a freeze changes nothing.
+  const switching: Recovery = { kind: "switching", at: 312.5, why: "stalled" };
+  expect(run([{ type: "frozen", at: 610 }], switching)).toEqual([switching]);
+  const exhausted: Recovery = { kind: "exhausted", error: NO_SOURCE };
+  expect(run([{ type: "frozen", at: 610 }], exhausted)).toEqual([exhausted]);
+});

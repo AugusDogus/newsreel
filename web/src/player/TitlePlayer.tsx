@@ -96,7 +96,9 @@ function RecoveryNotice({ recovery, switched, onRetry }: { recovery: Recovery; s
     notice = (
       <>
         <Spinner className="size-4 text-ink" />
-        <p className="py-1.5 pr-2">This source stopped sending video. Trying another one.</p>
+        <p className="py-1.5 pr-2">
+          {recovery.why === "frozen" ? "This browser shows no picture of this source." : "This source stopped sending video."} Trying another one.
+        </p>
       </>
     );
   } else if (recovery.kind === "exhausted") {
@@ -224,6 +226,7 @@ function Session({ video, source, onRetry }: Props & { onRetry: () => void }) {
       poster: current.poster,
       overlay: <StallWatch play={started.play} element={element} dispatch={dispatch} />,
       replacing: switching,
+      onFrozen: (at) => dispatch({ type: "frozen", at }),
     };
   }, [current, naming, kind, page, heard, backdrop, switching, tab]);
 

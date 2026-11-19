@@ -190,6 +190,8 @@ export const ENGINE_UNREACHABLE = "engine_unreachable";
 export const STREAM_FAILED = "stream_failed";
 /** The video stream ended before the end of the file. */
 export const STREAM_ENDED_EARLY = "stream_ended_early";
+/** The video says it plays, but this browser shows nothing of it: its clock and its frames stand still. */
+export const PICTURE_FROZEN = "picture_frozen";
 
 /** The code of a media element's error: 3 is a decode failure, 4 a file the browser cannot play. */
 export function mediaErrorCode(code: number): `media_error_${number}` {
@@ -197,7 +199,12 @@ export function mediaErrorCode(code: number): `media_error_${number}` {
 }
 
 /** The codes this app gives what fails in the browser, beside the engine's. */
-type AppErrorCode = typeof ENGINE_UNREACHABLE | typeof STREAM_FAILED | typeof STREAM_ENDED_EARLY | `media_error_${number}`;
+type AppErrorCode =
+  | typeof ENGINE_UNREACHABLE
+  | typeof STREAM_FAILED
+  | typeof STREAM_ENDED_EARLY
+  | typeof PICTURE_FROZEN
+  | `media_error_${number}`;
 
 /** One line of the /api/search stream. `update` repeats with the results so far as each source answers. */
 export type SearchMessage = Exclude<EngineSearchMessage, { type: "error" }> | { type: "error"; error: ApiError };

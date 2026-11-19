@@ -12,7 +12,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { type MediaInfo, mediaErrorCode, type PlayInfo, type ReleaseFile } from "../api";
+import { type MediaInfo, mediaErrorCode, PICTURE_FROZEN, type PlayInfo, type ReleaseFile } from "../api";
 import { CastButton } from "../cast/CastButton";
 import { clock } from "../lib/format";
 import {
@@ -34,6 +34,7 @@ import { CueTrack } from "./cues";
 import { FeedbackLayer } from "./FeedbackLayer";
 import { FeedbackStore } from "./feedback";
 import { FilesPanel } from "./FilesPanel";
+import { decodedFrames, type Moved, watch } from "./frozen";
 import { type Command, command } from "./keys";
 import { defaultAudio, plan } from "./plan";
 import { SeekBar } from "./SeekBar";
@@ -46,7 +47,7 @@ import { Stats } from "./Stats";
 import { SubtitleLayer } from "./SubtitleLayer";
 import { useAirPlay, useMediaSession, useWakeLock } from "./system";
 import { useSubtitleTracks } from "./tracks";
-import { useVideo, VideoStore } from "./video";
+import { bufferedAround, useVideo, VideoStore } from "./video";
 
 /** The controls hide after this long without input while the video plays. */
 const IDLE_MS = 2500;
@@ -102,6 +103,11 @@ export interface Shown {
   overlay: ReactNode;
   /** Another source is being found, which the overlay says, so the wait says nothing about this one. */
   replacing: boolean;
+  /**
+   * The video plays no picture in this browser, even repackaged, at this many seconds: a title moves to its next
+   * source. Null where there is none to move to, and the player says so.
+   */
+  onFrozen: ((at: number) => void) | null;
 }
 
 export interface PlaybackProps {
@@ -257,6 +263,38 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
   useEffect(() => {
     if (failure && howKind === "direct" && converts && [mediaErrorCode(3), mediaErrorCode(4)].some((code) => code === failure.code)) setDirectWorks(false);
   }, [failure, howKind, converts]);
+
+  // A browser can play a file's sound and show no picture, without an error: its clock and frames stand still. Read
+  // directly, the engine repackages it; repackaged, a title moves to its next source, and a file says so.
+  const { onFrozen } = shown;
+  useEffect(() => {
+    if (howKind === "blocked") return;
+    let moved: Moved = null;
+    const timer = setInterval(() => {
+      const range = bufferedAround(element);
+      const seen = watch(moved, {
+        now: performance.now(),
+        time: element.currentTime,
+        frames: decodedFrames(element),
+        playing: !element.paused && !element.ended && !element.seeking && !document.hidden,
+        ahead: range ? range[1] - element.currentTime : 0,
+      });
+      moved = seen.moved;
+      if (!seen.frozen) return;
+      clearInterval(timer);
+      if (howKind === "direct" && converts) {
+        feedback.note("No picture came, so newsreel repackages the video");
+        setDirectWorks(false);
+      } else if (onFrozen) {
+        onFrozen(element.currentTime);
+      } else {
+        const message = "the video plays, but this browser shows nothing of it: its clock and its picture stopped";
+        const hint = "try again, or play it on another device";
+        setSourceState({ kind: "failed", error: { code: PICTURE_FROZEN, message, hint } });
+      }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [element, howKind, converts, onFrozen, feedback, attempt]);
 
   // Where playback is, remembered for the next visit while it plays here. The engine keeps a title's place for the
   // screen that started or resumed it last.

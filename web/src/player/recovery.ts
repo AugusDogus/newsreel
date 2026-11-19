@@ -5,8 +5,11 @@ export type Recovery =
   | { kind: "watching" }
   /** Waiting, under 1 s buffered ahead, and no bytes arriving, since `since` (milliseconds). */
   | { kind: "suspect"; since: number }
-  /** Asked the engine for the next source, at `at` seconds into the video. The current source keeps playing. */
-  | { kind: "switching"; at: number }
+  /**
+   * Asked the engine for the next source, at `at` seconds into the video. The current source keeps playing.
+   * `why`: it stopped sending video, or it plays no picture in this browser.
+   */
+  | { kind: "switching"; at: number; why: "stalled" | "frozen" }
   /** No other source plays. Keep waiting on this one, and say so. */
   | { kind: "exhausted"; error: ApiError };
 
@@ -27,6 +30,8 @@ export type RecoveryEvent =
       /** The download stopped with an error. */
       failed: boolean;
     }
+  /** The video says it plays, but neither its clock nor its frames move: this browser shows nothing of it. */
+  | { type: "frozen"; at: number }
   /** Another source plays, from the playhead. */
   | { type: "playing" }
   /** The engine found no other source that plays. */
@@ -48,10 +53,10 @@ export function recover(state: Recovery, event: RecoveryEvent): Recovery {
       const starved = event.waiting && event.ahead < STARVED_S && !event.receiving;
       switch (state.kind) {
         case "watching":
-          if (event.failed) return { kind: "switching", at: event.time };
+          if (event.failed) return { kind: "switching", at: event.time, why: "stalled" };
           return starved ? { kind: "suspect", since: event.now } : state;
         case "suspect":
-          if (event.failed || (starved && event.now - state.since >= STALLED_MS)) return { kind: "switching", at: event.time };
+          if (event.failed || (starved && event.now - state.since >= STALLED_MS)) return { kind: "switching", at: event.time, why: "stalled" };
           return starved ? state : WATCHING;
         case "switching":
           return state;
@@ -60,6 +65,8 @@ export function recover(state: Recovery, event: RecoveryEvent): Recovery {
           return event.receiving ? WATCHING : state;
       }
     }
+    case "frozen":
+      return state.kind === "watching" || state.kind === "suspect" ? { kind: "switching", at: event.at, why: "frozen" } : state;
     case "playing":
       return state.kind === "switching" ? WATCHING : state;
     case "failed":
