@@ -24,7 +24,7 @@ use super::play::{Hold, Playing, hold_line, play, playing_line};
 use super::search::search;
 use super::skill::{skill_changes, skill_status};
 use super::titles::view::*;
-use super::wait::{Printer, WaitEnd, wait_row, watched};
+use super::wait::{Printer, WaitEnd, wait_end, wait_row, watched};
 use crate::output::{Body, Doc, DocKind, Mode, Typed, render};
 use newsreel_core::protocol::JobAction;
 
@@ -645,6 +645,26 @@ fn wait_until_done_timeout_error_and_stop() {
         out.push_str(&format!("--- ndjson\n{}", wait_transcript(Mode::Json, end, &frames, elapsed)));
     }
     insta::assert_snapshot!(out);
+}
+
+/// `newsreel verify` says "checking" and to wait; the wait ended "done" and never said what the
+/// check found. A damage it found ends the wait with the verification error instead.
+#[cfg(unix)]
+#[test]
+fn a_wait_that_saw_its_download_checked_says_the_check_found_it_intact() {
+    let done = Progress { size: 1_640_497_152, verified: 1_640_497_152, ..Progress::default() };
+    let finished = job(ARCH, "archlinux-2026.10.01-x86_64.iso", JobStatus::Done { finished_at: NOW }, done);
+    let mut seen = watched(vec![finished]);
+    let path = "done after 1s · path /Users/ada/Downloads/newsreel/archlinux-2026.10.01-x86_64.iso";
+    assert_eq!(wait_end(&WaitEnd::Done, Duration::from_secs(1), &seen).0, [path]);
+    // A new download is checked before it has anything; that is not a check of what it holds.
+    let fresh = job(ARCH, "archlinux-2026.10.01-x86_64.iso", JobStatus::Checking, Progress::default());
+    assert!(!watched(vec![fresh])[0].checked);
+    seen[0].checked = true;
+    assert_eq!(
+        wait_end(&WaitEnd::Done, Duration::from_secs(1), &seen).0,
+        [path, "9b5212 was checked: every piece of its selected files is intact"]
+    );
 }
 
 #[test]

@@ -99,6 +99,11 @@ impl State {
 
     fn update(&mut self, job: Job) -> Option<usize> {
         let i = self.watched.iter().position(|w| w.job.id == job.id)?;
+        let watched = &mut self.watched[i];
+        watched.checked = match job.status {
+            JobStatus::Downloading => false,
+            _ => watched.checked || checks_data(&job),
+        };
         self.watched[i].job = job;
         Some(i)
     }
@@ -432,11 +437,19 @@ pub fn wait_row(elapsed: Duration, id: &str, job: &Job) -> Vec<Cell> {
 pub struct Watched {
     pub id: String,
     pub job: Job,
+    /// The wait saw data already there being checked, as `newsreel verify` starts, and nothing
+    /// downloaded after. A new download is checked too, before it has anything.
+    pub checked: bool,
 }
 
 pub fn watched(jobs: Vec<Job>) -> Vec<Watched> {
     let ids = short_ids(&jobs.iter().map(|j| j.id).collect::<Vec<_>>());
-    ids.into_iter().zip(jobs).map(|(id, job)| Watched { id, job }).collect()
+    ids.into_iter().zip(jobs).map(|(id, job)| Watched { checked: checks_data(&job), id, job }).collect()
+}
+
+/// The download is being checked and has data to check.
+fn checks_data(job: &Job) -> bool {
+    job.status == JobStatus::Checking && job.progress.verified > 0
 }
 
 pub fn wait_end(end: &WaitEnd, elapsed: Duration, watched: &[Watched]) -> (Vec<String>, Option<String>) {
@@ -446,7 +459,18 @@ pub fn wait_end(end: &WaitEnd, elapsed: Duration, watched: &[Watched]) -> (Vec<S
     match end {
         WaitEnd::Done => {
             let paths: Vec<String> = watched.iter().map(|w| sanitize(&w.job.path.display().to_string())).collect();
-            (vec![format!("done after {after} · path {}", paths.join(", "))], None)
+            let mut lines = vec![format!("done after {after} · path {}", paths.join(", "))];
+            // A check that found damage ends the wait with its error; one that ends done found none.
+            let checked: Vec<&str> = watched.iter().filter(|w| w.checked).map(|w| w.id.as_str()).collect();
+            match checked[..] {
+                [] => {}
+                [one] => lines.push(format!("{one} was checked: every piece of its selected files is intact")),
+                _ => lines.push(format!(
+                    "{} were checked: every piece of their selected files is intact",
+                    checked.join(", ")
+                )),
+            }
+            (lines, None)
         }
         WaitEnd::Timeout => {
             let eta = watched.iter().filter_map(|w| w.job.progress.eta).max();
