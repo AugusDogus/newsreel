@@ -2,8 +2,10 @@
 
 Fixes for the bugs the live device tests of 2026-11-18 found, one commit each. For each: the bug,
 how it was found, the evidence, why the fix is right, and whether upstream (nexxeln/torrential
-v0.7.0) has it too. Screenshots are in `~/.cache/nr-devfix/shots/` (before and after) and
-`~/.cache/nr-devtest/shots/` (the original test run).
+v0.7.0) has it too. Screenshots are in `~/.cache/nr-devfix/shots/` (before and after, `7-…-before` from the old build
+and `7-…-after` from this branch) and `~/.cache/nr-devtest/shots/` (the original test run). Device
+names: `7-devices-before.txt` ("Android", "Android 2") and `7-devices-after.txt` ("Android TV",
+"Android phone"). `devices add` output: `7-devices-add-after-pipe.txt`.
 
 ## 1. A release that hangs at 99.9% forever
 
@@ -180,8 +182,9 @@ now. `only_what_the_engine_reads_once_needs_a_restart` checks which settings cou
 ### 4a. The web app says "retry with a longer --timeout"
 
 **Bug.** When every indexer failed, the web app's search and title pages showed the hint
-`check the network connection, or retry with a longer --timeout`. `--timeout` is a command line
-flag; a browser has nothing to set.
+`check the network connection, or retry with a longer --timeout`
+(`~/.cache/nr-devtest/shots/tv-play-3.png`). `--timeout` is a command line flag; a browser has
+nothing to set.
 
 **Cause.** The hint is fixed in `all_failed` (`crates/search/src/assemble.rs`), and the engine
 hands the same error to the CLI and to the web API.
@@ -232,7 +235,8 @@ rings, small type. Only `?tv=on` turned TV mode on.
 `~/.cache/nr-devfix/signals/server.log`): user agent `Mozilla/5.0 (Linux; Android 10; K) …
 Chrome/157.0.0.0 Safari/537.36`, screen 960 by 540 at 2x, `maxTouchPoints` 5, `(pointer: coarse)`
 and `(hover: none)` true, `(any-pointer: fine)` true, `(any-pointer: none)` false. `looksLikeTv`
-needs no touch and either no pointer or a TV name in the user agent, so all three tests fail.
+needs no touch and either no pointer or a TV name in the user agent, and TV Bro gives none of
+those.
 
 **Fix** (`web/src/lib/tv.ts`).
 - Android-based TV names (Android TV, Google TV, Fire TV's `AFT…` models, BRAVIA, SHIELD,
@@ -246,6 +250,10 @@ needs no touch and either no pointer or a TV name in the user agent, so all thre
 
 **Tests.** `web/src/lib/tv.test.ts`: TV Bro's signals and four Android TV-family user agents
 failed before and pass now; tablets in 16:10 and 4:3 stay out; the old cases still pass.
+
+**Screens.** `7-tv-home-before.png` (no TV mode: the computer's `/` key hint, no focus ring) and
+`7-tv-home-after.png` (TV mode with no `?tv=on`: the thick focus ring on the search field), on
+engines at different addresses, so a kept `?tv=on` cannot carry over.
 
 **Upstream.** Same `looksLikeTv` in v0.7.0. Upstream has it.
 
@@ -264,6 +272,13 @@ digit moves focus to Pair. Keys are read by name, or by key code for TV browsers
 **Test.** `web/src/pair.test.ts` runs the page's own script against a small stand-in DOM. Both
 tests fail on the old page (`PAIR_PAGE=<old copy> bun test src/pair.test.ts`) and pass now.
 
+**On the emulator.** The arrow keys could not be shown there: TV Bro 3.0.6 on `august_tv` ignored
+every remote key agent-device sent (a probe page logged no `keydown` at all, its cursor did not
+move, and Menu did nothing), so the emulator says nothing either way about keys. What it does
+show: after typing the sixth digit, focus is on Pair (`7-tv-pair-after-sixth-digit.png`; the
+accessibility tree says `[button] "Pair" [focused]`), where the old page left it in the field
+(`7-tv-pair-before-1.png`).
+
 **Upstream.** Same page in v0.7.0, with no key handling. Upstream has it.
 
 ### 6b. The player ignores media keys
@@ -279,6 +294,9 @@ focus is, since no control uses them.
 
 **Test.** `a remote's media keys play, pause, wind, and stop, by name or by a TV's key code,
 wherever focus is` in `web/src/player/keys.test.ts` failed before and passes now.
+
+**On the emulator.** Not shown, for the reason in 6a; the player also did not start playback in
+TV Bro on the emulator (`7-tv-playing-before*.png`).
 
 **Upstream.** Same `REMOTE` map in v0.7.0. Upstream has it.
 
@@ -347,7 +365,7 @@ which is the bug; it now expects the plain wording there and the QR wording when
 ### 7c. "Found 10 sources", then "source 1 of 6"
 
 **Bug.** The play screen said "Found 10 sources", then "Trying source 1 of 6"
-(`~/.cache/nr-devtest/shots/tv-play-*.png`). The CLI and TUI say the same ("Found 6 sources",
+(`7-tv-play-before-2.png`). The CLI and TUI say the same ("Found 6 sources",
 "Trying 1 of 6").
 
 **Which number is right.** Both. 10 is every release the search returned. 6 is how many this play
@@ -357,6 +375,9 @@ does not decode (`daemon/titles/attempt.rs`). The second number was only missing
 **Fix.** The trying line says "Trying 2 of the best 6", or "Trying the best source" when there is
 one, in the web app (`which` in `TitleScreens.tsx`), the CLI and the TUI (`watching::trying` in
 core). "Playing source 1 of 6" reads "Playing source 1 of the best 6".
+
+**Screens.** `7-tv-play-before-2.png` ("Found 10 sources", "Trying source 1 of 6") and
+`7-tv-play-after-3.png` ("Found 10 sources", "Trying source 1 of the best 6").
 
 **Tests.** `TitleScreens.test.ts`, `a_play_names_the_source_it_tries_among_the_best_it_tries` in
 core; the CLI, TUI and `tests/titles.rs` expectations of the old line now expect the new one.
@@ -377,7 +398,9 @@ The title page pushes its text down by `min(24vh, 13rem)` and shows the whole sy
 gaps and the synopsis clamped to three lines.
 
 **Screens.** Before: `7-tv-home-continue-before.png`, `7-tv-title-before.png`. After:
-`7-tv-home-continue-after.png`, `7-tv-title-after.png` (in `~/.cache/nr-devfix/shots/`).
+`7-tv-home-continue-after.png`, `7-tv-title-after.png` (in `~/.cache/nr-devfix/shots/`). The
+watch position behind the card was saved through `POST /api/watched`, since the emulator's player
+did not start the film.
 
 **Test.** Layout only; checked on the TV emulator. The web app has no DOM test setup.
 
@@ -409,7 +432,7 @@ its text fallback only when the picture fails, so the heading is empty while it 
 picture element, so it still fades in). A logo that fails leaves the text, as before.
 
 **Screens.** `7-tv-title-loading-after.mp4` and the frame `7-tv-title-loading-after.png`: Singin'
-in the Rain's name in text while its logo and backdrop load, then the logo (`check` on the second
-visit shows it in place).
+in the Rain's name in text for the 9 s its logo and backdrop took to come from the catalog, and
+`7-tv-title-logo-loaded-after.png` with the logo in place on the next visit.
 
 **Upstream.** Same `Logo` in v0.7.0. Upstream has it.
