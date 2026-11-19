@@ -463,3 +463,23 @@ needs an installed ffmpeg. `install.yml`, which installs a published release on 
 no Intel runner yet.
 
 **Upstream.** v0.7.0's `target` has only `("macos", "aarch64")`. Upstream has it.
+
+## 9. `engine install` edge cases
+
+### 9a. A missing launchctl, systemctl or schtasks is blamed on ssh
+
+**Bug.** With `systemctl` (or `launchctl`, or `schtasks`) missing from the PATH, `engine install`
+said `systemctl is not on this system` and then hinted that systemd's user manager does not answer
+"as under su, sudo or ssh without a login session", which is about a different failure.
+
+**Cause.** `service::output` sent a program it could not find and a program that refused to the
+same `unavailable` hint.
+
+**Fix.** A program that is not found gets its own hint (`service::missing`): it says the program is
+not on the PATH, where it lives on that system (`/bin` on a Mac, System32 on Windows), and, for
+systemd, that the system may have none and any newsreel command starts the engine meanwhile.
+
+**Test.** `an_engine_install_the_login_service_refuses_says_so_and_what_to_do` now also checks the
+missing-program hint names the PATH and not ssh; that part failed before.
+
+**Upstream.** v0.7.0 has no `service_unavailable`; newsreel added it, so this is newsreel's own.

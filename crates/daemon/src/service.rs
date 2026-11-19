@@ -271,7 +271,7 @@ fn output(env: &Env, name: &str, args: &[&str]) -> Result<String, Error> {
         command.env("XDG_RUNTIME_DIR", format!("/run/user/{}", crate::paths::uid()));
     }
     let output = command.args(args).output().map_err(|e| match e.kind() {
-        std::io::ErrorKind::NotFound => unavailable(name, format!("{name} is not on this system")),
+        std::io::ErrorKind::NotFound => missing(name),
         _ => unavailable(name, format!("cannot run {name}: {e}")),
     })?;
     if output.status.success() {
@@ -279,6 +279,30 @@ fn output(env: &Env, name: &str, args: &[&str]) -> Result<String, Error> {
     }
     let said = String::from_utf8_lossy(&output.stderr).trim().to_string();
     Err(unavailable(name, format!("{name} {} failed: {said}", args.join(" "))))
+}
+
+/// A login service whose `program` this process cannot find. The system may lack it, or the PATH
+/// this process got may leave out where it is; either way it is no session's doing.
+fn missing(program: &str) -> Error {
+    let hint = match program {
+        "systemctl" | "loginctl" => format!(
+            "{program} is not on the PATH, so this system may have no systemd, which the login service needs; \
+             if it has systemd, run this again with /usr/bin on the PATH, and if not, any newsreel command \
+             starts the engine when it is needed"
+        ),
+        "launchctl" => {
+            "launchctl is not on the PATH, though every Mac has it in /bin; run this again with /bin on the PATH".into()
+        }
+        _ => format!(
+            "{program} is not on the PATH, though Windows keeps it in C:\\Windows\\System32; run this again with \
+             that folder on the PATH"
+        ),
+    };
+    Error::new(
+        ErrorCode::ServiceUnavailable,
+        format!("cannot set up the login service: {program} is not on this system"),
+    )
+    .with_hint(hint)
 }
 
 /// A login service that `program` could not set up. It is how this system or session is, not a

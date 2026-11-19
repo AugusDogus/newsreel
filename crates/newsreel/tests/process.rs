@@ -651,13 +651,16 @@ fn an_engine_install_the_login_service_refuses_says_so_and_what_to_do() {
     let missing = service.home.path("no-programs");
     std::fs::create_dir_all(&missing).unwrap();
     service.home.set(hooks::SERVICE_BIN, &missing.display().to_string());
-    let (_, kind, message, _) = failed(&service.home);
+    let (_, kind, message, hint) = failed(&service.home);
     assert_eq!(kind, "service_unavailable");
     let program = if cfg!(target_os = "macos") { "launchctl" } else { "systemctl" };
     assert!(
         message.starts_with(&format!("cannot set up the login service: {program} is not on this system")),
         "{message}"
     );
+    // A missing program is not a session without a login, so the hint does not blame ssh.
+    assert!(!hint.contains("ssh") && !hint.contains("su,"), "{hint}");
+    assert!(hint.contains(&format!("{program} is not on the PATH")), "{hint}");
 }
 
 // Its stand-ins are for launchd and systemd; W4 tests the Windows logon task in CI.
