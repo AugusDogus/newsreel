@@ -362,3 +362,23 @@ core). "Playing source 1 of 6" reads "Playing source 1 of the best 6".
 core; the CLI, TUI and `tests/titles.rs` expectations of the old line now expect the new one.
 
 **Upstream.** Same wording in v0.7.0. Upstream has it.
+
+### 7d. TV: "Continue watching" runs off the screen, and the title page's actions sit on its edge
+
+**Bug.** On the TV (960 by 540 CSS pixels in TV Bro), the one Continue watching card was cut off
+at the bottom (`~/.cache/nr-devtest/shots/tv-25-home.png`), and the title page's Play, Play on TV
+and Save buttons sat on the bottom edge (`tv-20.png`).
+
+**Cause.** At 960 wide the card row is two columns (Tailwind's `sm`), so one card is 420 pixels
+wide and 236 tall, under a header and a search field that a TV's larger type already makes tall.
+The title page pushes its text down by `min(24vh, 13rem)` and shows the whole synopsis.
+
+**Fix.** On a TV the card row has three columns, and the title page starts 4vh down, with tighter
+gaps and the synopsis clamped to three lines.
+
+**Screens.** Before: `7-tv-home-continue-before.png`, `7-tv-title-before.png`. After:
+`7-tv-home-continue-after.png`, `7-tv-title-after.png` (in `~/.cache/nr-devfix/shots/`).
+
+**Test.** Layout only; checked on the TV emulator. The web app has no DOM test setup.
+
+**Upstream.** Same classes in v0.7.0. Upstream has it.

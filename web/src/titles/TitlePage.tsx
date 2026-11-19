@@ -155,11 +155,12 @@ function Details({ page, season, sources, onChange }: { page: Title; season: num
   const shownSeason = season ?? seasonOf(sources) ?? seasonOf(primary?.video) ?? seasonOrder(page)[0] ?? null;
 
   return (
-    <main className="flex flex-col gap-12 pt-[min(24vh,--spacing(52))]">
-      <section className="flex max-w-xl flex-col gap-5">
+    <main className="flex flex-col gap-12 pt-[min(24vh,--spacing(52))] tv:pt-[4vh]">
+      {/* A TV's screen is short for its width, so the actions stay clear of its bottom edge. */}
+      <section className="flex max-w-xl flex-col gap-5 tv:gap-3">
         <Name page={page} />
         <Facts page={page} />
-        {page.synopsis && <p className="max-w-[60ch] text-base text-pretty text-soft">{page.synopsis}</p>}
+        {page.synopsis && <p className="max-w-[60ch] text-base text-pretty text-soft tv:line-clamp-3">{page.synopsis}</p>}
         {page.cast.length > 0 && <p className="text-sm text-pretty text-pencil">Starring {list(page.cast)}</p>}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {primary ? (
