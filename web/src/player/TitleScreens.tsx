@@ -92,15 +92,22 @@ export function which({ rank, of }: { rank: number; of: number }): string {
   return of === 1 ? "the best source" : `source ${rank} of the best ${of}`;
 }
 
-function steps(attempt: Attempt): Step[] {
+/**
+ * The steps of a title's play, at step `step`. A source the person picked from the title's list is
+ * the only one tried, so its steps name it as theirs, and count no others.
+ */
+export function steps(attempt: Attempt, picked: boolean, step: number): Step[] {
   const { found, trying } = attempt;
+  const source = picked ? "the source you picked" : trying && which(trying);
   return [
+    picked
+      ? { title: found === null ? "Finding the source you picked" : "Found the source you picked", detail: "Looking it up among this title's releases." }
+      : {
+          title: found === null ? "Finding sources" : found === 1 ? "Found 1 source" : `Found ${found} sources`,
+          detail: "Searching the indexers for this title's releases.",
+        },
     {
-      title: found === null ? "Finding sources" : found === 1 ? "Found 1 source" : `Found ${found} sources`,
-      detail: "Searching the indexers for this title's releases.",
-    },
-    {
-      title: trying ? `Trying ${which(trying)}` : "Trying sources",
+      title: !source ? "Trying sources" : step >= 2 ? `Playing ${source}` : `Trying ${source}`,
       detail: trying && (
         <>
           <span className="text-soft">{about(trying.release)}</span>
@@ -118,6 +125,8 @@ interface StartingProps {
   backdrop: string | null;
   /** The step in progress: 0 finding sources, 1 trying them, 2 reading the video, 3 buffering. */
   step: 0 | 1 | 2 | 3;
+  /** The person picked the source from the title's list. */
+  picked: boolean;
   /** The download that plays, once there is one, for the repair the running step may wait on. */
   job: Job | null;
   /** How the download that plays is doing, under the steps. */
@@ -125,15 +134,14 @@ interface StartingProps {
 }
 
 /** The screen before the first frame of a title: what plays, and what the engine is doing toward it. */
-export function TitleStarting({ attempt, naming, backdrop, step, job, readout }: StartingProps) {
-  const playing = step >= 2 && attempt.trying ? `Playing ${which(attempt.trying)}` : null;
+export function TitleStarting({ attempt, naming, backdrop, step, picked, job, readout }: StartingProps) {
   return (
     <div className="absolute inset-0">
       <Backdrop src={backdrop} />
       <div className="absolute inset-0 flex items-end overflow-y-auto pt-20 pr-[max(--spacing(6),7vw,env(safe-area-inset-right))] pb-[max(--spacing(8),11vh)] pl-[max(--spacing(6),7vw,env(safe-area-inset-left))]">
         <div className="flex w-full max-w-xl animate-appear flex-col gap-8 motion-reduce:animate-none">
           <Name naming={naming} />
-          <Steps steps={waitingOn(steps(attempt).map((stage, at) => (at === 1 && playing ? { ...stage, title: playing } : stage)), step, job)} step={step} />
+          <Steps steps={waitingOn(steps(attempt, picked, step), step, job)} step={step} />
           {readout && <div className="min-h-5 text-sm text-soft">{readout}</div>}
           <PassedList title="Passed over" passed={attempt.passed} />
         </div>

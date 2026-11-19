@@ -125,7 +125,7 @@ function RecoveryNotice({ recovery, switched, onRetry }: { recovery: Recovery; s
 }
 
 /** The start screen once a source plays: buffering its first seconds, following its download. */
-function TitleBuffering({ play, ...shown }: { attempt: Attempt; naming: Naming; backdrop: string | null; play: PlayInfo }) {
+function TitleBuffering({ play, ...shown }: { attempt: Attempt; naming: Naming; backdrop: string | null; picked: boolean; play: PlayInfo }) {
   const job = usePlayingJob(play);
   return <TitleStarting {...shown} step={3} job={job} readout={<Readout job={job} />} />;
 }
@@ -227,14 +227,14 @@ function Session({ video, source, onRetry }: Props & { onRetry: () => void }) {
       videos: [],
       memory,
       cover: current.poster ? null : (
-        <TitleBuffering attempt={heard} naming={naming} backdrop={backdrop} play={started.play} />
+        <TitleBuffering attempt={heard} naming={naming} backdrop={backdrop} picked={source !== null} play={started.play} />
       ),
       poster: current.poster,
       overlay: <StallWatch play={started.play} element={element} dispatch={dispatch} />,
       replacing: switching,
       onFrozen: (at) => dispatch({ type: "frozen", at }),
     };
-  }, [current, naming, kind, page, heard, backdrop, switching, tab]);
+  }, [current, naming, kind, page, heard, backdrop, switching, tab, source]);
 
   usePlayerPage(name && `${name}${episode ? ` ${episodeCode(episode)}` : ""}`, shown !== null, back);
 
@@ -269,6 +269,7 @@ function Session({ video, source, onRetry }: Props & { onRetry: () => void }) {
               naming={naming}
               backdrop={backdrop}
               step={session.stage === "reading" ? 2 : heard.found === null ? 0 : 1}
+              picked={source !== null}
               job={readingJob}
               readout={session.stage === "reading" && session.ffmpeg ? <FfmpegReadout fetching={session.ffmpeg} /> : readingJob && <Readout job={readingJob} />}
             />
