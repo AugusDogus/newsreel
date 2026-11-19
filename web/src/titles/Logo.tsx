@@ -73,8 +73,10 @@ export function Logo({ src, alt, fallback }: Props) {
     setInk(measured);
   };
   // Until the logo is measured, the frame stays out of the layout, the picture loads unseen, and
-  // the name shows in its place. It is the same picture element afterwards, so it still fades in.
-  return (
+  // the name shows in its place. It is the same picture element afterwards, so it still fades in,
+  // while the name fades out over it, so the heading is never empty.
+  const [crossing, setCrossing] = useState(false);
+  const frame = (
     <div
       data-framed={ink ? "" : undefined}
       style={ink ? ({ "--ratio": ink.ratio } as CSSProperties) : undefined}
@@ -85,7 +87,10 @@ export function Logo({ src, alt, fallback }: Props) {
         src={src}
         alt={alt}
         fallback={ink ? fallback : null}
-        onLoad={found}
+        onLoad={(image) => {
+          if (!ink) setCrossing(true);
+          found(image);
+        }}
         className={ink ? "absolute max-w-none" : "pointer-events-none invisible absolute h-24 w-auto sm:h-32"}
         style={
           ink
@@ -98,6 +103,22 @@ export function Logo({ src, alt, fallback }: Props) {
             : undefined
         }
       />
+    </div>
+  );
+  const fading = ink !== null && crossing;
+  // Always this element, so the picture inside is not made again when the name has gone.
+  return (
+    <div data-crossing={fading ? "" : undefined} className="contents data-crossing:relative data-crossing:block">
+      {frame}
+      {fading && (
+        <div
+          aria-hidden="true"
+          onAnimationEnd={() => setCrossing(false)}
+          className="pointer-events-none absolute top-0 left-0 w-max max-w-full animate-vanish motion-reduce:hidden"
+        >
+          {fallback}
+        </div>
+      )}
     </div>
   );
 }

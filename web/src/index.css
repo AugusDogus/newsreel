@@ -30,6 +30,8 @@
   --animate-bezel: bezel 500ms ease-out forwards;
   --animate-pop: pop 180ms ease-out;
   --animate-countdown: countdown linear forwards;
+  /* As long as a picture's fade in, so a name it replaces crosses into it. */
+  --animate-vanish: vanish 300ms ease-out forwards;
 
   @keyframes appear {
     from {
@@ -60,6 +62,12 @@
     from {
       opacity: 0;
       scale: 0.96;
+    }
+  }
+
+  @keyframes vanish {
+    to {
+      opacity: 0;
     }
   }
 
