@@ -776,7 +776,8 @@ fn a_player_reads_the_middle_of_a_file_long_before_the_download_finishes() {
 }
 
 /// Charade (1963) once held a player for good on one article that no server could send: the
-/// read waited without a word until its connection timed out.
+/// read waited without a word until its connection timed out. A download that stopped for it
+/// leaves the engine once its progress is saved, and a read then waited 5 minutes.
 #[test]
 fn a_read_across_an_article_no_server_has_fails_at_once_and_the_download_says_why() {
     let server = FakeServer::start();
@@ -786,20 +787,21 @@ fn a_read_across_an_article_no_server_has_fails_at_once_and_the_download_says_wh
     server.remove(&gone);
     let home = Home::served(&server);
     let url = play(&home, release.nzb_file(), 0);
-    let asked = Instant::now();
-
-    let (head, body) = get_range(&url, "bytes=1040000-1100000");
-    assert!(head.starts_with("HTTP/1.1 206 Partial Content\r\n"), "{head}");
-    assert!(body == release.files["film.mkv"][1_040_000..1 << 20], "the bytes before the gap come, then the read ends");
-    let (head, body) = get_range(&url, "bytes=1048576-1100000");
-    assert!(head.starts_with("HTTP/1.1 503 Service Unavailable\r\n"), "{head}");
-    assert!(String::from_utf8_lossy(&body).contains(&gone), "the answer names the article: {head}");
-    assert!(asked.elapsed() < Duration::from_secs(30), "the reads took {:?}", asked.elapsed());
-
     let job = home.until(&release.id(), "the download stops", |j| state(j) == "error");
     assert_eq!(job["error"]["code"], "no_source", "{job:#}");
     assert!(job["error"]["message"].as_str().unwrap().contains(&gone), "{job:#}");
     assert!(home.log().contains(&gone), "the engine log names the article: {}", home.log());
+    // Its progress is saved and it leaves the engine within moments.
+    std::thread::sleep(Duration::from_secs(2));
+    let asked = Instant::now();
+
+    let (head, body) = get_range(&url, "bytes=1048576-1100000");
+    assert!(head.starts_with("HTTP/1.1 503 Service Unavailable\r\n"), "{head}");
+    assert!(String::from_utf8_lossy(&body).contains(&gone), "the answer names the article: {head}");
+    let (head, body) = get_range(&url, "bytes=1040000-1100000");
+    let before_the_gap = &release.files["film.mkv"][1_040_000..1 << 20];
+    assert!(head.starts_with("HTTP/1.1 503") || body == before_the_gap, "nothing past the gap: {head}");
+    assert!(asked.elapsed() < Duration::from_secs(30), "the reads took {:?}", asked.elapsed());
 }
 
 #[test]

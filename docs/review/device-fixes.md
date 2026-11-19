@@ -64,6 +64,12 @@ and waited for the 5 minute stall timeout.
   minute per download.
 - PAR2 seam: `unrecoverable()` in `daemon/usenet.rs` is the one place a piece is set aside; repair
   hooks in there.
+- Found on Windows CI: once a stopped download's progress is saved, the owner takes it out of the
+  engine, and `want_range` then knows nothing of it, so a read waited the 5 minute stall again.
+  The owner's `StreamFile` answer now carries a stopped download's error, and a read that has no
+  bytes to send fails with it (`503` before it starts, or the connection ends mid-answer). The
+  test reads only after the download has stopped and left the engine, which hung on Linux too
+  before this.
 
 **Live check.** A test engine on its own `NEWSREEL_HOME` played the same NZB against the real
 servers. The log named the piece 10 s after the play started; `curl -r 930000000-930100000` got

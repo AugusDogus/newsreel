@@ -170,6 +170,9 @@ pub struct StreamFile {
     pub size: u64,
     /// The download is done, so every byte is on disk.
     pub complete: bool,
+    /// The download stopped with this error, so no byte it has not written comes until it is
+    /// resumed. Once its progress is saved it leaves the engine, which then knows nothing of it.
+    pub stopped: Option<Error>,
 }
 
 /// A change to the library.
@@ -598,6 +601,10 @@ impl Owner {
                 inside: file.path.clone(),
                 size: file.size,
                 complete: matches!(job.record.intent, Intent::Done { .. }),
+                stopped: match &job.record.intent {
+                    Intent::Failed { error } => Some(error.clone()),
+                    _ => None,
+                },
             })
         });
         found.ok_or_else(|| Error::new(ErrorCode::NotFound, format!("no download has file {index} of {} selected", id)))

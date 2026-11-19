@@ -748,11 +748,11 @@ impl Connection<'_> {
             ),
             None => ("200 OK", (0, file.size), String::new()),
         };
-        // A read that starts on bytes no server can send fails before it begins, saying why.
+        // A read that starts on bytes that will not come fails before it begins, saying why.
         if !file.complete && !request.head_only() && start < end {
             let length = CHUNK.min(end - start);
-            if let Err(error) = unfetchable(self.ctx.engine.ask(move |e| e.want_range(id, index, start, length)).await)
-            {
+            let wanted = unfetchable(self.ctx.engine.ask(move |e| e.want_range(id, index, start, length)).await);
+            if let Err(error) = wanted.and_then(|bytes| stopped(bytes, &file)) {
                 let text =
                     error.hint.as_ref().map_or(error.message.clone(), |hint| format!("{}\n{hint}", error.message));
                 let plain = "text/plain; charset=utf-8";
@@ -878,6 +878,7 @@ async fn arrived(ctx: &Ctx, id: DownloadId, index: u32, offset: u64, length: u64
         }
         match ctx.owner.ask(|reply| Command::StreamFile { id, index, reply }).await {
             Ok(file) if file.complete => return Ok(Arrived::Done),
+            Ok(StreamFile { stopped: Some(error), .. }) => return Err(io::Error::other(error.message)),
             Ok(_) => {}
             Err(e) => return Err(io::Error::other(e.message)),
         }
@@ -885,6 +886,14 @@ async fn arrived(ctx: &Ctx, id: DownloadId, index: u32, offset: u64, length: u64
             return Err(io::ErrorKind::TimedOut.into());
         }
         tokio::time::sleep(POLL).await;
+    }
+}
+
+/// The error of a download that stopped, when none of the bytes asked for have `arrived`.
+fn stopped(arrived: Option<u64>, file: &StreamFile) -> Result<(), Error> {
+    match (arrived, &file.stopped) {
+        (None | Some(0), Some(error)) => Err(error.clone()),
+        _ => Ok(()),
     }
 }
 
