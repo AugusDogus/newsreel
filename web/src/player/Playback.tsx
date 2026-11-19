@@ -33,6 +33,7 @@ import { type PlayerParts, PlayerContext, Scrub } from "./context";
 import { CueTrack } from "./cues";
 import { FeedbackLayer } from "./FeedbackLayer";
 import { FeedbackStore } from "./feedback";
+import { useVanished } from "../lib/jobs";
 import { FilesPanel } from "./FilesPanel";
 import { decodedFrames, type Moved, watch } from "./frozen";
 import { type Command, command } from "./keys";
@@ -302,6 +303,13 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
     return () => clearInterval(timer);
   }, [element, howKind, converts, onFrozen, feedback, attempt]);
 
+  // A download removed under the player, by `newsreel rm` or from another screen, sends nothing more: say so, rather
+  // than wait on it. While a title replaces it with another source, that one plays instead.
+  const gone = useVanished(id) && !shown.replacing;
+  useEffect(() => {
+    if (gone) element.pause();
+  }, [gone, element]);
+
   // Where playback is, remembered for the next visit while it plays here. The engine keeps a title's place for the
   // screen that started or resumed it last.
   const [unsaved] = useState(() => new Unsaved());
@@ -546,7 +554,7 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
   const lastPointer = useRef("mouse");
 
   const blocked = how.kind === "blocked" ? how.reason : null;
-  const stuck = failure !== null || blocked !== null;
+  const stuck = failure !== null || blocked !== null || gone;
   const starting = !stuck && !started && waiting;
   const showControls = !stuck && !starting && (awake || onControls || paused || menu.length > 0 || castOpen || scrubbing);
   const hidden = showControls || stuck || starting ? undefined : "";
@@ -625,7 +633,16 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
         {stats && <Stats media={media} how={how} play={play} subtitle={chosen} offset={offset} audio={heard} />}
 
         {shown.overlay}
-        {failure && <Problem title="The video stopped" error={failure} onRetry={retry} onBack={onBack} back={back} />}
+        {/* A removed download breaks its stream too; that it was removed is what to say. */}
+        {failure && !gone && <Problem title="The video stopped" error={failure} onRetry={retry} onBack={onBack} back={back} />}
+        {gone && (
+          <Problem title="This download was removed" onRetry={onReload} onBack={onBack} back={back}>
+            <p className="text-sm text-pretty text-soft">
+              newsreel no longer has the download this video plays from, so nothing more of it arrives. Try again to
+              download it anew.
+            </p>
+          </Problem>
+        )}
         {blocked === "ffmpeg" && (
           <Problem
             title="This file needs ffmpeg"

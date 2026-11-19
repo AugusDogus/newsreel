@@ -63,6 +63,19 @@ function find(id: string | null): Job | null {
 }
 
 /**
+ * The engine answers and has no download with this ID: it was removed, by `newsreel rm` or from another screen, also
+ * while the engine was stopped. Unknown while the engine cannot be reached.
+ */
+export function vanished(view: { link: JobsView["link"]; jobs: readonly Pick<Job, "id">[] }, id: string): boolean {
+  return view.link === "live" && !view.jobs.some((job) => job.id === id || job.id.startsWith(id));
+}
+
+/** Whether the download with this ID was removed; see `vanished`. */
+export function useVanished(id: string): boolean {
+  return useSyncExternalStore(subscribe, () => vanished(view, id));
+}
+
+/**
  * The download with this ID, or whose ID starts with it. A job keeps its object until an event
  * changes it, so news about other downloads renders nothing here.
  */
