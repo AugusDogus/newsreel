@@ -121,7 +121,7 @@ the intended time shown for 30 s) and passes now (three seeks, then the real pla
 **Live check.** gmrender-resurrect 0.3.1 from nixpkgs, `newsreel tv play <download> --at 10:00`
 on a 20 minute test video served from a loopback NNTP server: PLAYING at 17:23:26.07, length
 known at 26.72, `RelativeTimePosition: 0:10:00` at 27.07, and `newsreel tv` showed 602, 606, 610
-seconds as it played (log in `~/.cache/nr-devfix/gmr-resume-after.log`).
+seconds as it played (log in `~/.cache/nr-devfix/shots/gmr-resume-after.log`).
 
 **Upstream.** Same code in v0.7.0 (`Resume::over`, `RESUME_WITHIN` of 30 s). Upstream has it.
 
@@ -232,7 +232,7 @@ same fixed hint. The fallback to `/api` is new here.
 rings, small type. Only `?tv=on` turned TV mode on.
 
 **Evidence.** A probe page opened in TV Bro 3.0.6 on `august_tv` reported (in
-`~/.cache/nr-devfix/signals/server.log`): user agent `Mozilla/5.0 (Linux; Android 10; K) …
+`~/.cache/nr-devfix/shots/tvbro-signals.log`): user agent `Mozilla/5.0 (Linux; Android 10; K) …
 Chrome/157.0.0.0 Safari/537.36`, screen 960 by 540 at 2x, `maxTouchPoints` 5, `(pointer: coarse)`
 and `(hover: none)` true, `(any-pointer: fine)` true, `(any-pointer: none)` false. `looksLikeTv`
 needs no touch and either no pointer or a TV name in the user agent, and TV Bro gives none of
