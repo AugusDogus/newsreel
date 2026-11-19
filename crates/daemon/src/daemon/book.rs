@@ -339,6 +339,26 @@ mod tests {
     }
 
     #[test]
+    fn a_repair_waiting_for_the_rest_of_the_release_has_the_downloads_eta() {
+        use super::super::engine_port::RepairStats;
+        let mut job = entry(1, 0, Intent::Running, Observed::InEngine(Phase::Downloading));
+        let start = Instant::now();
+        let repair = |stage| Some(RepairStats { articles: 1, stage, blocking: true });
+        for second in 0..=10 {
+            let stats = Stats { down_rate: 10 << 20, repair: repair(RepairStage::Waiting), ..Stats::default() };
+            job.sample(stats, start + Duration::from_secs(second));
+        }
+        let view = job.view().progress;
+        assert_eq!((view.eta, view.repair.and_then(|r| r.eta)), (Some(60), Some(60)));
+        job.sample(
+            Stats { repair: repair(RepairStage::Rebuilding), ..Stats::default() },
+            start + Duration::from_secs(11),
+        );
+        let rebuilding = job.view().progress.repair.unwrap();
+        assert_eq!((rebuilding.stage, rebuilding.eta), (RepairStage::Rebuilding, None));
+    }
+
+    #[test]
     fn an_eta_waits_until_the_rate_has_held_for_ten_seconds() {
         let mut job = entry(1, 0, Intent::Running, Observed::InEngine(Phase::Downloading));
         let start = Instant::now();
