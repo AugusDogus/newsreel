@@ -171,7 +171,9 @@ pub async fn run(ctx: &Ctx, ask: PlayTitle, mut report: impl FnMut(AttemptEvent)
     {
         return ended(&mut report, Outcome::Failed { error, tried: walk.tried });
     }
-    report(AttemptEvent::Searched { found: search.releases.len() as u32, sources: search.sources.clone() });
+    // The sources as the title page lists them: a release posted twice under one name is one.
+    let found = ctx.titles.line(&jobs, &title.video, search.releases.clone(), ask.player, ffmpeg).len();
+    report(AttemptEvent::Searched { found: found as u32, sources: search.sources.clone() });
     let mut fetching: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();
     while Instant::now() < end {
         let candidates = line_up(&search, &walk.tried);

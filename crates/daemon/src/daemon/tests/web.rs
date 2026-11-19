@@ -144,7 +144,13 @@ impl Page {
 }
 
 /// One request on its own connection: the status, the headers, and the whole body.
-async fn fetch(h: &Harness, method: &str, path: &str, headers: &[&str], body: &str) -> (u16, String, Vec<u8>) {
+pub(super) async fn fetch(
+    h: &Harness,
+    method: &str,
+    path: &str,
+    headers: &[&str],
+    body: &str,
+) -> (u16, String, Vec<u8>) {
     exchange(Page::open(h).await, method, path, headers, body).await
 }
 

@@ -969,6 +969,27 @@ async fn a_download_here_that_stopped_on_an_error_waits_for_the_search() {
     );
 }
 
+/// Charade (1963)'s title page said "9 sources" and its play "Found 10 sources": one release was
+/// posted twice under the same name, which the page lists once and the play counted twice.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_play_counts_its_sources_as_the_title_page_lists_them_with_a_release_posted_twice_once() {
+    let name = "Night.of.the.Living.Dead.1968.1080p.WEB.x264";
+    let first = release(0xd1, name, &[("Night.1968.1080p.mp4", 3 * GIB)]);
+    let again = release(0xd2, name, &[("Night.1968.1080p.mp4", 3 * GIB)]);
+    let other = release(0xd3, "Night.of.the.Living.Dead.1968.720p.BluRay.x264", &[("Night.1968.720p.mp4", 2 * GIB)]);
+    let catalog =
+        vec![listed(&first, "geek", Some(40)), listed(&again, "hydra", Some(40)), listed(&other, "geek", Some(30))];
+    let script = vec![fake::Source::answers("geek", 0), fake::Source::answers("hydra", 0)];
+    let h = Harness::with_search(fake::Search::scripted(catalog, script, BTreeMap::new()));
+    h.network.publish(first.clone());
+    h.network.set_rate(GIB);
+    let (_, _, listing) = super::web::fetch(&h, "GET", "/api/title/sources?video=tt0063350", &[], "").await;
+    let last: Value = serde_json::from_str(String::from_utf8(listing).unwrap().lines().last().unwrap()).unwrap();
+    let listed = last["result"]["releases"].as_array().unwrap().len();
+    assert_eq!(listed, 2, "{last}");
+    assert_eq!(h.play_title("tt0063350", None, None).await[1], format!("searched {listed}"));
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_play_starts_once_the_quick_indexers_have_answered_and_does_not_wait_for_a_slow_one() {
     let dead = release(0xc1, "Night.of.the.Living.Dead.1968.DVDRip.x264", &[("Night.1968.mp4", 700 * MIB)]);
@@ -1110,7 +1131,8 @@ async fn replace_skips_a_release_whose_nzb_turns_out_to_be_the_stalled_download(
         h.play_title("tt0063350", None, Some(stalled.id)).await,
         [
             "resolved tt0063350 Night of the Living Dead",
-            "searched 2",
+            // As the title page lists them: the download here is one, and the search finds two.
+            "searched 3",
             "trying 1 of 2 Night of the Living Dead 1968 1080p WEB x264",
             "check file_list",
             r#"skipped ueeeee {"reason":"stalled","text":"it stalled"}"#,
