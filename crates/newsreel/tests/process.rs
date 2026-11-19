@@ -613,6 +613,34 @@ fn a_failed_engine_install_starts_again_the_engine_it_stopped() {
     assert_ne!(after, before, "install stopped the engine before it tried");
 }
 
+/// A failed install starts again the engine it stopped, outside the login service, so uninstalling
+/// the service stopped nothing, and said "uninstalled" while that engine ran on.
+// Its stand-ins are for launchd and systemd.
+#[cfg(unix)]
+#[test]
+fn uninstall_after_a_failed_install_stops_the_engine_the_install_started_again() {
+    let mut service = Service::new();
+    assert_eq!(service.home.run(&["status"]).code, 0);
+    let refused = service.home.path("refused");
+    std::fs::create_dir_all(&refused).unwrap();
+    for program in ["launchctl", "systemctl"] {
+        std::fs::write(refused.join(program), "#!/bin/sh\necho 'no user manager' >&2; exit 1\n").unwrap();
+        std::fs::set_permissions(refused.join(program), std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    }
+    let working = service.home.path("bin");
+    service.home.set(hooks::SERVICE_BIN, &refused.display().to_string());
+    assert_ne!(service.home.run(&["engine", "install"]).code, 0);
+    let (pid, _) = service.home.engine().expect("the failed install started the engine again");
+    service.home.set(hooks::SERVICE_BIN, &working.display().to_string());
+
+    let uninstall = service.home.json(&["engine", "uninstall", "--json"]);
+
+    assert_eq!(uninstall["result"], "uninstalled", "{uninstall}");
+    assert_eq!(uninstall["stopped"], pid, "it says it stopped the engine: {uninstall}");
+    eventually("the engine is gone", Duration::from_secs(5), || !alive(pid));
+    assert_eq!(service.home.engine(), None);
+}
+
 /// A login service this environment cannot reach, as under su, sudo or ssh without a login
 /// session, or in a container, is the environment's doing, not newsreel's: engine install says
 /// what happened, whether the engine still runs, and what to do instead.

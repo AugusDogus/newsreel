@@ -483,3 +483,22 @@ systemd, that the system may have none and any newsreel command starts the engin
 missing-program hint names the PATH and not ssh; that part failed before.
 
 **Upstream.** v0.7.0 has no `service_unavailable`; newsreel added it, so this is newsreel's own.
+
+### 9b. `engine uninstall` says "uninstalled" and leaves an engine running
+
+**Bug.** When `engine install` fails, it starts the engine it stopped again, outside the login
+service. `engine uninstall` then removed the unit, said `uninstalled`, and left that engine running.
+
+**Cause.** launchd and systemd stop the engine they started when the service is removed, and the
+command stopped the engine itself only for Task Scheduler, which does not. An engine none of them
+started was never stopped.
+
+**Fix.** After it removes a service, `engine uninstall` stops any engine still running for this
+home, whatever the manager, and says so: `stopped: the engine, pid N` (`"stopped": N` in JSON).
+When there was no service it leaves a running engine alone, as before.
+
+**Test.** `uninstall_after_a_failed_install_stops_the_engine_the_install_started_again`
+(`crates/newsreel/tests/process.rs`) failed before (no `stopped`, engine alive) and passes now.
+
+**Upstream.** v0.7.0 stops the engine itself only for Task Scheduler too. Upstream has it, though its
+failed install path is newsreel's.

@@ -113,19 +113,19 @@ pub fn run(command: DaemonCommand, env: &Env, mode: Mode) -> Result<u8, Error> {
                 Err(e) if e.code == ErrorCode::ServiceUnavailable => {
                     Err(hinted(e, &|hint| format!("{hint}; newsreel status starts the engine meanwhile")))
                 }
-                installed => service_report(installed?, mode),
+                installed => service_report(installed?, None, mode),
             }
         }
         DaemonCommand::Uninstall => {
             let report = service::uninstall(env, &paths)?;
-            // Task Scheduler leaves running the engine its task started.
-            if matches!(
-                (report.manager, report.result),
-                (service::Manager::TaskScheduler, service::Change::Uninstalled)
-            ) {
-                connect::stop_asked(&paths, env)?;
-            }
-            service_report(report, mode)
+            // Uninstalling stops the engine, as launchd and systemd do with the one they started.
+            // Task Scheduler leaves its engine running, and an engine none of them started, such
+            // as one a failed install started again, outlives any service.
+            let stopped = match report.result {
+                service::Change::Uninstalled => connect::stop_asked(&paths, env)?,
+                _ => None,
+            };
+            service_report(report, stopped, mode)
         }
         DaemonCommand::Run { .. } => unreachable!("main runs the engine itself"),
         DaemonCommand::Launch => Ok(launch::launch_stage(env)),
@@ -140,23 +140,29 @@ newsreel_core::words! {
     }
 }
 
-fn service_report(report: service::Report, mode: Mode) -> Result<u8, Error> {
+/// What a change to the login service did. `stopped` is the engine an uninstall stopped itself.
+fn service_report(report: service::Report, stopped: Option<u32>, mode: Mode) -> Result<u8, Error> {
     #[derive(Serialize)]
     struct Payload {
         result: service::Change,
         manager: &'static str,
         unit: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        stopped: Option<u32>,
     }
     let unit = report.unit.display().to_string();
-    let fields = vec![
+    let mut fields = vec![
         ("result", output::Cell::new(report.result.as_str())),
         ("manager", output::Cell::new(report.manager.name())),
         ("unit", output::Cell::new(unit.clone())),
     ];
+    if let Some(pid) = stopped {
+        fields.push(("stopped", output::Cell::new(format!("the engine, pid {pid}"))));
+    }
     let next = matches!(report.result, service::Change::Installed | service::Change::AlreadyInstalled)
         .then(|| "newsreel engine status".to_string());
     let doc = output::Doc { body: output::Body::Fields { title: Vec::new(), fields }, summary: Vec::new(), next };
-    let payload = Payload { result: report.result, manager: report.manager.name(), unit };
+    let payload = Payload { result: report.result, manager: report.manager.name(), unit, stopped };
     Ok(emit(mode, &doc, &Typed { kind: DocKind::DaemonService, body: payload }))
 }
 
