@@ -9,10 +9,9 @@ use newsreel_core::{
 
 use super::admission::Cap;
 use super::engine_port::Stats;
+use super::eta::Eta;
 use super::files;
 use super::layout::Layout;
-
-const ETA_AFTER: Duration = Duration::from_secs(10);
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Intent {
@@ -116,8 +115,7 @@ pub struct JobEntry {
     pub layout: Arc<Layout>,
     pub observed: Observed,
     pub stats: Stats,
-    receiving_since: Option<Instant>,
-    rate_settled: bool,
+    eta: Eta,
     unsourced: Duration,
     unsourced_at: Option<Instant>,
     pub verify: Option<Verify>,
@@ -130,8 +128,7 @@ impl JobEntry {
             layout,
             observed,
             stats: Stats::default(),
-            receiving_since: None,
-            rate_settled: false,
+            eta: Eta::default(),
             unsourced: Duration::ZERO,
             unsourced_at: None,
             verify: None,
@@ -139,8 +136,6 @@ impl JobEntry {
     }
 
     pub fn sample(&mut self, stats: Stats, at: Instant) {
-        self.receiving_since = if stats.down_rate > 0 { self.receiving_since.or(Some(at)) } else { None };
-        self.rate_settled = self.receiving_since.is_some_and(|since| at - since >= ETA_AFTER);
         let downloading = self.observed == Observed::InEngine(Phase::Downloading);
         let unsourced = stats.missing.is_some_and(|m| m.pieces > 0 && m.unavailable == m.pieces);
         match (downloading, stats.connections > 0, unsourced) {
@@ -152,6 +147,8 @@ impl JobEntry {
             }
         }
         self.stats = stats;
+        let known = downloading && self.unsourced_at.is_none();
+        self.eta.sample(stats.down_rate, self.remaining(), known, at);
     }
 
     pub fn unsourced_for(&self) -> Option<Duration> {
@@ -219,8 +216,7 @@ impl JobEntry {
         let size = self.selected_size();
         let verified = self.verified();
         let s = if transferring { self.stats } else { Stats::default() };
-        let eta = (s.down_rate > 0 && self.rate_settled && self.unsourced_at.is_none())
-            .then(|| size.saturating_sub(verified).div_ceil(s.down_rate));
+        let eta = if transferring { self.eta.seconds() } else { None };
         Job {
             id: self.record.id,
             name: newsreel_core::text::sanitize(&self.record.name),
@@ -370,17 +366,18 @@ mod tests {
         assert_eq!((rebuilding.stage, rebuilding.eta), (RepairStage::Rebuilding, None));
     }
 
+    /// How the time left is smoothed is `eta`'s; this checks a job's samples reach it.
     #[test]
-    fn an_eta_waits_until_the_rate_has_held_for_ten_seconds() {
+    fn an_eta_waits_until_bytes_have_arrived_for_ten_seconds_and_outlasts_a_second_without_any() {
         let mut job = entry(1, 0, Intent::Running, Observed::InEngine(Phase::Downloading));
         let start = Instant::now();
         let mut etas = Vec::new();
-        for (second, down_rate) in [(0, 1 << 20), (9, 2 << 20), (10, 10 << 20), (11, 0), (12, 10 << 20), (22, 10 << 20)]
-        {
+        for (second, down_rate) in [(0, 10 << 20), (9, 10 << 20), (10, 10 << 20), (11, 0), (12, 10 << 20)] {
             job.sample(Stats { down_rate, ..Stats::default() }, start + Duration::from_secs(second));
             etas.push(job.view().progress.eta);
         }
-        assert_eq!(etas, [None, None, Some(60), None, None, Some(60)]);
+        assert_eq!(&etas[..3], [None, None, Some(60)]);
+        assert!(etas[3..].iter().all(Option::is_some), "{etas:?}");
         let missing = Some(Missing { pieces: 2, unavailable: 2 });
         let stats = Stats { down_rate: 10 << 20, missing, connections: 2, ..Stats::default() };
         job.sample(stats, start + Duration::from_secs(23));

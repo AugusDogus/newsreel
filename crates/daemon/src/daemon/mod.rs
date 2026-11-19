@@ -8,6 +8,7 @@ mod detector;
 pub mod devices;
 pub(crate) mod downloads;
 pub(crate) mod engine_port;
+pub mod eta;
 pub mod fake;
 pub mod files;
 pub(crate) mod http;
