@@ -7,14 +7,14 @@ import { useTitle } from "../titles/useTitle";
 import { episodeCode, episodeName, findEpisode, playingOrder } from "../titles/words";
 import { Button } from "../ui/Button";
 import { Spinner } from "../ui/Spinner";
-import { FfmpegReadout, type Heading, PlayingReadout, Readout, TopBar } from "./Chrome";
+import { FfmpegReadout, type Heading, Readout, TopBar, usePlayingJob } from "./Chrome";
 import { usePlayer } from "./context";
 import { readMedia } from "./ffmpeg";
 import { type Memory, type Neighbor, Playback, type Shown } from "./Playback";
 import { usePlayerPage } from "./page";
 import { type Recovery, type RecoveryEvent, recover, WATCHING } from "./recovery";
 import { type Naming, TitleFailed, TitleStarting } from "./TitleScreens";
-import { attempt, type Started, useTitleSession } from "./titleSession";
+import { type Attempt, attempt, type Started, useTitleSession } from "./titleSession";
 import { bufferedAround } from "./video";
 
 /** How long the player says it moved to another source. */
@@ -124,6 +124,12 @@ function RecoveryNotice({ recovery, switched, onRetry }: { recovery: Recovery; s
   );
 }
 
+/** The start screen once a source plays: buffering its first seconds, following its download. */
+function TitleBuffering({ play, ...shown }: { attempt: Attempt; naming: Naming; backdrop: string | null; play: PlayInfo }) {
+  const job = usePlayingJob(play);
+  return <TitleStarting {...shown} step={3} job={job} readout={<Readout job={job} />} />;
+}
+
 interface Props {
   /** A film, an episode, or a series for its next episode. */
   video: string;
@@ -221,7 +227,7 @@ function Session({ video, source, onRetry }: Props & { onRetry: () => void }) {
       videos: [],
       memory,
       cover: current.poster ? null : (
-        <TitleStarting attempt={heard} naming={naming} backdrop={backdrop} step={3} readout={<PlayingReadout play={started.play} />} />
+        <TitleBuffering attempt={heard} naming={naming} backdrop={backdrop} play={started.play} />
       ),
       poster: current.poster,
       overlay: <StallWatch play={started.play} element={element} dispatch={dispatch} />,
@@ -263,6 +269,7 @@ function Session({ video, source, onRetry }: Props & { onRetry: () => void }) {
               naming={naming}
               backdrop={backdrop}
               step={session.stage === "reading" ? 2 : heard.found === null ? 0 : 1}
+              job={readingJob}
               readout={session.stage === "reading" && session.ffmpeg ? <FfmpegReadout fetching={session.ffmpeg} /> : readingJob && <Readout job={readingJob} />}
             />
           )}

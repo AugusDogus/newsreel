@@ -5,7 +5,7 @@ import { fileName, isVideoFile, readable } from "../lib/release";
 import { forgetPosition, position, savePosition } from "../lib/storage";
 import { goBack, navigate, watchPath } from "../router";
 import { WORTH_SAVING } from "../wire";
-import { FfmpegReadout, PlayingReadout, Problem, Readout, releaseHeading, Starting, TopBar } from "./Chrome";
+import { BufferingStart, FfmpegReadout, Problem, Readout, releaseHeading, Starting, TopBar } from "./Chrome";
 import { usePlayerPage } from "./page";
 import { type Memory, type Neighbor, Playback, type PlaybackProps, type Shown } from "./Playback";
 import { useSession } from "./session";
@@ -44,6 +44,7 @@ export function Player({ target, file }: Props) {
             <Starting
               step={session.stage === "starting" ? 0 : session.ffmpeg ? 2 : 1}
               name={name}
+              job={job}
               readout={session.stage === "reading" && session.ffmpeg ? <FfmpegReadout fetching={session.ffmpeg} /> : job && <Readout job={job} />}
             />
           )}
@@ -82,7 +83,7 @@ function releaseShown(play: PlayInfo): Shown {
     next: neighbor(here + 1),
     videos,
     memory: releaseMemory(play),
-    cover: <Starting step={2} name={name} readout={<PlayingReadout play={play} />} />,
+    cover: <BufferingStart play={play} name={name} />,
     poster: null,
     overlay: null,
     replacing: false,

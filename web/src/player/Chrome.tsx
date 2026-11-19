@@ -1,6 +1,6 @@
 import { ArrowDownIcon, ArrowLeftIcon, CheckIcon } from "@heroicons/react/16/solid";
 import { type CSSProperties, type ReactNode, useEffect, useState } from "react";
-import type { ApiError, Job, PlayInfo } from "../api";
+import type { ApiError, Job, PlayInfo, Repair } from "../api";
 import { bytes, count, percent, rate, repairing, sentence } from "../lib/format";
 import { useJob } from "../lib/jobs";
 import { readable } from "../lib/release";
@@ -56,6 +56,12 @@ export function Readout({ job }: { job: Job }) {
   }
 }
 
+/** The repair a read of this download waits on, if one does: the bytes it needs are rebuilt from the release's PAR2 files. */
+export function blockingRepair(job: Pick<Job, "state" | "progress">): Repair | null {
+  const { repair } = job.progress;
+  return job.state === "downloading" && repair?.blocking ? repair : null;
+}
+
 /** The download behind the video, as it is now. Only what calls this renders when the download moves. */
 export function usePlayingJob(play: PlayInfo): Job {
   return useJob(play.id) ?? play.job;
@@ -105,6 +111,15 @@ export interface Step {
   detail: ReactNode;
 }
 
+/**
+ * The steps toward the first frame, the running one saying what it waits on: while a read waits on
+ * a repair, the repair and its time left, in place of the step's own words.
+ */
+export function waitingOn(steps: Step[], step: number, job: Pick<Job, "state" | "progress"> | null): Step[] {
+  const repair = job && blockingRepair(job);
+  return repair ? steps.map((stage, at) => (at === step ? { ...stage, detail: repairing(repair) } : stage)) : steps;
+}
+
 /** The steps toward the first frame: those done, the one running, and those to come. */
 export function Steps({ steps, step }: { steps: Step[]; step: number }) {
   return (
@@ -146,12 +161,14 @@ interface StartingProps {
   /** The step in progress: 0 reading the release, 1 reading the video, 2 buffering. */
   step: 0 | 1 | 2;
   name: string | null;
+  /** The download, once there is one, for the repair the running step may wait on. */
+  job: Job | null;
   /** How the download is doing, under the steps. */
   readout: ReactNode;
 }
 
 /** The screen before the first frame of a release's video: what is being played, and which step toward playing is running. */
-export function Starting({ step, name, readout }: StartingProps) {
+export function Starting({ step, name, job, readout }: StartingProps) {
   const release = name ? readable(name) : null;
   return (
     <div className="absolute inset-0 flex items-end bg-radial-[at_15%_95%] from-raised to-black to-70% pr-[max(--spacing(6),7vw,env(safe-area-inset-right))] pb-[max(--spacing(8),11vh)] pl-[max(--spacing(6),7vw,env(safe-area-inset-left))]">
@@ -162,11 +179,17 @@ export function Starting({ step, name, readout }: StartingProps) {
             {release.tags && <p className="text-sm text-pencil">{release.tags}</p>}
           </div>
         )}
-        <Steps steps={STEPS} step={step} />
+        <Steps steps={waitingOn(STEPS, step, job)} step={step} />
         <div className="min-h-5 text-sm text-soft">{readout}</div>
       </div>
     </div>
   );
+}
+
+/** The start screen of a release's video once it plays: buffering its first seconds, following its download. */
+export function BufferingStart({ play, name }: { play: PlayInfo; name: string }) {
+  const job = usePlayingJob(play);
+  return <Starting step={2} name={name} job={job} readout={<Readout job={job} />} />;
 }
 
 /** How far the engine's ffmpeg download is, while it fetches the ffmpeg this file needs. */
@@ -212,7 +235,7 @@ export function Buffering({ play, quiet = false }: { play: PlayInfo; quiet?: boo
   if (!waiting || patient) return null;
   const { progress } = job;
   // The read waits for the release's PAR2 files to rebuild what no server sent intact.
-  const repair = progress.repair?.blocking ? progress.repair : null;
+  const repair = blockingRepair(job);
   return (
     <div role="status" className="pointer-events-none absolute inset-0 flex items-center justify-center p-6 text-center">
       <div className="flex flex-col items-center gap-3 rounded-2xl bg-black/55 px-6 py-5 backdrop-blur-md">

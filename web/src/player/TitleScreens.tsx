@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { ApiError, Release } from "../api";
+import type { ApiError, Job, Release } from "../api";
 import { bytes, count, sentence } from "../lib/format";
 import { readable } from "../lib/release";
 import { Link } from "../router";
@@ -8,7 +8,7 @@ import { Picture } from "../titles/Picture";
 import { CHECKS, skipText } from "../titles/words";
 import { isTv } from "../lib/tv";
 import { Button, buttonClass } from "../ui/Button";
-import { READING, type Step, Steps } from "./Chrome";
+import { READING, type Step, Steps, waitingOn } from "./Chrome";
 import type { Attempt, Passed } from "./titleSession";
 import { SHORT_ID } from "../wire";
 
@@ -118,12 +118,14 @@ interface StartingProps {
   backdrop: string | null;
   /** The step in progress: 0 finding sources, 1 trying them, 2 reading the video, 3 buffering. */
   step: 0 | 1 | 2 | 3;
+  /** The download that plays, once there is one, for the repair the running step may wait on. */
+  job: Job | null;
   /** How the download that plays is doing, under the steps. */
   readout?: ReactNode;
 }
 
 /** The screen before the first frame of a title: what plays, and what the engine is doing toward it. */
-export function TitleStarting({ attempt, naming, backdrop, step, readout }: StartingProps) {
+export function TitleStarting({ attempt, naming, backdrop, step, job, readout }: StartingProps) {
   const playing = step >= 2 && attempt.trying ? `Playing ${which(attempt.trying)}` : null;
   return (
     <div className="absolute inset-0">
@@ -131,7 +133,7 @@ export function TitleStarting({ attempt, naming, backdrop, step, readout }: Star
       <div className="absolute inset-0 flex items-end overflow-y-auto pt-20 pr-[max(--spacing(6),7vw,env(safe-area-inset-right))] pb-[max(--spacing(8),11vh)] pl-[max(--spacing(6),7vw,env(safe-area-inset-left))]">
         <div className="flex w-full max-w-xl animate-appear flex-col gap-8 motion-reduce:animate-none">
           <Name naming={naming} />
-          <Steps steps={steps(attempt).map((stage, at) => (at === 1 && playing ? { ...stage, title: playing } : stage))} step={step} />
+          <Steps steps={waitingOn(steps(attempt).map((stage, at) => (at === 1 && playing ? { ...stage, title: playing } : stage)), step, job)} step={step} />
           {readout && <div className="min-h-5 text-sm text-soft">{readout}</div>}
           <PassedList title="Passed over" passed={attempt.passed} />
         </div>
