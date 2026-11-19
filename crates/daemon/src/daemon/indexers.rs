@@ -99,12 +99,13 @@ impl Indexers {
 /// Every indexer in config.yaml, each asked now whether it answers.
 pub async fn list(ctx: &Ctx) -> Result<IndexerList, Error> {
     let entries = config::indexers(&ctx.indexers.paths)?.entries;
-    Ok(IndexerList { indexers: ctx.indexers.checked(entries).await, added: Vec::new() })
+    Ok(IndexerList { indexers: ctx.indexers.checked(entries).await, added: Vec::new(), updated: Vec::new() })
 }
 
 /// Asks `url` what it is, and writes each indexer it finds to config.yaml with `key`: one for a
-/// Newznab endpoint, and each Usenet indexer of a Prowlarr server. An entry with the same URL
-/// takes the new key, and the name when one is given.
+/// Newznab endpoint, and each Usenet indexer of a Prowlarr server. An entry with the same URL, or
+/// the same written without `/api`, takes the new URL, the new key, and the name when one is
+/// given, and the list says what changed. A key its variable already holds keeps the variable.
 pub async fn add(ctx: &Ctx, url: &str, name: Option<String>, key: Option<ApiKey>) -> Result<IndexerList, Error> {
     let indexers = &ctx.indexers;
     let (url, key) = parse(url, key)?;
@@ -123,9 +124,9 @@ pub async fn add(ctx: &Ctx, url: &str, name: Option<String>, key: Option<ApiKey>
     };
     let writing = indexers.writing.lock().await;
     let mut listed = config::indexers(&indexers.paths)?;
-    let mut added = Vec::new();
+    let (mut added, mut updated) = (Vec::new(), Vec::new());
     for (named, derived, url) in wanted {
-        let at = listed.entries.iter().position(|entry| Url::parse(&entry.url).ok().as_ref() == Some(&url));
+        let at = listed.entries.iter().position(|entry| same_endpoint(&entry.url, &url));
         let name = match named {
             Some(named) if taken(&listed, &named, at) => {
                 return Err(Error::new(ErrorCode::Usage, format!("another source is named {named}"))
@@ -137,23 +138,62 @@ pub async fn add(ctx: &Ctx, url: &str, name: Option<String>, key: Option<ApiKey>
                 None => free(&listed, &derived),
             },
         };
-        let entry = match at {
-            Some(at) => &mut listed.entries[at],
-            None => {
-                listed.entries.push(IndexerEntry { name: String::new(), url: url.to_string(), key: Key::None });
-                listed.entries.last_mut().expect("just pushed")
-            }
+        let Some(at) = at else {
+            let key = key.clone().map_or(Key::None, Key::Inline);
+            listed.entries.push(IndexerEntry { name: name.clone(), url: url.to_string(), key });
+            added.push(name);
+            continue;
         };
-        entry.name.clone_from(&name);
-        if let Some(key) = &key {
+        let entry = &mut listed.entries[at];
+        let mut changes = Vec::new();
+        if entry.name != name {
+            changes.push(format!("renamed from {}", entry.name));
+            entry.name.clone_from(&name);
+        }
+        if Url::parse(&entry.url).ok().as_ref() != Some(&url) {
+            changes.push(format!("its address is now {url}"));
+            entry.url = url.to_string();
+        }
+        // A key the entry's variable already holds changes nothing, so the variable stays.
+        if let Some(key) = key.as_ref().filter(|key| entry.key.resolve(&indexers.env).as_ref() != Some(*key)) {
+            changes.push(match &entry.key {
+                Key::Env(var) => format!("its key is now written in config.yaml, in place of ${var}"),
+                Key::Inline(_) => "it has a new key".to_string(),
+                Key::None => "it has a key".to_string(),
+            });
             entry.key = Key::Inline(key.clone());
         }
-        added.push(name);
+        updated.push(if changes.is_empty() {
+            format!("{name}: unchanged")
+        } else {
+            format!("{name}: {}", and_list(&changes))
+        });
     }
     indexers.apply(ctx, &listed, "newsreel indexers add")?;
     drop(writing);
-    log(&format!("added the indexers {} from {url}", added.join(", ")));
-    Ok(IndexerList { added, ..list(ctx).await? })
+    if !added.is_empty() {
+        log(&format!("added the indexers {} from {url}", added.join(", ")));
+    }
+    for update in &updated {
+        log(&format!("updated the indexer {update}"));
+    }
+    Ok(IndexerList { added, updated, ..list(ctx).await? })
+}
+
+/// Whether an entry's `written` URL is the endpoint at `url`: the same, or the same without the
+/// `/api` a Newznab endpoint ends in, as a search asks it then.
+fn same_endpoint(written: &str, url: &Url) -> bool {
+    let Ok(written) = Url::parse(written) else { return false };
+    written == *url || written.join(&format!("{}/api", written.path().trim_end_matches('/'))).ok().as_ref() == Some(url)
+}
+
+/// `a`, `a, and b`, or `a, b, and c`.
+fn and_list(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [one] => one.clone(),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
 }
 
 /// Takes the indexer named `name` out of config.yaml, and out of `sources.disabled`.

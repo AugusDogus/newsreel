@@ -33,6 +33,7 @@ fn list_doc(list: &IndexerList) -> Doc {
     if !list.added.is_empty() {
         summary.push(format!("added {}", list.added.join(", ")));
     }
+    summary.extend(list.updated.iter().map(|update| format!("updated {update}")));
     for Indexer { name, check, .. } in &list.indexers {
         if let Check::Fails { reason } = check {
             summary.push(format!("{name} does not answer: {reason}"));
@@ -106,6 +107,7 @@ mod tests {
                 },
             ],
             added: vec!["hydra".into()],
+            updated: Vec::new(),
         };
         assert_eq!(
             list_doc(&list).plain(),

@@ -72,9 +72,13 @@ pub struct IndexerCategory {
 #[derive(Clone, PartialEq, Eq, Debug, Default, Serialize, Deserialize)]
 pub struct IndexerList {
     pub indexers: Vec<Indexer>,
-    /// The entries an add wrote, new or with a new key. Empty for any other request.
+    /// The entries an add wrote that were not there. Empty for any other request.
     #[serde(default)]
     pub added: Vec<String>,
+    /// What an add changed in entries already there, as `name: what changed`, or `name:
+    /// unchanged`. Empty for any other request.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub updated: Vec<String>,
 }
 
 #[cfg(test)]
@@ -99,6 +103,7 @@ mod tests {
                 check: Check::Answers { categories: vec![IndexerCategory { id: 5000, name: "TV".into() }] },
             }],
             added: vec!["nzbgeek".into()],
+            updated: Vec::new(),
         };
         let json = serde_json::to_value(&list).unwrap();
         assert_eq!(

@@ -120,7 +120,11 @@ fn an_indexer_is_checked_then_searched_at_once_and_its_key_is_never_printed() {
         ["NAME\tANSWERS\tKEY\tCATEGORIES\tURL", &format!("hydra\tyes\tconfig.yaml\tMovies, TV\t{endpoint}")]
     );
     let again = home.json(&["indexers", "add", &endpoint, "--key", "k3y", "--json"]);
-    assert_eq!((names(&again), &again["added"]), (vec!["hydra"], &json!(["hydra"])), "adding it again changes nothing");
+    assert_eq!(
+        (names(&again), &again["added"], &again["updated"]),
+        (vec!["hydra"], &json!([]), &json!(["hydra: unchanged"])),
+        "adding it again changes nothing, and says so"
+    );
 
     let removed = home.json(&["indexers", "remove", "hydra", "--json"]);
     assert_eq!(removed["indexers"], json!([]));
@@ -145,6 +149,41 @@ fn an_indexers_base_address_is_added_as_its_api() {
     assert_eq!(added.json()["indexers"][0]["url"], format!("{base}/api"));
     let config = std::fs::read_to_string(home.path("th/config/config.yaml")).unwrap();
     assert!(config.contains(&format!("url: {base}/api\n")), "{config}");
+}
+
+/// `indexers add` with the address of an indexer already in config.yaml, written there without
+/// `/api` and keyed from a variable, made a second entry with the key in plain text, and said only
+/// "added".
+#[test]
+fn adding_an_indexer_already_there_keeps_its_name_and_key_variable_and_says_what_changed() {
+    let server =
+        Server::start(|_| vec![("/hydra/api?t=caps", vec![ok(CAPS.to_vec())]), ("/hydra", vec![ok(PAGE.to_vec())])]);
+    let mut home = home();
+    home.set("HYDRA_KEY", "k3y");
+    let base = format!("{}/hydra", server.base);
+    home.write_config(&format!(
+        "# mine\nupdates: off\nsources:\n  newznab:\n    - name: hydrabase\n      url: {base}\n      api_key_env: HYDRA_KEY\n"
+    ));
+    let config = || std::fs::read_to_string(home.path("th/config/config.yaml")).unwrap();
+
+    let same = home.run(&["indexers", "add", &base, "--key", "k3y"]);
+    assert_eq!(same.code, 0, "{}{}", same.stdout, same.stderr);
+    assert_eq!(config().matches("- name:").count(), 1, "{}", config());
+    assert!(config().contains("name: hydrabase") && config().contains("api_key_env: HYDRA_KEY"), "{}", config());
+    assert!(!config().contains("k3y"), "{}", config());
+    assert!(!same.stdout.contains("# added"), "{}", same.stdout);
+    assert!(same.stdout.contains(&format!("# updated hydrabase: its address is now {base}/api\n")), "{}", same.stdout);
+
+    let other = home.run(&["indexers", "add", &format!("{base}/api"), "--key", "n3w", "--name", "hydra"]);
+    assert_eq!(other.code, 0, "{}{}", other.stdout, other.stderr);
+    assert!(config().contains("name: hydra\n") && config().contains("api_key: n3w"), "{}", config());
+    assert!(
+        other.stdout.contains(
+            "# updated hydra: renamed from hydrabase, and its key is now written in config.yaml, in place of $HYDRA_KEY\n"
+        ),
+        "{}",
+        other.stdout
+    );
 }
 
 #[test]
