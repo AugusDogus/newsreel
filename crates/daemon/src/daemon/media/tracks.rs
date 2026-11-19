@@ -203,7 +203,8 @@ impl Media {
             .chapters
             .iter()
             .filter_map(|c| {
-                Some(Chapter { start: seconds(&c.start_time)?, end: seconds(&c.end_time)?, title: text(&c.tags.title) })
+                let title = text(&c.tags.title).filter(|title| !placeholder(title));
+                Some(Chapter { start: seconds(&c.start_time)?, end: seconds(&c.end_time)?, title })
             })
             .filter(|chapter| chapter.end > chapter.start)
             .collect();
@@ -236,6 +237,18 @@ impl Media {
             None => self.audio.iter().find(|a| a.default).or(self.audio.first()),
         }
     }
+}
+
+/// A chapter name that says nothing a player does not already show: its start time, as muxers
+/// write when the source had none (`00:12:34.000`), or `Chapter 3`.
+fn placeholder(title: &str) -> bool {
+    let time = title.contains(':') && title.chars().all(|c| c.is_ascii_digit() || c == ':' || c == '.');
+    let numbered = title
+        .get(..8)
+        .filter(|word| word.eq_ignore_ascii_case("chapter "))
+        .and_then(|_| title.get(8..))
+        .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()));
+    time || numbered
 }
 
 /// `matroska` and `webm` are one format to ffprobe. A file is WebM by its name or by holding only
@@ -547,6 +560,25 @@ mod tests {
         assert_eq!(read("clip.webm"), ("webm".to_string(), Some("video/webm".to_string()), fetch, Some(7.0)));
         assert_eq!(read("Film.mkv"), ("matroska".to_string(), None, fetch, Some(7.0)));
         assert_eq!(read("Film.avi"), ("avi".to_string(), None, fetch, Some(7.0)));
+    }
+
+    /// His Girl Friday (1940) names its chapters `00:00:00.000` and so on, which the player's
+    /// bar showed beside the time as if it were a clock that had stopped.
+    #[test]
+    fn a_chapter_named_only_by_its_time_or_number_has_no_name() {
+        let named = |title: &str| {
+            let json = format!(
+                r#"{{"streams":[],"format":{{"format_name":"matroska,webm"}},"chapters":[
+                {{"start_time":"0.000000","end_time":"34.000000","tags":{{"title":{title:?}}}}}]}}"#
+            );
+            Media::from_ffprobe(json.as_bytes(), "a.mkv").unwrap().chapters[0].title.clone()
+        };
+        for title in ["00:00:00.000", "00:12:34", "1:02:03.5", "Chapter 1", "chapter 12", "Chapter 03"] {
+            assert_eq!(named(title), None, "{title}");
+        }
+        for title in ["The Ride", "Chapter 1: The Ride", "1963", "Opening Credits"] {
+            assert_eq!(named(title).as_deref(), Some(title), "{title}");
+        }
     }
 
     #[test]
