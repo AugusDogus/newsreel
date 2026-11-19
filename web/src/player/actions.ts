@@ -19,11 +19,20 @@ export interface Timeline {
 
 /** Everything a key, a button, or a media key can ask of the video, each with its on-screen answer. */
 export class PlayerActions {
+  private seekAsked = false;
+
   constructor(
     private readonly element: HTMLVideoElement,
     private readonly feedback: FeedbackStore,
     private readonly timeline: () => Timeline,
-  ) {}
+  ) {
+    element.addEventListener("seeked", () => (this.seekAsked = false));
+  }
+
+  /** The player asked for a seek that has not landed yet, so a seek under way is its own and not the browser's. */
+  get asked(): boolean {
+    return this.seekAsked;
+  }
 
   play = (): void => void this.element.play().catch(() => {});
 
@@ -43,6 +52,7 @@ export class PlayerActions {
   }
 
   seekTo = (time: number): void => {
+    this.seekAsked = true;
     this.element.currentTime = this.land(time);
   };
 

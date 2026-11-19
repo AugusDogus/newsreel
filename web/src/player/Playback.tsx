@@ -46,7 +46,7 @@ import { DirectSource, RemuxSource, type SourceState } from "./source";
 import { Unsaved } from "./saving";
 import { Stats } from "./Stats";
 import { SubtitleLayer } from "./SubtitleLayer";
-import { useAirPlay, useMediaSession, useWakeLock } from "./system";
+import { useAirPlay, useBrowserStop, useMediaSession, useWakeLock } from "./system";
 import { useSubtitleTracks } from "./tracks";
 import { bufferedAround, useVideo, VideoStore } from "./video";
 
@@ -513,6 +513,7 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
   }, [run, sheet]);
 
   useMediaSession({ ...shown.nowPlaying, actions, video, onNext: goNext, onPrevious: goPrevious, onStop: onBack });
+  useBrowserStop(video, actions, onBack);
   useWakeLock(video);
   const airPlay = useAirPlay(element, how.kind === "direct");
 

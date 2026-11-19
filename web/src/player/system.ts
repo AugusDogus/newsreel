@@ -72,6 +72,51 @@ export function useMediaSession({ title, album, actions, video, onNext, onPrevio
   }, [paused]);
 }
 
+/** What the player sees as a seek starts. */
+export interface SeekStart {
+  /** The browser has a Media Session, whose `stop` handler gets a remote's Stop. */
+  session: boolean;
+  /** Where the seek goes, in seconds. */
+  time: number;
+  paused: boolean;
+  /** A frame has been shown. */
+  started: boolean;
+  /** The player asked for a seek that has not landed yet. */
+  asked: boolean;
+}
+
+/**
+ * Whether a seek is the browser's own answer to a remote's Stop. Android's WebView (TV Bro and other TV browsers) has
+ * no Media Session: it answers Stop itself, pausing the video and seeking it to 0:00, and tells the page nothing else.
+ * Play would then start over. A paused seek to exactly 0:00 that the player did not ask for, once the video started, is
+ * that, since nothing else in a browser without a Media Session moves a video.
+ */
+export function stoppedByBrowser({ session, time, paused, started, asked }: SeekStart): boolean {
+  return !session && time === 0 && paused && started && !asked;
+}
+
+/**
+ * Leaves the player, as Back does, when the browser stopped the video itself. The place was saved when it paused, and
+ * the rewind to 0:00, being no play, saves nothing.
+ */
+export function useBrowserStop(video: VideoStore, actions: Pick<PlayerActions, "asked">, onStop: () => void): void {
+  useEffect(() => {
+    const { element } = video;
+    const seeking = () => {
+      const seek = {
+        session: "mediaSession" in navigator,
+        time: element.currentTime,
+        paused: element.paused,
+        started: video.snapshot().started,
+        asked: actions.asked,
+      };
+      if (stoppedByBrowser(seek)) onStop();
+    };
+    element.addEventListener("seeking", seeking);
+    return () => element.removeEventListener("seeking", seeking);
+  }, [video, actions, onStop]);
+}
+
 /** Keeps the screen awake while the video plays. The lock is given back on pause and when the tab hides. */
 export function useWakeLock(video: VideoStore): void {
   const playing = useVideo(video, (state) => !state.paused && !state.ended);
