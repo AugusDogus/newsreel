@@ -56,7 +56,7 @@ pub enum Packing {
 
 /// One for each platform newsreel releases for, by `std::env::consts` names. The sizes and hashes
 /// are the ones each release publishes for its files.
-const PINS: [Pin; 4] = [
+const PINS: [Pin; 5] = [
     Pin {
         os: "macos",
         arch: "aarch64",
@@ -66,6 +66,18 @@ const PINS: [Pin; 4] = [
         bin: "",
         sha256: "d898cc819e7c4e9219d6410ddbdaada0838f14bec6ff89e283639915394cb43f",
         size: 32_904_768,
+        loader: None,
+        packing: Packing::TarXz,
+    },
+    Pin {
+        os: "macos",
+        arch: "x86_64",
+        version: "8.1.3-2",
+        release: JELLYFIN,
+        file: "jellyfin-ffmpeg_8.1.3-2_portable_mac64-gpl.tar.xz",
+        bin: "",
+        sha256: "d394180f1155f84857544a48a99869f5741ccc50c5a1f73d2797429a2b326448",
+        size: 38_099_916,
         loader: None,
         packing: Packing::TarXz,
     },
@@ -757,6 +769,7 @@ mod tests {
         };
         assert_eq!([pinned("linux", "x86_64"), pinned("linux", "aarch64")], [None, None]);
         assert_eq!(pinned("macos", "aarch64").as_deref(), Some("jellyfin-ffmpeg_8.1.3-2_portable_macarm64-gpl.tar.xz"));
+        assert_eq!(pinned("macos", "x86_64").as_deref(), Some("jellyfin-ffmpeg_8.1.3-2_portable_mac64-gpl.tar.xz"));
         assert_eq!(pinned("windows", "x86_64").as_deref(), Some("ffmpeg-9.0.1-essentials_build.zip"));
         for loader in ["lib64/ld-linux-x86-64.so.2", "lib/ld-linux-aarch64.so.1"] {
             std::fs::create_dir_all(system.path().join(loader).parent().unwrap()).unwrap();
