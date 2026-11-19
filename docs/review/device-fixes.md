@@ -396,3 +396,20 @@ would push the buttons around under the finger.
 **Screens.** Before: `7-phone-cast-sheet-before.png`. After: `7-phone-cast-sheet-after.png`.
 
 **Upstream.** Same sheet in v0.7.0. Upstream has it.
+
+### 7f. No title on screen until the logo arrives
+
+**Bug.** A title page showed no name until its logo loaded, 4 s or more on the TV
+(`~/.cache/nr-devtest/shots/tv-20.png`, and `7-tv-title-before.png` here 7 s in).
+
+**Cause.** `Logo` keeps the picture out of the layout and invisible until it is measured, and shows
+its text fallback only when the picture fails, so the heading is empty while it loads.
+
+**Fix.** The text name shows until the logo is measured, then the logo takes its place (the same
+picture element, so it still fades in). A logo that fails leaves the text, as before.
+
+**Screens.** `7-tv-title-loading-after.mp4` and the frame `7-tv-title-loading-after.png`: Singin'
+in the Rain's name in text while its logo and backdrop load, then the logo (`check` on the second
+visit shows it in place).
+
+**Upstream.** Same `Logo` in v0.7.0. Upstream has it.

@@ -72,20 +72,21 @@ export function Logo({ src, alt, fallback }: Props) {
     inks.set(src, measured);
     setInk(measured);
   };
-  // Until the logo is measured, the frame stays out of the layout and the picture loads unseen.
-  // It is the same picture element afterwards, so it still fades in once framed.
+  // Until the logo is measured, the frame stays out of the layout, the picture loads unseen, and
+  // the name shows in its place. It is the same picture element afterwards, so it still fades in.
   return (
     <div
       data-framed={ink ? "" : undefined}
       style={ink ? ({ "--ratio": ink.ratio } as CSSProperties) : undefined}
       className="contents data-framed:relative data-framed:block data-framed:aspect-(--ratio) data-framed:w-[min(100%,--spacing(96),--spacing(24)*var(--ratio))] data-framed:overflow-hidden data-framed:drop-shadow-lg sm:data-framed:w-[min(100%,--spacing(96),--spacing(32)*var(--ratio))]"
     >
+      {ink ? null : fallback}
       <Picture
         src={src}
         alt={alt}
-        fallback={fallback}
+        fallback={ink ? fallback : null}
         onLoad={found}
-        className={ink ? "absolute max-w-none" : "h-24 w-auto sm:h-32"}
+        className={ink ? "absolute max-w-none" : "pointer-events-none invisible absolute h-24 w-auto sm:h-32"}
         style={
           ink
             ? {
