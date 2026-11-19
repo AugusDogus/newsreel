@@ -498,7 +498,7 @@ function Stage({ element, frame, play, media, onReload, onBack, shown }: Playbac
     return () => removeEventListener("keydown", pressed);
   }, [run, sheet]);
 
-  useMediaSession({ ...shown.nowPlaying, actions, video, onNext: goNext, onPrevious: goPrevious });
+  useMediaSession({ ...shown.nowPlaying, actions, video, onNext: goNext, onPrevious: goPrevious, onStop: onBack });
   useWakeLock(video);
   const airPlay = useAirPlay(element, how.kind === "direct");
 

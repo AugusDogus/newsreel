@@ -12,30 +12,60 @@ interface NowPlaying {
   /** Plays the next or previous video of the release, where there is one. */
   onNext: (() => void) | null;
   onPrevious: (() => void) | null;
+  /** Leaves the player, which keeps the place, as Back does. */
+  onStop: () => void;
+}
+
+/** What each of the system's now-playing controls does. */
+export function sessionActions({
+  actions,
+  pause,
+  onNext,
+  onPrevious,
+  onStop,
+}: {
+  actions: Pick<PlayerActions, "play" | "seekBy" | "seekTo">;
+  pause: () => void;
+  onNext: (() => void) | null;
+  onPrevious: (() => void) | null;
+  onStop: () => void;
+}): [MediaSessionAction, MediaSessionActionHandler | null][] {
+  return [
+    ["play", () => actions.play()],
+    ["pause", pause],
+    ["seekbackward", (details) => actions.seekBy(-(details.seekOffset ?? 10))],
+    ["seekforward", (details) => actions.seekBy(details.seekOffset ?? 10)],
+    ["seekto", (details) => details.seekTime !== undefined && actions.seekTo(details.seekTime)],
+    ["previoustrack", onPrevious],
+    ["nexttrack", onNext],
+    // Chromium on Android sends a TV remote's Stop here, not to the page, and on its own rewinds the video to 0:00.
+    ["stop", onStop],
+  ];
+}
+
+/** A browser that does not know an action throws rather than ignore its handler. */
+function setHandler(session: MediaSession, action: MediaSessionAction, handler: MediaSessionActionHandler | null): void {
+  try {
+    session.setActionHandler(action, handler);
+  } catch {
+    // Nothing sends an action the browser does not know.
+  }
 }
 
 /** Tells the system what is playing, and answers its media keys and now-playing controls. */
-export function useMediaSession({ title, album, actions, video, onNext, onPrevious }: NowPlaying): void {
+export function useMediaSession({ title, album, actions, video, onNext, onPrevious, onStop }: NowPlaying): void {
   const paused = useVideo(video, (state) => state.paused);
   useEffect(() => {
     if (!("mediaSession" in navigator)) return;
     const session = navigator.mediaSession;
     session.metadata = new MediaMetadata({ title, album });
-    const handlers: [MediaSessionAction, MediaSessionActionHandler | null][] = [
-      ["play", () => actions.play()],
-      ["pause", () => video.element.pause()],
-      ["seekbackward", (details) => actions.seekBy(-(details.seekOffset ?? 10))],
-      ["seekforward", (details) => actions.seekBy(details.seekOffset ?? 10)],
-      ["seekto", (details) => details.seekTime !== undefined && actions.seekTo(details.seekTime)],
-      ["previoustrack", onPrevious],
-      ["nexttrack", onNext],
-    ];
-    for (const [action, handler] of handlers) session.setActionHandler(action, handler);
+    const handlers = sessionActions({ actions, pause: () => video.element.pause(), onNext, onPrevious, onStop });
+    for (const [action, handler] of handlers) setHandler(session, action, handler);
     return () => {
       session.metadata = null;
-      for (const [action] of handlers) session.setActionHandler(action, null);
+      for (const [action] of handlers) setHandler(session, action, null);
     };
-  }, [title, album, actions, video, onNext, onPrevious]);
+  }, [title, album, actions, video, onNext, onPrevious, onStop]);
 
   useEffect(() => {
     if ("mediaSession" in navigator) navigator.mediaSession.playbackState = paused ? "paused" : "playing";
