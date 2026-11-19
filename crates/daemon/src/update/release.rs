@@ -58,14 +58,19 @@ impl Releases {
         })
     }
 
-    async fn latest(&self) -> Result<Version, Error> {
+    /// The latest release, or None when none is published: GitHub answers `/latest` with 404
+    /// until a repository has its first release.
+    async fn latest(&self) -> Result<Option<Version>, Error> {
         let url = format!("{}/latest", self.base);
         let client =
             client(reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(CHECK_WITHIN))?;
         let response = client.get(&url).send().await.map_err(|e| unreachable(&url, &e))?;
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
         let location = response.headers().get(reqwest::header::LOCATION).and_then(|v| v.to_str().ok());
         match location.and_then(tag_version) {
-            Some(latest) if response.status().is_redirection() => Ok(latest),
+            Some(latest) if response.status().is_redirection() => Ok(Some(latest)),
             _ => Err(Error::new(
                 ErrorCode::FetchFailed,
                 format!("{url} returned {} without a release version", response.status()),
@@ -118,12 +123,13 @@ pub fn runtime() -> Result<tokio::runtime::Runtime, Error> {
         .map_err(|e| Error::internal(format!("cannot start the async runtime: {e}")))
 }
 
-pub async fn check(releases: &Releases, paths: &Paths, now: i64) -> Result<Version, Error> {
+/// The latest release, or None when none is published yet.
+pub async fn check(releases: &Releases, paths: &Paths, now: i64) -> Result<Option<Version>, Error> {
     let mut checked = Checked::read(paths);
     let latest = releases.latest().await;
     match &latest {
         Ok(version) => {
-            checked.latest = Some(version.to_string());
+            checked.latest = version.map(|version| version.to_string());
             checked.checked_at = Some(now);
         }
         Err(_) => checked.failed_at = Some(now),
@@ -135,10 +141,12 @@ pub async fn check(releases: &Releases, paths: &Paths, now: i64) -> Result<Versi
 pub enum Outcome {
     Latest(Version),
     Updated(Version),
+    /// No release is published yet, so there is nothing to install.
+    Unpublished,
 }
 
 pub async fn install(releases: &Releases, paths: &Paths, env: &Env, now: i64) -> Result<Outcome, Error> {
-    let latest = check(releases, paths, now).await?;
+    let Some(latest) = check(releases, paths, now).await? else { return Ok(Outcome::Unpublished) };
     if !latest.newer_than(&env.version()) {
         return Ok(Outcome::Latest(latest));
     }

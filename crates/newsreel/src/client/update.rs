@@ -14,7 +14,8 @@ use newsreel_daemon::update::{Audience, Checked, UPDATED, Updated, Version, due,
 #[derive(Serialize)]
 struct CheckReport<'a> {
     current: &'a str,
-    latest: String,
+    /// None while no release is published.
+    latest: Option<String>,
     update_available: bool,
     policy: Policy,
 }
@@ -22,7 +23,8 @@ struct CheckReport<'a> {
 #[derive(Serialize)]
 struct UpdateReport<'a> {
     current: &'a str,
-    latest: String,
+    /// None while no release is published.
+    latest: Option<String>,
     result: Installed,
 }
 
@@ -30,6 +32,7 @@ newsreel_core::words! {
     enum Installed {
         Updated = "updated",
         UpToDate = "up_to_date",
+        Unpublished = "unpublished",
     }
 }
 
@@ -41,30 +44,40 @@ pub fn run(args: UpdateArgs, mode: Mode, env: &Env) -> Result<u8, Error> {
     if args.check {
         let policy = newsreel_daemon::config::updates(&paths)?;
         let latest = runtime.block_on(release::check(&releases, &paths, now()))?;
-        let update_available = latest.newer_than(&current);
+        let update_available = latest.is_some_and(|latest| latest.newer_than(&current));
         let fields = vec![
             ("current", Cell::new(&current)),
-            ("latest", Cell::new(latest.to_string())),
+            ("latest", Cell::new(latest.map_or_else(|| "none published".to_string(), |latest| latest.to_string()))),
             ("policy", Cell::new(policy.as_str())),
         ];
+        let summary = match latest {
+            Some(_) => Vec::new(),
+            None => vec!["no release of newsreel is published yet, so there is nothing to update".to_string()],
+        };
         let doc = Doc {
             body: Body::Fields { title: Vec::new(), fields },
-            summary: Vec::new(),
+            summary,
             next: update_available.then(|| "newsreel update".to_string()),
         };
-        let body = CheckReport { current: &current, latest: latest.to_string(), update_available, policy };
+        let latest = latest.map(|latest| latest.to_string());
+        let body = CheckReport { current: &current, latest, update_available, policy };
         return Ok(super::emit(mode, &doc, &Typed { kind: DocKind::UpdateCheck, body }));
     }
     let (latest, result) = match runtime.block_on(release::install(&releases, &paths, env, now()))? {
-        Outcome::Updated(latest) => (latest, Installed::Updated),
-        Outcome::Latest(latest) => (latest, Installed::UpToDate),
+        Outcome::Updated(latest) => (Some(latest), Installed::Updated),
+        Outcome::Latest(latest) => (Some(latest), Installed::UpToDate),
+        Outcome::Unpublished => (None, Installed::Unpublished),
     };
+    let shown = latest.map_or_else(String::new, |latest| latest.to_string());
     match mode {
         Mode::Json => {
-            let body = UpdateReport { current: &current, latest: latest.to_string(), result };
+            let body = UpdateReport { current: &current, latest: latest.map(|latest| latest.to_string()), result };
             print!("{}", output::json_document(&Typed { kind: DocKind::Update, body }, None));
         }
-        _ if result == Installed::Updated => println!("Updated newsreel {current} → {latest}."),
+        _ if result == Installed::Updated => println!("Updated newsreel {current} → {shown}."),
+        _ if result == Installed::Unpublished => {
+            println!("No release of newsreel is published yet, so there is nothing to install; {current} stays.")
+        }
         _ => println!("newsreel {current} is up to date."),
     }
     Ok(0)

@@ -161,6 +161,21 @@ impl Server {
         Server { base, asked }
     }
 
+    /// A repository with no release published yet: GitHub answers `/latest` with 404.
+    fn unpublished() -> Server {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let asked: Arc<Mutex<Vec<String>>> = Arc::default();
+        let log = asked.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                log.lock().unwrap().push(request_path(&stream));
+                respond(stream, (404, Vec::new(), b"Not Found".to_vec()));
+            }
+        });
+        Server { base, asked }
+    }
+
     fn asked(&self) -> Vec<String> {
         self.asked.lock().unwrap().clone()
     }
@@ -370,6 +385,37 @@ fn update_check_reports_without_installing() {
          false,\"policy\":\"auto\",\"next\":null}\n"
     );
     assert!(std::fs::read(install.exe()).unwrap() == before, "--check installs nothing");
+    assert_eq!(server.asked(), ["/latest", "/latest", "/latest"]);
+}
+
+/// Before newsreel's first release, `update --check` said GitHub "returned 404 Not Found without
+/// a release version" and to "run newsreel update again later", as if something had failed.
+#[test]
+fn with_no_release_published_update_says_so_and_that_there_is_nothing_to_do() {
+    let server = Server::unpublished();
+    let install = Install::new(&server);
+    let before = std::fs::read(install.exe()).unwrap();
+
+    let check = install.run(&["update", "--check"]);
+    let json = install.run(&["update", "--check", "--json"]);
+    let update = install.run(&["update"]);
+
+    assert_eq!((check.code, check.stderr.as_str()), (0, ""), "{}", check.stdout);
+    assert_eq!(
+        check.stdout,
+        "current: 0.1.0\nlatest:  none published\npolicy:  auto\n# no release of newsreel is published yet, so there is nothing to update\n"
+    );
+    assert_eq!(
+        json.stdout,
+        "{\"schema\":1,\"type\":\"update_check\",\"current\":\"0.1.0\",\"latest\":null,\"update_available\":false,\
+         \"policy\":\"auto\",\"next\":null}\n"
+    );
+    assert_eq!((update.code, update.stderr.as_str()), (0, ""), "{}", update.stdout);
+    assert_eq!(
+        update.stdout,
+        "No release of newsreel is published yet, so there is nothing to install; 0.1.0 stays.\n"
+    );
+    assert!(std::fs::read(install.exe()).unwrap() == before);
     assert_eq!(server.asked(), ["/latest", "/latest", "/latest"]);
 }
 

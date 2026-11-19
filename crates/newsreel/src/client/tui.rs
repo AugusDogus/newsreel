@@ -170,7 +170,7 @@ impl newsreel_tui::Backend for EngineBackend {
         let install = release::install(&releases, &self.paths, &self.env, newsreel_core::time::now());
         Ok(match release::runtime()?.block_on(install)? {
             Outcome::Updated(latest) => Some(latest.to_string()),
-            Outcome::Latest(_) => None,
+            Outcome::Latest(_) | Outcome::Unpublished => None,
         })
     }
 
