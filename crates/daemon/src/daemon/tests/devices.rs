@@ -269,6 +269,33 @@ async fn a_request_from_the_network_must_name_this_mac_and_come_from_its_own_pag
     assert_eq!(form.status, 415, "a cross-site form cannot send JSON");
 }
 
+/// The engine read every header in lower case, so a Pixel 8 paired as "pixel 8", and Chrome's
+/// reduced user agent, whose model is "K", as "k".
+#[tokio::test(flavor = "multi_thread")]
+async fn a_device_paired_over_the_network_is_named_by_its_user_agent_as_it_was_sent() {
+    let ip = lan();
+    let h = Harness::with_outside(
+        fake::Search::new(fake::isos()),
+        Outside { exposure: Exposure { server: true, public_address: None }, ..Outside::default() },
+    );
+    listening(&h, ip, true).await;
+    let phone = Browser::on(ip, &h);
+    let pair = |agent: &'static str| {
+        let phone = &phone;
+        let h = &h;
+        async move {
+            let offer = devices(h, Request::AddDevice).await.offer.unwrap();
+            let body = format!(r#"{{"code":"{}"}}"#, offer.code);
+            phone.send("POST", "/api/pair", &[&format!("User-Agent: {agent}")], &body).await.json()["device"]["name"]
+                .clone()
+        }
+    };
+    let pixel = "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36";
+    assert_eq!(pair(pixel).await, "Pixel 8");
+    let reduced = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36";
+    assert_eq!(pair(reduced).await, "Android phone");
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_server_listens_with_nothing_paired_and_lets_its_phone_in_by_any_name() {
     let ip = lan();

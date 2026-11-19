@@ -302,6 +302,12 @@ names a TV (signals in fix 5).
   "TV". An iPhone stays an iPhone.
 - More TV names are read: SHIELD and Google TV.
 
+**Found while checking it on the emulators.** The first build named the phone "k": the HTTP layer
+lowercases every header value, the User-Agent too, so the reduced UA's `K` was not recognised and
+models would read "pixel 8". The request now keeps the User-Agent as sent (it is only used for the
+name). `a_device_paired_over_the_network_is_named_by_its_user_agent_as_it_was_sent` pairs over
+HTTP and failed with "pixel 8" before that change.
+
 **Tests.** `a_device_is_named_by_what_its_browser_runs_on` gained the Pixel 8, a Samsung tablet
 model, both reduced user agents, SHIELD and Google TV (the Pixel 8 case expected "Android" before,
 which is the naming this fix replaces). `a_device_whose_pair_page_saw_a_tv_is_named_for_one` is new.

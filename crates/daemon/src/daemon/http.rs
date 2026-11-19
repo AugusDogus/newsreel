@@ -414,7 +414,7 @@ pub struct Request {
     pub cookie: Option<String>,
     /// The token in an `Authorization: Bearer` header, which this user's newsreel sends.
     bearer: Option<String>,
-    /// The User-Agent, lowercased.
+    /// The User-Agent, as sent.
     pub agent: Option<String>,
     /// The last address in `X-Forwarded-For`, which a reverse proxy adds: the one that connected
     /// to it. Unspecified when the header holds no address.
@@ -977,7 +977,12 @@ fn head(parsed: &httparse::Request) -> Head {
         from,
         cookie,
         bearer,
-        agent: header("user-agent"),
+        // As sent: a device is named from it, and models keep their capitals.
+        agent: parsed
+            .headers
+            .iter()
+            .find(|h| h.name.eq_ignore_ascii_case("user-agent"))
+            .map(|h| String::from_utf8_lossy(h.value).trim().to_string()),
         forwarded,
         keep_alive,
         chunks,
