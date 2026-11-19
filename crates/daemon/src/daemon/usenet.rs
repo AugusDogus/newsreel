@@ -12,7 +12,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::num::NonZeroU32;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
 use std::time::{Duration, Instant};
 
 use newsreel_core::{DownloadId, Error, ErrorCode, PieceMap, Slice};
@@ -35,8 +35,6 @@ const STATS_EVERY: Duration = Duration::from_secs(1);
 const RETRY_AFTER: Duration = Duration::from_secs(2);
 /// Pieces past the last requested range fetched before returning to file order.
 const READAHEAD: usize = 64;
-/// The longest the engine thread waits for events, which is also how long a command can wait.
-const POLL_WAIT: Duration = Duration::from_millis(10);
 /// How often a worker held back by a rate limit looks again, so lifting the limit frees it soon.
 const PACE_CHECK: Duration = Duration::from_millis(200);
 /// Pieces no server can send that the log names one by one, per download and run; the rest are
@@ -135,7 +133,7 @@ struct Job {
     recovery: Option<Arc<Recovery>>,
     /// Background priority; reads a player waits on go through `with_priority(Urgent)`.
     pool: Pool,
-    events: mpsc::Sender<EngineEvent>,
+    events: Events,
     /// Woken whenever a piece lands, for a repair waiting on the rest of the release.
     landed: tokio::sync::Notify,
 }
@@ -426,13 +424,32 @@ fn read_at(file: &File, mut bytes: &mut [u8], mut offset: u64) -> std::io::Resul
     Ok(())
 }
 
+/// Where a download's tasks send the engine thread events, waking it, since the thread sleeps
+/// until a request or an event comes.
+#[derive(Clone)]
+struct Events {
+    sender: mpsc::Sender<EngineEvent>,
+    wake: Arc<OnceLock<Box<dyn Fn() + Send + Sync>>>,
+}
+
+impl Events {
+    /// Sends `event`, unless the engine thread is gone, which then has no use for it.
+    fn send(&self, event: EngineEvent) {
+        if self.sender.send(event).is_ok()
+            && let Some(wake) = self.wake.get()
+        {
+            wake();
+        }
+    }
+}
+
 pub struct Usenet {
     runtime: tokio::runtime::Handle,
     pool: Pool,
     /// Where each release's [`Journal`] is kept.
     journals: PathBuf,
     jobs: BTreeMap<DownloadId, Arc<Job>>,
-    sender: mpsc::Sender<EngineEvent>,
+    sender: Events,
     events: mpsc::Receiver<EngineEvent>,
     queued: Vec<EngineEvent>,
     stats_at: Instant,
@@ -448,7 +465,7 @@ impl Usenet {
             pool,
             journals,
             jobs: BTreeMap::new(),
-            sender,
+            sender: Events { sender, wake: Arc::default() },
             events,
             queued: Vec::new(),
             stats_at: Instant::now(),
@@ -503,7 +520,7 @@ async fn worker(job: Arc<Job>, generation: u64) {
                     state.in_flight.insert(r);
                     if !state.announced_downloading {
                         state.announced_downloading = true;
-                        let _ = job.events.send(EngineEvent::Activity { id: job.id, activity: Activity::Downloading });
+                        job.events.send(EngineEvent::Activity { id: job.id, activity: Activity::Downloading });
                     }
                     (r, state.journaled[r.0][r.1].take())
                 }
@@ -619,7 +636,7 @@ fn settle(job: &Arc<Job>, next: PieceRef, fetched: Fetched, generation: u64, by:
                 let path = job.files[next.0].path.display();
                 let error = Error::new(ErrorCode::StorageError, format!("cannot write {path}: {e}"))
                     .with_hint("check free space and permissions in the downloads folder");
-                let _ = job.events.send(EngineEvent::Failed { id: job.id, error });
+                job.events.send(EngineEvent::Failed { id: job.id, error });
                 return false;
             }
             let crc = crc32fast::hash(&bytes);
@@ -718,12 +735,12 @@ fn finish(job: &Job, state: &mut State) {
             state.run = Run::Stopped;
             let error = Error::new(ErrorCode::StorageError, format!("cannot save the finished files to disk: {e}"))
                 .with_hint("check that the disk is connected and has room, then run newsreel resume");
-            let _ = events.send(EngineEvent::Failed { id: job.id, error });
+            events.send(EngineEvent::Failed { id: job.id, error });
             return;
         }
         state.run = Run::Finished;
-        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, Default::default()) });
-        let _ = events.send(EngineEvent::Finished { id: job.id });
+        events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, Default::default()) });
+        events.send(EngineEvent::Finished { id: job.id });
     } else if unavailable == pieces {
         state.run = Run::Stopped;
         let first = state.failed.iter().find(|((f, _), _)| state.wanted[*f]);
@@ -737,8 +754,8 @@ fn finish(job: &Job, state: &mut State) {
             "the release has expired, been taken down, or was posted damaged; search again and pick another release",
         );
         log(&format!("{} stopped: {}", short(job.id), error.message));
-        let _ = events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, Default::default()) });
-        let _ = events.send(EngineEvent::Failed { id: job.id, error });
+        events.send(EngineEvent::Stats { id: job.id, stats: job.stats(state, 0, Default::default()) });
+        events.send(EngineEvent::Failed { id: job.id, error });
     }
 }
 
@@ -929,7 +946,7 @@ impl EnginePort for Usenet {
                     Ok(_) => damaged.push(piece),
                     // A check that cannot read takes nothing back.
                     Err(error) => {
-                        let _ = events.send(EngineEvent::Failed { id, error });
+                        events.send(EngineEvent::Failed { id, error });
                         return;
                     }
                 }
@@ -942,7 +959,7 @@ impl EnginePort for Usenet {
             // Damaged means every selected piece not on disk intact,
             // including ones that never arrived or failed an earlier check.
             let (missing, _) = state.remaining();
-            let _ = events.send(EngineEvent::Checked {
+            events.send(EngineEvent::Checked {
                 id,
                 damaged_pieces: missing,
                 verified,
@@ -1087,9 +1104,16 @@ impl engine_port::Engine for Usenet {
         self
     }
 
+    /// Wakes the engine thread whenever a download's task sends an event, so it sleeps until a
+    /// request or an event comes. A request then waits for nothing: polled instead, the thread
+    /// slept for events between requests, and each request waited for that sleep to end.
+    fn notify(&mut self, wake: Box<dyn Fn() + Send + Sync>) -> bool {
+        self.sender.wake.set(wake).is_ok()
+    }
+
     fn poll(&mut self, max_wait: Duration) -> Vec<EngineEvent> {
         if self.queued.is_empty()
-            && let Ok(event) = self.events.recv_timeout(max_wait.min(POLL_WAIT))
+            && let Ok(event) = self.events.recv_timeout(max_wait)
         {
             self.queued.push(event);
         }
@@ -1227,7 +1251,7 @@ mod tests {
             journal: Journal::new(&std::env::temp_dir(), id),
             recovery: None,
             pool: Pool::new(Vec::new()),
-            events: mpsc::channel().0,
+            events: Events { sender: mpsc::channel().0, wake: Arc::default() },
             landed: tokio::sync::Notify::new(),
         }
     }
@@ -1315,6 +1339,24 @@ mod tests {
                 if by == Fetcher::Rush { "the rush" } else { "a worker" }
             );
         }
+    }
+
+    /// ffmpeg reads a seek point of a file whose audio is stored far from its video with a request
+    /// for each few hundred bytes, and each asks the engine twice. Charade (1963) from 1:19 made 549
+    /// requests before its third fragment, 20 ms each, while the engine thread slept between them.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn the_engine_thread_answers_requests_at_once_and_not_after_waiting_for_events() {
+        let journals = tempfile::tempdir().unwrap();
+        let engine = Usenet::new(Pool::new(Vec::new()), tokio::runtime::Handle::current(), journals.path().into());
+        let (events, _events) = tokio::sync::mpsc::unbounded_channel();
+        let (handle, _thread) = engine_port::spawn(Box::new(engine), events);
+        let id = DownloadId::from_bytes([7; 20]);
+        let started = Instant::now();
+        for _ in 0..50 {
+            assert!(handle.ask(move |port| port.want_range(id, 0, 0, 1)).await.is_err());
+        }
+        let each = started.elapsed() / 50;
+        assert!(each < Duration::from_millis(3), "{each:?} an ask");
     }
 
     #[test]
