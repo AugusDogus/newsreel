@@ -311,6 +311,24 @@ async fn a_search_sends_a_line_each_time_a_source_answers() {
     );
 }
 
+/// A browser has no `--timeout` to set. The play screen said what to do in a browser, but a search
+/// and a title's sources list, which stream their failure as their last line, still named it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_search_and_a_titles_sources_that_every_indexer_failed_hint_at_what_a_browser_can_do() {
+    use newsreel_core::SourceOutcome;
+    let script = vec![fake::Source::fails("slowznab", 10, SourceOutcome::Timeout)];
+    let h = Harness::with_search(fake::Search::scripted(vec![], script, Default::default()));
+    let (_, _, body) = search(&h, json!({ "q": "charade" })).await;
+    let (_, _, listing) = fetch(&h, "GET", "/api/title/sources?video=tt0063350", &[], "").await;
+    for body in [body, listing] {
+        let last: Value = serde_json::from_str(String::from_utf8(body).unwrap().lines().last().unwrap()).unwrap();
+        assert_eq!(last["type"], "error", "{last}");
+        assert_eq!(last["error"]["code"], "providers_unavailable", "{last}");
+        let hint = last["error"]["hint"].as_str().unwrap();
+        assert!(!hint.contains("--timeout") && hint.contains("search again"), "{hint}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn a_search_takes_a_json_post_so_another_website_cannot_start_one() {
     let source = fake::Search::new(fake::isos());

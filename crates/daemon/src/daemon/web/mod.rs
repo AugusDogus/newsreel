@@ -362,7 +362,7 @@ async fn results(
                 result.releases = order(result.releases);
                 break SearchLine::Done { result };
             }
-            Answer::Done(Err(error)) => break SearchLine::Error { error },
+            Answer::Done(Err(error)) => break SearchLine::Error { error: for_browser(&error).into_owned() },
         }
     };
     line(conn, &last).await?;

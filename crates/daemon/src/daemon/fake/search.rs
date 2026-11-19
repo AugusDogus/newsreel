@@ -197,7 +197,19 @@ impl SearchPort for Search {
             if let Some(last) = script.last() {
                 tokio::time::sleep_until(started + last.after).await;
             }
-            Ok(self.remember(compose(&catalog, &script, query, rank_for(), delay + started.elapsed())))
+            let result = compose(&catalog, &script, query, rank_for(), delay + started.elapsed());
+            // As the real search does, when every source failed.
+            if !script.is_empty() && script.iter().all(|s| s.failure.is_some()) {
+                let names: Vec<&str> = script.iter().map(|s| s.name.as_str()).collect();
+                let hint = newsreel_search::failed_hint(&result.sources, newsreel_search::Reader::Terminal);
+                return Err(Error::new(
+                    ErrorCode::ProvidersUnavailable,
+                    format!("all sources failed ({})", names.join(", ")),
+                )
+                .with_hint(hint)
+                .with_details(newsreel_core::error::Details::Sources(result.sources)));
+            }
+            Ok(self.remember(result))
         })
     }
 
