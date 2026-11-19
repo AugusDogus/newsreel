@@ -172,7 +172,7 @@ struct State {
     repair: repair::Repairing,
     /// Bumped whenever `failed` is cleared or the download goes, which ends a running repair.
     repair_epoch: u64,
-    /// When a reader last waited on a piece being repaired.
+    /// When a reader last waited on a piece being repaired, or on a piece as it was set aside.
     reader_on_repair: Option<Instant>,
     urgent: VecDeque<PieceRef>,
     /// Where the last requested range ended; readahead continues from here.
@@ -630,6 +630,11 @@ fn settle(job: &Arc<Job>, next: PieceRef, fetched: Fetched, generation: u64, by:
             false
         }
         Fetched::Unrecoverable(why) => {
+            // A reader waits on a piece rushed for it. The repair that starts here does not wait
+            // for the reader to ask again, so it is one the reader waits on from its first fetch.
+            if by == Fetcher::Rush || state.rushed.contains(&next) {
+                state.reader_on_repair = Some(Instant::now());
+            }
             job.journal.lost(next);
             unrecoverable(job, &mut state, next, why);
             false
@@ -1285,6 +1290,31 @@ mod tests {
         assert!(matches!(Fetched::of(&piece, Err(unreachable)), Fetched::Retry(_)));
         let part = Part { name: "a.mkv".into(), file_size: 4, begin: 0, data: vec![1, 2, 3, 4] };
         assert_eq!(Fetched::of(&piece, Ok(part)), Fetched::Landed(vec![1, 2, 3, 4]));
+    }
+
+    /// A repair starts the moment its piece is set aside, before the reader asks for it again. A
+    /// repair of Charade's article fetched its PAR2 index beside the download, behind 128 of its
+    /// requests, for 13 s while a reader waited.
+    #[test]
+    fn a_piece_set_aside_that_a_reader_rushed_is_one_the_reader_waits_on() {
+        let damaged = || Fetched::Unrecoverable("article <a@x> arrived damaged".into());
+        for (by, rushed, waits) in
+            [(Fetcher::Rush, false, true), (Fetcher::Worker, true, true), (Fetcher::Worker, false, false)]
+        {
+            let job = Arc::new(job(&[("a.mkv", &[10, 10])]));
+            if by == Fetcher::Rush || rushed {
+                job.state.lock().unwrap().rushed.insert((0, 1));
+            }
+            settle(&job, (0, 1), damaged(), 0, by);
+            let state = job.state.lock().unwrap();
+            assert!(state.failed.contains_key(&(0, 1)));
+            assert_eq!(
+                state.reader_on_repair.is_some(),
+                waits,
+                "set aside by {}",
+                if by == Fetcher::Rush { "the rush" } else { "a worker" }
+            );
+        }
     }
 
     #[test]

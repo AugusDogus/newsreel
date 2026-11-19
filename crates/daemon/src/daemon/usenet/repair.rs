@@ -38,8 +38,9 @@ use crate::log::log;
 const HELD_MOST: u64 = 256 << 20;
 /// How often a repair looks for slices that have landed, besides being woken when a piece lands.
 const LOOK_EVERY: Duration = Duration::from_secs(1);
-/// Articles a repair fetches at once.
-const FETCH_AT_ONCE: usize = 16;
+/// Articles a repair fetches at once: a set's volumes' headers in one round, about 25 for a film
+/// in 15 volumes, since on a link where each connection is slow every round takes seconds.
+const FETCH_AT_ONCE: usize = 32;
 /// Slices fed in one go off the async threads.
 const FEED_AT_ONCE: usize = 64;
 
