@@ -124,7 +124,17 @@ export function CastButton({ start, at, onCast, onOpen, look, label = "Play on T
           <TvIcon aria-hidden="true" className="size-5 fill-current" />
         </button>
       )}
-      {picker && (sheet ? createPortal(picker, document.body) : picker)}
+      {picker &&
+        (sheet
+          ? createPortal(
+              <>
+                {/* The sheet rises over the page, which dims under it, so it reads as on top of the page rather than in it. A tap there closes it. */}
+                <div aria-hidden="true" className="fixed inset-0 z-20 bg-black/60" />
+                {picker}
+              </>,
+              document.body,
+            )
+          : picker)}
     </div>
   );
 }

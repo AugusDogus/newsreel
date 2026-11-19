@@ -382,3 +382,17 @@ gaps and the synopsis clamped to three lines.
 **Test.** Layout only; checked on the TV emulator. The web app has no DOM test setup.
 
 **Upstream.** Same classes in v0.7.0. Upstream has it.
+
+### 7e. Phone: the Play on TV list covers the "Sources" heading
+
+**Bug.** On a phone, Play on TV opens its list as a sheet fixed to the bottom of the screen, over
+whatever is there, with nothing to set it apart: on the title page, over the "Sources" heading
+(`~/.cache/nr-devtest/shots/ph-09-cast.png`, again in `7-phone-cast-sheet-before.png`).
+
+**Fix.** The sheet sits over a dimmed page, so it reads as on top of the page, as a phone's sheets
+do; a tap on the dimmed page closes it, as a tap outside did. Moving the list into the page instead
+would push the buttons around under the finger.
+
+**Screens.** Before: `7-phone-cast-sheet-before.png`. After: `7-phone-cast-sheet-after.png`.
+
+**Upstream.** Same sheet in v0.7.0. Upstream has it.
