@@ -22,7 +22,7 @@ On Windows, in PowerShell:
 irm https://raw.githubusercontent.com/AugusDogus/newsreel/main/install.ps1 | iex
 ```
 
-The script puts one file at `~/.local/bin/newsreel`, or `%LOCALAPPDATA%\Programs\newsreel` on Windows. newsreel runs on macOS 14 or later on Apple silicon, on 64-bit Linux, and on 64-bit Windows 10 or later.
+The script puts one file at `~/.local/bin/newsreel`, or `%LOCALAPPDATA%\Programs\newsreel` on Windows. newsreel runs on macOS 14 or later on Apple silicon or Intel, on 64-bit Linux, and on 64-bit Windows 10 or later.
 
 <details>
 <summary>Build from source</summary>

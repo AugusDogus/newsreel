@@ -436,3 +436,30 @@ in the Rain's name in text for the 9 s its logo and backdrop took to come from t
 `7-tv-title-logo-loaded-after.png` with the logo in place on the next visit.
 
 **Upstream.** Same `Logo` in v0.7.0. Upstream has it.
+
+## 8. No build for Intel Macs
+
+**Bug.** `install.sh` said "newsreel has no prebuilt binary for Darwin x86_64" on the Intel
+MacBook (macOS 15.8), and the updater said "there is no prebuilt newsreel for macos x86_64".
+
+**Fix.**
+- The release workflow builds `x86_64-apple-darwin` on the same arm64 `macos-15` runner, as a
+  cross build (Apple's toolchain links both architectures, and newsreel is pure Rust), and checks
+  the binary runs there under Rosetta. The asset is `newsreel-x86_64-apple-darwin.tar.gz`.
+- `scripts/release.sh` takes `RELEASE_TARGET`, builds the other Mac architecture with
+  `--target`, and checks with `lipo` that the binary is the one it was asked for. It also builds
+  natively on an Intel Mac.
+- `install.sh` installs it on an Intel Mac. A shell under Rosetta on Apple silicon also says
+  x86_64; `sysctl.proc_translated` tells them apart, and that Mac gets the native build.
+- The updater's `target` names it for `macos x86_64`, so `update --check` and `install.sh` agree.
+- The README says Intel Macs run it.
+
+**Test.** `every_machine_the_release_builds_for_has_its_asset` failed for `macos x86_64` before.
+The workflow was dispatched on this branch, where it publishes nothing (the draft release and the
+image push run only for a tag); its result is in the report.
+
+**Not done.** ffmpeg has no pinned build for Intel Macs (`ffmpeg/fetch.rs`), so a conversion there
+needs an installed ffmpeg. `install.yml`, which installs a published release on each platform, has
+no Intel runner yet.
+
+**Upstream.** v0.7.0's `target` has only `("macos", "aarch64")`. Upstream has it.

@@ -20,8 +20,14 @@ if [ -n "$server" ] && [ "$(uname -s)" != Linux ]; then
   exit 2
 fi
 
-case "$(uname -s) $(uname -m)" in
+machine="$(uname -s) $(uname -m)"
+# A shell under Rosetta says x86_64 on Apple silicon; the native build suits the machine better.
+if [ "$machine" = "Darwin x86_64" ] && [ "$(sysctl -n sysctl.proc_translated 2>/dev/null)" = 1 ]; then
+  machine="Darwin arm64"
+fi
+case "$machine" in
   "Darwin arm64") target=aarch64-apple-darwin ;;
+  "Darwin x86_64") target=x86_64-apple-darwin ;;
   "Linux x86_64") target=x86_64-unknown-linux-musl ;;
   "Linux aarch64" | "Linux arm64") target=aarch64-unknown-linux-musl ;;
   *)

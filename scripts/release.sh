@@ -2,6 +2,7 @@
 # Build the release tarball for this machine, or run the tests the same way.
 #   scripts/release.sh        build dist/newsreel-<target>.tar.gz and its .sha256
 #   scripts/release.sh test   run cargo test --workspace with the same toolchain
+# RELEASE_TARGET=x86_64-apple-darwin builds the Intel Mac binary on an Apple silicon Mac.
 set -eu
 cd "$(dirname "$0")/.."
 mode=${1:-build}
@@ -15,10 +16,20 @@ esac
 
 case "$(uname -s) $(uname -m)" in
   "Darwin arm64") target=aarch64-apple-darwin ;;
+  "Darwin x86_64") target=x86_64-apple-darwin ;;
   "Linux x86_64") target=x86_64-unknown-linux-musl ;;
   "Linux aarch64") target=aarch64-unknown-linux-musl ;;
   *)
-    echo "release.sh builds on macOS arm64 or Linux arm64 or x86_64, not $(uname -s) $(uname -m)" >&2
+    echo "release.sh builds on macOS or on Linux arm64 or x86_64, not $(uname -s) $(uname -m)" >&2
+    exit 1
+    ;;
+esac
+host=$target
+target=${RELEASE_TARGET:-$host}
+case "$host $target" in
+  "$target $target" | *-apple-darwin" "*-apple-darwin) ;;
+  *)
+    echo "release.sh builds $target only on a Mac; this is $host" >&2
     exit 1
     ;;
 esac
@@ -29,8 +40,22 @@ case "$target" in
     if [ "$mode" = test ]; then
       exec nix --extra-experimental-features 'nix-command flakes' develop -c cargo test --workspace --locked
     fi
-    nix --extra-experimental-features 'nix-command flakes' develop -c cargo build --release --locked -p newsreel
-    bin=target/release/newsreel
+    if [ "$target" = "$host" ]; then
+      nix --extra-experimental-features 'nix-command flakes' develop -c cargo build --release --locked -p newsreel
+      bin=target/release/newsreel
+    else
+      # Apple's toolchain links either architecture, so the other one is a cross build.
+      rustup target add "$target"
+      nix --extra-experimental-features 'nix-command flakes' develop -c \
+        cargo build --release --locked -p newsreel --target "$target"
+      bin=target/$target/release/newsreel
+    fi
+    want=x86_64
+    [ "$target" = aarch64-apple-darwin ] && want=arm64
+    if [ "$(lipo -archs "$bin")" != "$want" ]; then
+      echo "$bin is built for $(lipo -archs "$bin"), not $want" >&2
+      exit 1
+    fi
     if otool -L "$bin" | tail -n +2 | grep -Ev '^[[:space:]]+(/usr/lib/|/System/)'; then
       echo "$bin links a library outside /usr/lib and /System" >&2
       exit 1

@@ -68,6 +68,7 @@ pub fn tag_version(location: &str) -> Option<Version> {
 pub fn target(os: &str, arch: &str) -> Option<&'static str> {
     match (os, arch) {
         ("macos", "aarch64") => Some("aarch64-apple-darwin"),
+        ("macos", "x86_64") => Some("x86_64-apple-darwin"),
         ("linux", "x86_64") => Some("x86_64-unknown-linux-musl"),
         ("linux", "aarch64") => Some("aarch64-unknown-linux-musl"),
         ("windows", "x86_64") => Some("x86_64-pc-windows-msvc"),
@@ -228,6 +229,24 @@ mod tests {
         for bad in ["", "0.1", "0.1.0.0", "x.1.0", "latest"] {
             assert_eq!(Version::parse(bad), None, "{bad}");
         }
+    }
+
+    /// install.sh installed nothing on an Intel Mac and the updater said it had no build; both
+    /// now take the x86_64 build the release workflow makes.
+    #[test]
+    fn every_machine_the_release_builds_for_has_its_asset() {
+        let cases = [
+            (("macos", "aarch64"), "newsreel-aarch64-apple-darwin.tar.gz"),
+            (("macos", "x86_64"), "newsreel-x86_64-apple-darwin.tar.gz"),
+            (("linux", "x86_64"), "newsreel-x86_64-unknown-linux-musl.tar.gz"),
+            (("linux", "aarch64"), "newsreel-aarch64-unknown-linux-musl.tar.gz"),
+            (("windows", "x86_64"), "newsreel-x86_64-pc-windows-msvc.zip"),
+        ];
+        for ((os, arch), asset) in cases {
+            let target = target(os, arch).unwrap_or_else(|| panic!("no build for {os} {arch}"));
+            assert_eq!(Archive::of(target).asset(target), asset);
+        }
+        assert_eq!(target("windows", "aarch64"), None);
     }
 
     #[test]

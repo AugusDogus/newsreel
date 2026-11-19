@@ -52,6 +52,9 @@ jobs:
         include:
           - runner: macos-15
             target: aarch64-apple-darwin
+          # Built on Apple silicon for Intel, and checked to run there under Rosetta.
+          - runner: macos-15
+            target: x86_64-apple-darwin
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
           - runner: ubuntu-24.04-arm
@@ -69,6 +72,8 @@ jobs:
           kind: build
       - if: runner.os != 'Windows'
         run: scripts/release.sh
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
       - if: runner.os == 'Windows'
         run: scripts/release.ps1
       - name: Check the binary runs
