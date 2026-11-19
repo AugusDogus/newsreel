@@ -1130,8 +1130,115 @@ others. The engine still looks the release up among the title's search results, 
 detail says ("Looking it up among this title's releases.").
 
 **Test.** `TitleScreens.test.ts`: a picked source's steps, and a play the engine chooses for as
-before. The CLI's `newsreel play <title> --source` still prints "Found 9 sources" and "Trying the
-best source"; not changed.
+before. The CLI's `newsreel play <title> --source` still printed "Found 9 sources" and "Trying the
+best source"; section 31 fixes it.
 
 **Upstream.** v0.7.0 says "Found 9 sources" and "Playing source 1 of 1" for a picked source.
 Upstream has it.
+
+## 29. Stop on a TV Bro remote still loses the place
+
+**Bug.** Section 16's Media Session `stop` handler never runs in TV Bro: its WebView has no
+`navigator.mediaSession`. On a remote's Stop the film rewound to 0:00 and the player stayed open, so
+the next Play started the film over and saved 0:00 as the place.
+
+**What reaches the page.** A probe page on `august_tv` in TV Bro (WebView, Chrome 157 UA,
+`mediaSession=false`), with the Stop key (`android-keycode:86`) sent by agent-device
+(`~/.cache/nr-retest4/probe/probe.html`):
+- Playing at 8.6 s: `pause` with the time already 0 and `seeking` true, then `seeking`, `timeupdate`
+  and `seeked`, all at 0.
+- Paused at 8.2 s: only `seeking`, `timeupdate` and `seeked` at 0.
+- No `keydown`, `keyup` or `keypress` (no `MediaStop`, 178 or 86), no `visibilitychange`, no
+  `pagehide`, `emptied` or `abort`. The next Play key played from 0:00.
+
+So the one sign is a seek to 0:00 that the page did not make, with the video paused.
+
+**Fix.** `useBrowserStop` (`system.ts`) watches `seeking`: in a browser without a Media Session, a
+seek to exactly 0 while paused, once the video started, that the player did not ask for, leaves the
+player as Back does. `PlayerActions` marks its own seeks until they land (`seeked`), so Home, Replay,
+the seek bar's start and a chapter at 0:00 are not taken for Stop.
+
+**Why it is right.**
+- The place is kept by what already happens: the `pause` handler saves the time of the last
+  `timeupdate` (8.6 s here, not 0), and the rewind is no play, so `Unsaved` saves nothing more
+  (section 2's rule: only played time on a page in view, or a start, is saved).
+- It cannot fire in Chrome or Safari: both have a Media Session, whose `stop` handler (section 16)
+  gets the key and suppresses the browser's own rewind. LG and Samsung TVs send keydown 413, which
+  the key map leaves on. The other seeks of the page's own (`source.ts`) never land on exactly 0:
+  they start a file at a time over 0, or step 0.01 s onto data.
+- WebKit's "time zero" while a Media Source buffer empties or before metadata (section 15's
+  `RemuxSource` comments) happens only under a seek the player asked for, or before the video
+  started, and only in Safari, which has a Media Session.
+
+**Tests.** `system.test.ts`: WebView's stop leaves the player; a seek to 0:00 the player asked
+for, one before the start, one in a browser with a Media Session, one to 0.01 s, and one while
+playing do not. Both failed to load before (no `stoppedByBrowser`).
+
+**On the emulator.** `august_tv`, TV Bro, this branch's engine with Charade 20-40 from Usenet
+(screenshots in `~/.cache/nr-retest4/shots/`):
+- Playing at about 0:50 (`29-playing-before-stop.png`), Stop left the player for the title page,
+  whose button read "Resume, 1h 53m left" (`29-after-stop.png`).
+- Resume played on from there: paused about 27 s later, the player read 1:19 (`29-resumed-time.png`).
+- Stop while paused at 1:19 left the player too, and the title page read "Resume, 1h 52m left"
+  (`29-after-paused-stop.png`).
+
+The engine was reached through `adb reverse`, since it refuses the emulator's `10.0.2.2` host name.
+
+**Upstream.** v0.7.0 has no Media Session `stop` and the same `pause` save. In TV Bro, Stop rewinds
+the same way and Play starts over. Upstream has it.
+
+## 30. The frozen-picture watchdog switched a source while the video waited for data
+
+**Bug.** Once, with a second tab playing the same film, the watchdog of section 15 moved Charade to
+its next source ("This browser shows no picture of this source"). Two clean retakes did not.
+
+**Cases checked.** In headless Chromium 159 over CDP, a Media Source page fed from a throttled
+server runs the watchdog exactly as `frozen.ts` and `Playback.tsx` had it at ccf8e5a, and logs what
+it sees each second (`~/.cache/nr-retest4/probe/mse.html`, `scripts/lab.ts`, runs in `runs/`):
+
+| Case | What the watchdog saw | Fired |
+|---|---|---|
+| A second tab opened over the first, 25 s, then back | The hidden tab paused (a muted video) and is skipped while hidden anyway; back in view its clock moved at once | no |
+| Main thread CPU throttled 40x for 25 s | Clock and frames moved every second; the media pipeline has its own threads | no |
+| Feed at 0.6x, 0.5x and 0.4x the bitrate | Waits of 3 to 4 s, readyState 2, 2.1 s buffered | no |
+| Feed at 0.25x the bitrate (two plays sharing the link) | Waits of 8 s, readyState 2, 2.1 s buffered, clock and frames still | yes, 3 times in 75 s |
+
+**Cause.** The watchdog took 1 s buffered ahead of the playhead for "has data to play". Chrome
+does not resume on 1 s: fed slower than it plays, it holds the buffered fragment (2 s here) and
+waits, readyState 2 (`HAVE_CURRENT_DATA`), until the next arrives. While it waits, the clock and the
+decoded frames stand still, which is the pattern the watchdog looks for. Two plays of one film share
+the download and the link, so each stream can fall well below its bitrate. A repair wait looks the
+same from the element: no data comes until it ends. Background tabs and throttling did not trip it,
+since a hidden page is skipped and the pipeline's clock is not on the throttled thread.
+
+**Fix.** A look counts only when the element does not wait for data (readyState at least
+`HAVE_FUTURE_DATA`) and no read of the download waits on a repair (`blockingRepair`, section 25), on
+top of what it already needed: playing, not seeking, in a page in view, 1 s buffered, and neither
+the clock nor the decoded frames moving for 6 s. The frozen case of section 15 still counts: Chrome
+on Android read Charade directly with readyState 4.
+
+**Tests.** `frozen.test.ts`: a video that waits for data with 2.12 s buffered for 8 s (the lab's
+numbers), and one whose download waits on a repair, are not frozen. Both failed before. In the lab
+the same 0.25x run fired the old rule 3 times and the new one never
+(`runs/watchdog-quarter-feed-after.txt`).
+
+**Not reproduced.** The original incident's own numbers were not logged, so this is the case the
+lab found that fits it (a second play of the same film), not a replay of it.
+
+**Upstream.** v0.7.0 has no watchdog: newsreel's own.
+
+## 31. The CLI said "Found 9 sources" for a picked source
+
+**Bug.** `newsreel play <title> --source <id>` printed "Found 9 sources" and "Trying the best
+source", as section 28's web player did before.
+
+**Fix.** The CLI's lines follow the web's (2dd1e62): "Finding the source you picked among the
+releases of Charade (1963)", "Found the source you picked", "Trying the source you picked: …", and
+no count. The play line names the release as before. The same goes for `newsreel get <title>
+--source` and `newsreel tv play <title> --source`, which print the same steps.
+
+**Test.** `a_play_of_a_picked_source_names_it_as_the_one_picked_and_counts_no_others` in
+`client/tests.rs` failed on the old lines and passes now.
+
+**Upstream.** v0.7.0 prints "Found 9 sources" and "Trying 1 of 1" for a picked source. Upstream has
+it.
