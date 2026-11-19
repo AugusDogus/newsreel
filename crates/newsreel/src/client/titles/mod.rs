@@ -108,7 +108,7 @@ pub fn sources(mut conn: Conn, video: VideoRef, mode: Mode) -> Result<u8, Error>
 
 /// Plays a film or an episode from the first of its sources that starts.
 pub fn play(conn: &mut Conn, request: TitleRequest, mode: Mode) -> Result<(PlayReply, TitlePlayed), Error> {
-    let shown = Shown::new(mode);
+    let shown = Shown::new(mode, request.source.is_some());
     play_each(conn, request, |step| shown.step(step, "Playing"))
 }
 
@@ -150,10 +150,12 @@ pub(super) fn steps<R: Reply>(
 pub(super) struct Shown {
     mode: Mode,
     bar: Option<ProgressBar>,
+    /// The person picked the source with `--source`.
+    picked: bool,
 }
 
 impl Shown {
-    pub(super) fn new(mode: Mode) -> Self {
+    pub(super) fn new(mode: Mode, picked: bool) -> Self {
         let bar = (mode == Mode::Human).then(|| {
             let bar = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr())
                 .with_style(ProgressStyle::with_template("{spinner} {msg}").expect("the template is valid"));
@@ -161,7 +163,7 @@ impl Shown {
             bar.enable_steady_tick(Duration::from_millis(100));
             bar
         });
-        Self { mode, bar: bar.filter(|bar| !bar.is_hidden()) }
+        Self { mode, bar: bar.filter(|bar| !bar.is_hidden()), picked }
     }
 
     pub(super) fn step(&self, step: &AttemptEvent, started: &str) {
@@ -171,7 +173,7 @@ impl Shown {
         if let (AttemptEvent::Check { check }, Some(bar)) = (step, &self.bar) {
             bar.set_message(view::check(*check));
         }
-        let Some(line) = view::step(step, started) else { return };
+        let Some(line) = view::step(step, started, self.picked) else { return };
         let line = match step {
             AttemptEvent::Skipped { .. } => paint(Token::Muted, &line),
             AttemptEvent::Playing { .. } => paint(Token::Mint, &line),

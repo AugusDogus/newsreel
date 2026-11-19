@@ -47,10 +47,11 @@ fn play(mut conn: Conn, args: TvPlayArgs, mode: Mode, cwd: &Path) -> Result<u8, 
         (Some(video), _, Some(_)) => return Err(newsreel_core::target::not_a_release(video, "--file")),
         _ => {}
     }
+    let picked = source.is_some();
     let request = Request::Cast(CastRequest { tv, target, source, file, video: None, subtitle, start_at: at });
     let cast: Box<Cast> = match &video {
         Some(video) => {
-            let shown = titles::Shown::new(mode);
+            let shown = titles::Shown::new(mode, picked);
             titles::steps(&mut conn, &request, video, |step| shown.step(step, "Casting"))?
         }
         None => conn.ask(&request)?,

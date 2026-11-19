@@ -1069,6 +1069,44 @@ fn a_held_start_says_why_and_for_how_long() {
 }
 
 #[test]
+fn a_play_of_a_picked_source_names_it_as_the_one_picked_and_counts_no_others() {
+    use newsreel_core::{AttemptEvent, Kind, TitleCard};
+    let card = TitleCard {
+        id: "tt0056923".parse().unwrap(),
+        kind: Kind::Film,
+        name: "Charade".into(),
+        year: Some(1963),
+        rating: None,
+    };
+    let mut picked = release(rid("51c7bb"), "Charade.1963.1080p.BluRay.REMUX");
+    picked.size = Some(20 * GIB);
+    let steps = [
+        AttemptEvent::Resolved { video: "tt0056923".parse().unwrap(), title: card, episode: None },
+        // The engine looks the picked release up among all the title's search results.
+        AttemptEvent::Searched { found: 9, sources: Vec::new() },
+        AttemptEvent::Trying { rank: 1, of: 1, release: picked.clone() },
+        AttemptEvent::Playing {
+            video: "tt0056923".parse().unwrap(),
+            release: picked,
+            job: tid("51c7bb"),
+            file: 1,
+            resume_at: None,
+        },
+    ];
+    let lines: Vec<Option<String>> = steps.iter().map(|s| step(s, "Playing", true)).collect();
+    assert_eq!(
+        lines,
+        [
+            Some("Finding the source you picked among the releases of Charade (1963)"),
+            Some("Found the source you picked"),
+            Some("Trying the source you picked: u51c7bb Charade.1963.1080p.BluRay.REMUX, 1080p, 20.0 GiB"),
+            Some("Playing u51c7bb Charade.1963.1080p.BluRay.REMUX, 1080p, 20.0 GiB"),
+        ]
+        .map(|line| line.map(String::from))
+    );
+}
+
+#[test]
 fn a_title_play_says_each_step_and_why_it_skipped_a_source_in_plain_words() {
     use newsreel_core::{AttemptEvent, Check, Kind, Skip, TitleCard};
     let card = TitleCard {
@@ -1102,7 +1140,7 @@ fn a_title_play_says_each_step_and_why_it_skipped_a_source_in_plain_words() {
             resume_at: None,
         },
     ];
-    let lines: Vec<Option<String>> = steps.iter().map(|s| step(s, "Playing")).collect();
+    let lines: Vec<Option<String>> = steps.iter().map(|s| step(s, "Playing", false)).collect();
     assert_eq!(
         lines,
         [

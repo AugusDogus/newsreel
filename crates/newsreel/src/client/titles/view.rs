@@ -233,13 +233,20 @@ pub fn sources(sources: &TitleSources, now: i64) -> Doc {
 }
 
 /// A title play's step as a line, or `None` for a step a person need not see. `started` names
-/// what happens to the source that starts, such as `Playing`.
-pub fn step(step: &AttemptEvent, started: &str) -> Option<String> {
+/// what happens to the source that starts, such as `Playing`. A source the person `picked` with
+/// `--source` is the only one tried, so its steps name it as theirs and count no others.
+pub fn step(step: &AttemptEvent, started: &str, picked: bool) -> Option<String> {
+    const PICKED: &str = "the source you picked";
     match step {
+        AttemptEvent::Resolved { video, title, .. } if picked => {
+            Some(format!("Finding {PICKED} among the releases of {}", title_name(title, video.episode)))
+        }
         AttemptEvent::Resolved { video, title, .. } => {
             Some(format!("Finding sources of {}", title_name(title, video.episode)))
         }
+        AttemptEvent::Searched { .. } if picked => Some(format!("Found {PICKED}")),
         AttemptEvent::Searched { found, .. } => Some(format!("Found {}", format::count(*found as usize, "source"))),
+        AttemptEvent::Trying { release, .. } if picked => Some(format!("Trying {PICKED}: {}", described(release))),
         AttemptEvent::Trying { rank, of, release } => {
             Some(format!("{}: {}", newsreel_core::watching::trying(*rank, *of), described(release)))
         }

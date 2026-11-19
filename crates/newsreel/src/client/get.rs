@@ -62,7 +62,7 @@ pub fn title(engine: impl FnOnce() -> Result<Conn, Error>, args: GetArgs, mode: 
 /// code and the download.
 fn request_title(conn: &mut Conn, request: TitleRequest, mode: Mode) -> Result<(u8, Job), Error> {
     let video = request.video.clone();
-    let shown = titles::Shown::new(mode);
+    let shown = titles::Shown::new(mode, request.source.is_some());
     let answered = titles::steps(conn, &Request::GetTitle(request), &video, |step| shown.step(step, "Downloading"));
     drop(shown);
     let (reply, title): (Box<GetReply>, Box<TitlePlayed>) = answered?;
