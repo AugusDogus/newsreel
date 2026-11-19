@@ -100,6 +100,12 @@ impl Paths {
         self.state.join("engine.log")
     }
 
+    /// There while the running engine logs where it was started instead of to [`Paths::log`], as
+    /// `newsreel engine run` does.
+    pub fn log_elsewhere(&self) -> PathBuf {
+        self.state.join("engine.log-elsewhere")
+    }
+
     /// The log before the last time it grew too long.
     pub fn previous_log(&self) -> PathBuf {
         self.state.join("engine.log.1")

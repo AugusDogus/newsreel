@@ -9,7 +9,7 @@ mod imp;
 #[path = "folder/windows.rs"]
 mod imp;
 
-pub use imp::{Folder, identity, is_link, is_locked, lineage};
+pub use imp::{Folder, file_identity, identity, is_link, is_locked, lineage};
 
 /// Which file or folder something is, whatever path reaches it. A folder moved away keeps its
 /// identity. A link, or another folder, put in its place has another.

@@ -796,6 +796,29 @@ fn engine_run_with_server_runs_a_server_and_leaves_config_yaml_alone() {
     assert!(!home.path("th/config/config.yaml").exists(), "the image's engine writes no server line");
 }
 
+/// `newsreel engine run` logs where it was started; `engine status` named `state/engine.log`,
+/// which that engine never writes.
+#[test]
+fn engine_status_of_an_engine_run_in_the_foreground_says_where_it_logs_not_engine_log() {
+    let home = Home::new();
+    let log = home.dir.path().join("elsewhere.log");
+    let mut engine = home.process(&["engine", "run"]).stderr(std::fs::File::create(&log).unwrap()).spawn().unwrap();
+    let engine = std::thread::spawn(move || engine.wait().unwrap().code());
+    eventually("the engine starts", Duration::from_secs(30), || {
+        std::fs::read_to_string(&log).unwrap_or_default().contains(" started, pid ")
+    });
+    let status = home.json(&["engine", "status", "--json"]);
+    assert_eq!(status["engine"], "running", "{status:#}");
+    assert!(status["log"].is_null(), "{status:#}");
+    let text = home.run(&["engine", "status"]);
+    assert!(!text.stdout.lines().any(|line| line.starts_with("log:")), "{}", text.stdout);
+    assert!(text.stdout.contains("# this engine logs where newsreel engine run was started"), "{}", text.stdout);
+    assert_eq!(home.run(&["engine", "stop"]).code, 0);
+    assert_eq!(engine.join().unwrap(), Some(0));
+    let stopped = home.json(&["engine", "status", "--json"]);
+    assert!(stopped["log"].as_str().is_some_and(|log| log.ends_with("engine.log")), "{stopped:#}");
+}
+
 #[cfg(not(target_os = "linux"))]
 #[test]
 fn server_install_says_it_runs_only_on_linux() {

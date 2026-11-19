@@ -39,10 +39,17 @@ pub fn run(command: DaemonCommand, env: &Env, mode: Mode) -> Result<u8, Error> {
                         .flatten();
                     // The engine writes it while changes to config.yaml wait for a restart.
                     let restart = local.then(|| std::fs::read_to_string(paths.restart_needed()).ok()).flatten();
-                    let notice = match (version, restart) {
-                        (Some(version), Some(restart)) => Some(format!("{version}; {restart}")),
-                        (version, restart) => version.or(restart),
-                    };
+                    // `newsreel engine run` logs where it was started.
+                    let elsewhere = local && paths.log_elsewhere().exists();
+                    let logs = elsewhere.then(|| {
+                        format!(
+                            "this engine logs where newsreel engine run was started, not to {}",
+                            paths.log().display()
+                        )
+                    });
+                    let notice = [version, restart, logs].into_iter().flatten().collect::<Vec<_>>().join("; ");
+                    let notice = (!notice.is_empty()).then_some(notice);
+                    let log = log.filter(|_| !elsewhere);
                     DaemonReport {
                         engine: "running",
                         pid: Some(conn.pid),

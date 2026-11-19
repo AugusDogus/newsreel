@@ -368,6 +368,13 @@ fn serve(env: &Env, paths: &Paths, service: bool, http_port: Option<u16>, server
             persist(&format!("write {}", paths.http_port().display()), written);
         }
         log(&format!("engine {version} started, pid {pid}, web app and players http://127.0.0.1:{players}"));
+        let marker = paths.log_elsewhere();
+        let marked = if crate::log::writes_to(&paths.log()) {
+            fsutil::remove(&marker)
+        } else {
+            fsutil::write_atomic(&marker, b"")
+        };
+        persist(&format!("note where the log goes in {}", marker.display()), marked);
         if settings.exposure.server {
             log(&format!("engine {version} runs as a server, on the network on port {players}"));
         }

@@ -142,6 +142,11 @@ pub fn identity(path: &Path) -> io::Result<Identity> {
     Ok(identity_of(&rustix::fs::stat(path)?))
 }
 
+/// The identity of an open file.
+pub fn file_identity(file: &std::fs::File) -> io::Result<Identity> {
+    Ok(identity_of(&rustix::fs::fstat(file)?))
+}
+
 /// Whether opening a folder failed because a link, or a file, has its name.
 pub fn is_link(e: &io::Error) -> bool {
     matches!(Errno::from_io_error(e), Some(Errno::LOOP | Errno::NOTDIR))

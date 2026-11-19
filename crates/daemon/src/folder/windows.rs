@@ -189,6 +189,11 @@ pub fn identity(path: &Path) -> io::Result<Identity> {
     Ok(identity_of(&attributes(path, true)?))
 }
 
+/// The identity of an open file. A console has none.
+pub fn file_identity(file: &File) -> io::Result<Identity> {
+    Ok(identity_of(&information(file)?))
+}
+
 /// Whether opening a folder failed because a link, or a file, has its name.
 pub fn is_link(e: &io::Error) -> bool {
     e.kind() == io::ErrorKind::NotADirectory
