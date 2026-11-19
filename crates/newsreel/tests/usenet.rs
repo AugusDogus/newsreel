@@ -878,6 +878,10 @@ fn a_damaged_article_is_rebuilt_from_par2_and_a_read_across_it_gets_the_posted_b
     assert!(kept == release.files["film.mkv"], "the whole file matches its post");
     let log = home.log();
     assert!(log.contains(&damaged) && log.contains("repaired 1 damaged article"), "{log}");
+    // One story: what arrived, that it is rebuilt, and that it was; no advice to fetch it again.
+    let found = log.lines().find(|line| line.contains(&damaged)).unwrap();
+    assert!(found.ends_with("so it is rebuilt from the release's PAR2 files"), "{found}");
+    assert!(!log.contains("another copy") && !log.contains("another posting"), "{log}");
     assert_eq!(server.served(&damaged), 1, "a damaged copy is not asked for again");
 }
 

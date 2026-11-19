@@ -667,8 +667,12 @@ impl Fetched {
                 }
             }
             // A server sends the copy every time it is asked for, so a damaged one stays damaged.
-            Err(e @ (ArticleError::Yenc { .. } | ArticleError::Nntp(usenet::nntp::NntpError::Missing { .. }))) => {
-                Self::Unrecoverable(e.to_string())
+            // What follows, a repair or another posting, is said where the piece is set aside.
+            Err(ArticleError::Yenc { message_id, error }) => {
+                Self::Unrecoverable(format!("article <{message_id}> arrived damaged: {error}"))
+            }
+            Err(ArticleError::Nntp(usenet::nntp::NntpError::Missing { message_id })) => {
+                Self::Unrecoverable(format!("article <{message_id}> is on none of the servers"))
             }
             Err(e) => Self::Retry(e.to_string()),
         }
@@ -683,8 +687,11 @@ impl Fetched {
 fn unrecoverable(job: &Arc<Job>, state: &mut State, piece: PieceRef, why: String) {
     if state.named < NAMED_MOST {
         state.named += 1;
-        let repairs = if job.recovery.is_some() { ". It is repaired from the release's PAR2 files" } else { "" };
-        log(&format!("{} cannot fetch {}: {why}{repairs}", short(job.id), job.place(piece)));
+        let next = match job.recovery {
+            Some(_) => ", so it is rebuilt from the release's PAR2 files",
+            None => "; the release posts no PAR2 files to rebuild it from, so another posting of it may be needed",
+        };
+        log(&format!("{} cannot fetch {}: {why}{next}", short(job.id), job.place(piece)));
     }
     state.failed.insert(piece, why);
     if job.recovery.is_some()
@@ -1263,9 +1270,17 @@ mod tests {
         let piece = piece(0, 4);
         let id = piece.ids[0].clone();
         let damaged = ArticleError::Yenc { message_id: id.clone(), error: YencError::NoHeader };
-        assert!(matches!(Fetched::of(&piece, Err(damaged)), Fetched::Unrecoverable(why) if why.contains(&id)));
+        // What happened, without advice: what follows depends on whether PAR2 files rebuild it.
+        let said = |fetched| match fetched {
+            Fetched::Unrecoverable(why) => why,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(
+            said(Fetched::of(&piece, Err(damaged))),
+            format!("article <{id}> arrived damaged: {}", YencError::NoHeader)
+        );
         let missing = ArticleError::Nntp(NntpError::Missing { message_id: id.clone() });
-        assert!(matches!(Fetched::of(&piece, Err(missing)), Fetched::Unrecoverable(_)));
+        assert_eq!(said(Fetched::of(&piece, Err(missing))), format!("article <{id}> is on none of the servers"));
         let unreachable = ArticleError::Nntp(NntpError::Unreachable { message_id: id, errors: vec![] });
         assert!(matches!(Fetched::of(&piece, Err(unreachable)), Fetched::Retry(_)));
         let part = Part { name: "a.mkv".into(), file_size: 4, begin: 0, data: vec![1, 2, 3, 4] };
