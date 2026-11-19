@@ -23,10 +23,6 @@ NNTP, yEnc, NZB, RAR, PAR2, and manifests live in the [`usenet`](https://crates.
 crate, which started here and is now published on its own from
 [AugusDogus/usenet-rs](https://github.com/AugusDogus/usenet-rs).
 
-TODO: newsreel depends on the crate's `par2-priority` branch as a git dependency pinned to a rev,
-for its PAR2 repair and request priority. Switch to `usenet = "0.3"` in `crates/daemon` and
-`crates/newsreel` once 0.3.0 is published.
-
 A manifest maps every article to a byte range of an output file:
 
 - A video posted directly: the output file is the posted file; each segment is a piece.

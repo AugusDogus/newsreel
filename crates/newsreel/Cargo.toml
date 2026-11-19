@@ -29,7 +29,7 @@ tokio = { version = "1.53", features = ["rt"] }
 url = "2.5"
 
 [dev-dependencies]
-usenet = { git = "https://github.com/AugusDogus/usenet-rs", rev = "ac04b12cbce5e2e15852fc0f7cbc54130ecb29bf", features = ["fake"] }
+usenet = { version = "0.3", features = ["fake"] }
 assert_cmd = "2.2"
 flate2 = "1"
 insta = { version = "1.49", features = ["json"] }

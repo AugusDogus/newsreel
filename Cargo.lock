@@ -3067,7 +3067,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom 0.3.4",
  "once_cell",
  "rustix",
  "windows-sys 0.61.2",
@@ -3478,7 +3478,8 @@ dependencies = [
 [[package]]
 name = "usenet"
 version = "0.3.0"
-source = "git+https://github.com/AugusDogus/usenet-rs?rev=ac04b12cbce5e2e15852fc0f7cbc54130ecb29bf#ac04b12cbce5e2e15852fc0f7cbc54130ecb29bf"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "34a4e589de25fabe21a906ec6b0e064d4b8257e9f0e778069121174b8cdb00ee"
 dependencies = [
  "crc32fast",
  "futures-util",

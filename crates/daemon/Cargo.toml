@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 newsreel-core = { path = "../core" }
 newsreel-search = { path = "../search" }
-usenet = { git = "https://github.com/AugusDogus/usenet-rs", rev = "ac04b12cbce5e2e15852fc0f7cbc54130ecb29bf" }
+usenet = "0.3"
 clap = { version = "4.6", features = ["derive"] }
 crc32fast = "1"
 dirs = "7"
@@ -63,7 +63,7 @@ windows = { version = "0.61", features = [
 windows-core = "0.61"
 
 [dev-dependencies]
-usenet = { git = "https://github.com/AugusDogus/usenet-rs", rev = "ac04b12cbce5e2e15852fc0f7cbc54130ecb29bf", features = ["fake"] }
+usenet = { version = "0.3", features = ["fake"] }
 insta = { version = "1.49", features = ["json"] }
 lzma-rust2 = { version = "0.25", default-features = false, features = ["std", "xz", "encoder"] }
 tempfile = "3.27"
