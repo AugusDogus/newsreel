@@ -63,7 +63,7 @@ and waited for the 5 minute stall timeout.
   `a_download_whose_only_server_goes_down_keeps_waiting` checks), but are logged at most once a
   minute per download.
 - PAR2 seam: `unrecoverable()` in `daemon/usenet.rs` is the one place a piece is set aside; repair
-  hooks in there.
+  hooks in there (section 10 does).
 - Found on Windows CI: once a stopped download's progress is saved, the owner takes it out of the
   engine, and `want_range` then knows nothing of it, so a read waited the 5 minute stall again.
   The owner's `StreamFile` answer now carries a stopped download's error, and a read that has no
@@ -466,9 +466,8 @@ MacBook (macOS 15.8), and the updater said "there is no prebuilt newsreel for ma
 The workflow was dispatched on this branch, where it publishes nothing (the draft release and the
 image push run only for a tag); its result is in the report.
 
-**Not done.** ffmpeg has no pinned build for Intel Macs (`ffmpeg/fetch.rs`), so a conversion there
-needs an installed ffmpeg. `install.yml`, which installs a published release on each platform, has
-no Intel runner yet.
+**Since done** (section 10): ffmpeg has a pinned build for Intel Macs, and `install.yml` installs
+the published release on an Intel runner too.
 
 **Upstream.** v0.7.0's `target` has only `("macos", "aarch64")`. Upstream has it.
 
@@ -510,3 +509,130 @@ When there was no service it leaves a running engine alone, as before.
 
 **Upstream.** v0.7.0 stops the engine itself only for Task Scheduler too. Upstream has it, though its
 failed install path is newsreel's.
+
+## 10. PAR2 repair and request priority
+
+Wires in the `usenet` crate's 0.3 work (branch `par2-priority`, PR AugusDogus/usenet-rs#1): PAR2
+repair and request priority. The crate is a git dependency pinned to a rev until it is published.
+
+### 10a. Charade plays through its damaged article
+
+**Before.** Fix 1 made a read across Charade's damaged article fail at once with the reason, so a
+title play moves on to its next source and `newsreel get` stops at the end. The release carries PAR2
+volumes that rebuild the article, as SABnzbd does, and the user chose that: repair, and fall back to
+another source only when repair cannot work.
+
+**Fix** (`daemon/usenet/repair.rs`).
+- The resolver keeps the NZB beside the manifest when the NZB posts PAR2 files (the stored release is
+  now `NRR1`, the manifest's length, the manifest, then the NZB), since the manifest leaves PAR2 files out.
+- When a piece is set aside and the NZB has PAR2 volumes, a repair task starts. It fetches the set's
+  index, maps the damage to slices, and fetches only as many recovery blocks as those slices need
+  (`Par2Files::choose`, one more when the blocks happen to be dependent). The download keeps going.
+- Mapping: the set protects the posted files, here the RAR volumes, not the mp4. Each piece of the mp4
+  is a byte range of one volume (its article's `begin + skip`), so the damaged piece falls in 2 of the
+  set's 384,000-byte slices. The volumes' other bytes, RAR headers and any stored file the play does
+  not keep (such as a sample), are fetched from their articles and held in memory, up to 256 MiB.
+  Posted files are matched to the set by name, else by size and first 16 KiB, since posters rename:
+  Charade's NZB says `part010.rar` where its PAR2 set says `part10.rar`.
+- Every other slice is fed to the crate's `Repair` as its pieces land. Once none is waiting, it
+  rebuilds, writes the mp4's share of the rebuilt slices, checks the pieces' CRCs on disk, marks
+  them done, and the waiting read goes on.
+- Status says so in plain words. `newsreel status` gains a `repair:` line (`repairing a damaged part,
+  fetching its recovery files`, then `repairing a damaged part, about 1m left`, then `almost done`),
+  the JSON gains `progress.repair` (`articles`, `stage`, `blocking`, `eta`), the TUI says `repairing`,
+  and the web player says `Repairing a damaged part of this video · about 1m 23s left` instead of
+  "Waiting for articles". `blocking` is true while a reader waits on the damaged bytes. A repair
+  does not count as stalled: not to the owner's no-source timer, not to the HTTP read's 5 minute
+  stall timeout, and not to the title player's switch to the next source.
+- Restart: the journal records a piece set aside (`journal::Recorded::Lost`), so an engine that
+  restarts mid-repair goes on repairing without asking the servers for the article again.
+- Fallback: with no PAR2 files, too few blocks, or blocks that cannot solve the slices, the piece
+  stays set aside with the reason (`the release's PAR2 files cannot rebuild it: the damage spans 2
+  slices of the PAR2 set, and the release's PAR2 files hold 1 recovery block`). A reader waiting on
+  it fails at once, as before, so a title play moves to its next source; a plain download fetches
+  the rest and stops with the reason.
+
+**Tests** (`crates/newsreel/tests/usenet.rs`, against the fake server, with `fake::par2` posts and
+the new `FakeServer::damage`, which serves an article cut before its `=yend` line as Charade's was):
+`a_damaged_article_is_rebuilt_from_par2_and_a_read_across_it_gets_the_posted_bytes`,
+`a_damaged_article_inside_rar_volumes_is_rebuilt_from_the_volumes_par2_set` (RAR5 volumes with a
+sample the play does not keep), `too_few_recovery_blocks_fail_a_waiting_read_at_once_and_stop_a_download_with_the_reason`,
+`a_repair_cut_short_by_an_engine_restart_goes_on_and_finishes`, and the no-PAR2 case in
+`a_read_across_an_article_no_server_has_fails_at_once_and_the_download_says_why`. Unit tests cover
+the journal's lost records, the status wording, and the repair's ETA.
+
+**Live check.** A test engine on its own `NEWSREEL_HOME` and port 47990 played the real NZB, with the
+four real servers. The repair log:
+
+```
+c17883 cannot fetch bytes 930050289..930818289 of Charade.1963.BluRay.720p.H264.mp4: article <5214f544$0$16594$c3e8da3$e3f2c276@news.astraweb.com> arrived damaged: yEnc data for "…part09.rar" decoded to 767999 bytes, but its header declares 768000; …
+c17883 repairs 1 damaged article from its PAR2 files: 2 slices of 384000 bytes, 2 recovery blocks fetched in 5.3s
+c17883 repaired 1 damaged article in 0.5s once the rest of the release was in, 89.4s after it was found
+```
+
+| | 12 MiB/s cap | no cap (about 100 MB/s) |
+|---|---|---|
+| Release still to download when the read reached the gap | 70% | 23% |
+| Read across the gap (`930000289..930868289`) to its last byte | 90.2 s | 5.8 s |
+| Of which: PAR2 index, volume headers and 2 recovery blocks fetched, beside the download | 5.3 s | 7.2 s |
+| Of which: rebuild once the rest was in | 0.5 s | 0.1 s |
+
+Nearly all of the wait is the rest of the release arriving, which repair reads. The read returned all
+868,000 bytes, and they equal the finished file's. A first build fetched the volumes' header articles
+one volume at a time, and fetching took 24.9 s; they now go in one batch.
+
+**par2cmdline.** `~/.cache/nr-par2/scripts/volumes.py` rebuilds the 15 RAR volumes from the finished
+mp4 alone, plus each volume's RAR headers from its own articles (31 articles, its own NNTP and yEnc
+code, nothing from newsreel). par2cmdline 1.4.0 (nixpkgs) against the release's own
+`vol-01.par2`: `All files are correct, repair is not required.` As a control, zeroing the damaged
+article's 768,000 bytes in the rebuilt `part09.rar` gives `damaged. Found 272 of 274 data blocks` and
+`You need 2 more recovery blocks`; restoring them gives `All files are correct` again.
+
+**Upstream.** libtorrent has no PAR2; this is newsreel's own.
+
+### 10b. A seek during a download goes first
+
+**Bug.** On the Mac's 12 MiB/s link, a seek during a running download waited about 27 s: the engine
+ran as many requests as the pool had room for (105 connections, 4 deep), and a seek's article
+shared the link with all of them.
+
+**Fix.** The crate's 0.3 pool holds background requests to a self-tuned limit, the fewest that keep
+the link full, and lets urgent ones skip it.
+- The pieces an HTTP range read needs now (up to 16) are fetched at once at `Priority::Urgent`,
+  beside the workers, even when a worker already waits on them in the pool (`rush` in
+  `daemon/usenet.rs`); whichever lands first is kept.
+- A release's first reads are urgent too: the resolver's NZB, first articles and RAR headers, the
+  start of the video and its end (the play's first range reads), and a repair's PAR2 reads.
+- Workers stay at the pool's capacity, which lets the pool see when the limit holds them back.
+- `connections` in status counts requests that can be on a connection (background ones up to the
+  pool's limit, plus urgent ones), at most the connections open. It was in-flight requests at most
+  the connections open, which read 105 while most of them waited.
+
+**Live check.** The same test engine, 1 MiB range reads at 45%, 70%, 80% and 90% of the mp4 while the
+download was between 25% and 80% done, against main (`7358535`) built the same way. The cap is a
+relay inside a network namespace of the test engine's own (pasta, with `/etc/hosts` and
+`/etc/nsswitch.conf` bind-mounted there) that holds what the servers send to 12 MiB/s together; TLS
+goes end to end. tc could not do it without root: the namespace has no ingress or tbf qdisc, and
+newsreel's own per-download limit paces fetches rather than filling a link.
+
+| Seek, 1 MiB | main | this branch |
+|---|---|---|
+| 12 MiB/s cap | 25.5, 26.6, 13.6, 12.9 s (105 connections) | 1.2, 1.0, 1.0, 0.75 s (11 to 13 connections); another run 1.6, 3.3, 2.0, 2.2 s (24 to 34) |
+| no cap | 5.5, 4.8, 1.0, 1.7 s | 4.1, 0.78, 0.49, 0.58 s; another run 3.1, 2.0, 1.4, 2.1 s |
+| Resolving another NZB meanwhile (`newsreel files`), capped | 9.2 s | 0.89 s, 1.2 s |
+| Same, no cap | 0.79 s | 0.45 s, 0.32 s |
+
+With no cap the servers' own per-connection speed is what limits, so the pool keeps all 105
+connections busy and a seek queues behind one of their articles; the gain is smaller there.
+
+### 10c. Intel Mac gaps
+
+- ffmpeg: jellyfin-ffmpeg 8.1.3-2's `portable_mac64` build is pinned for `macos x86_64`, beside the
+  arm64 one, with the size and SHA-256 its release publishes (checked against a download: both
+  programs are x86_64 Mach-O).
+- `install.yml` installs the published release on `macos-15-intel` as well.
+
+**Not done.** The crate's `article::fetch` still stops at the first copy that does not decode (fix 1).
+A release whose PAR2 files are posted under obfuscated names is not repaired, since `Par2Files::find`
+goes by name.
+

@@ -19,9 +19,13 @@ layout of the playable files. The `NzbPort` (`daemon/nzb_port.rs`) resolves an N
 search result, a file, or a URL over NNTP (first article of each file, RAR headers), so
 `parse` stays synchronous and the owner, store, CLI, TUI, and web app need few changes.
 
-NNTP, yEnc, NZB, RAR, and manifests live in the [`usenet`](https://crates.io/crates/usenet)
+NNTP, yEnc, NZB, RAR, PAR2, and manifests live in the [`usenet`](https://crates.io/crates/usenet)
 crate, which started here and is now published on its own from
 [AugusDogus/usenet-rs](https://github.com/AugusDogus/usenet-rs).
+
+TODO: newsreel depends on the crate's `par2-priority` branch as a git dependency pinned to a rev,
+for its PAR2 repair and request priority. Switch to `usenet = "0.3"` in `crates/daemon` and
+`crates/newsreel` once 0.3.0 is published.
 
 A manifest maps every article to a byte range of an output file:
 
@@ -41,7 +45,7 @@ the segments under a byte range first, which is what streaming and seeking need.
 | Magnet, infohash, `.torrent` URL or file | NZB URL or file |
 | Peers, seeds, trackers, DHT | NNTP servers by priority, connections |
 | Seeders in ranking | Grabs |
-| Piece hashes | yEnc CRC32 per article |
+| Piece hashes | yEnc CRC32 per article, and PAR2 repair of an article no server sends intact |
 | Never seeds | Download-only by nature |
 | Web seeds and archive.org mirrors | Dropped |
 | Stream, seek, subtitles, ffmpeg remux, TUI, web, agent skill | Kept |
@@ -69,6 +73,20 @@ Compressed, encrypted, expired, and incomplete releases are refused with a reaso
 - **Servers.** Requests go to the best priority tier with a usable server; a busy tier is
   waited for, so backup servers only see articles the tiers above lack (or requests while
   those refuse connections).
+- **Priority.** What a player waits on goes first: the pieces under an HTTP range read, and a new
+  release's first reads (the NZB's first articles and RAR headers, the start and end of the video)
+  are urgent requests, which skip the limit the pool holds a download's requests to. A seek during
+  a download at 12 MiB/s took 13 to 27 s before and 0.75 to 3.3 s now; resolving another NZB meanwhile,
+  9 s before and about 1 s now. `connections` counts the connections requests can be on, not the
+  requests waiting for one.
+- **Repair.** An article no server sends intact (expired, or posted damaged, as one of Charade
+  (1963)'s is everywhere) is rebuilt from the release's PAR2 files, as SABnzbd does. The repair
+  fetches the PAR2 index and only as many recovery blocks as the damage needs, maps the damage
+  from the video to the RAR volumes the set protects, feeds it every other slice as it lands, and
+  rebuilds once the rest of the release is in, so a read waiting on the damage waits for that;
+  status and the player say "repairing a damaged part, about 1m left", not buffering. A restart
+  goes on with it. Without PAR2 files, or with too few blocks, a waiting read fails at once, so a
+  title play moves to its next source, and a plain download stops with the reason.
 - **Reuse.** Each landed piece's CRC32 is journaled under the state directory. A release added
   again after a crash or `rm` reads those pieces back from disk and fetches only what no
   longer matches.
@@ -129,8 +147,8 @@ Left out of upstream 0.7.0, for having no Usenet counterpart:
 
 Not done:
 
-- Resolving a new NZB waits for a free connection behind running downloads, which on real servers is
-  about one article long.
+- A release whose PAR2 files are posted under obfuscated names is not repaired: they are found by
+  name.
 
 ## Phases
 
