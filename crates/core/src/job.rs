@@ -116,7 +116,8 @@ pub struct Repair {
     pub stage: RepairStage,
     /// A player waits on the damaged bytes now.
     pub blocking: bool,
-    /// Seconds until the rebuilt bytes are on disk, at the current rate. `None` while unknown.
+    /// Seconds until the rebuilt bytes are on disk, at the current rate: the rest of the release
+    /// arriving, which rebuilding reads. `None` while unknown, and while rebuilding.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eta: Option<u64>,
 }
@@ -138,11 +139,11 @@ impl Repair {
     pub fn text(&self) -> String {
         let what = if self.articles == 1 { "a damaged part" } else { "damaged parts" };
         match (self.stage, self.eta) {
-            (RepairStage::Preparing, _) => format!("repairing {what}, fetching its recovery files"),
-            (RepairStage::Waiting, Some(secs)) => {
+            (RepairStage::Preparing | RepairStage::Waiting, Some(secs)) => {
                 let left = crate::units::format_duration(std::time::Duration::from_secs(secs.max(1)));
                 format!("repairing {what}, about {left} left")
             }
+            (RepairStage::Preparing, None) => format!("repairing {what}, fetching its recovery files"),
             (RepairStage::Waiting, None) => format!("repairing {what} once the rest of the release arrives"),
             (RepairStage::Rebuilding, _) => format!("repairing {what}, almost done"),
         }
@@ -372,6 +373,7 @@ mod tests {
             "repairing a damaged part once the rest of the release arrives"
         );
         assert_eq!(repair(1, RepairStage::Preparing, None), "repairing a damaged part, fetching its recovery files");
+        assert_eq!(repair(1, RepairStage::Preparing, Some(150)), "repairing a damaged part, about 2m left");
         assert_eq!(repair(1, RepairStage::Rebuilding, Some(0)), "repairing a damaged part, almost done");
     }
 }

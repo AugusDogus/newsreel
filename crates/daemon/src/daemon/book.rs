@@ -238,8 +238,14 @@ impl JobEntry {
                     articles: r.articles,
                     stage: r.stage,
                     blocking: r.blocking,
-                    // Rebuilding waits for the rest of the release.
-                    eta: (r.stage == RepairStage::Waiting).then_some(eta).flatten(),
+                    // Rebuilding reads the rest of the release, so the repair is done when it is,
+                    // even while the recovery files are still being fetched: they are a few
+                    // articles beside it. With the rest in, nothing says how long those take.
+                    eta: match r.stage {
+                        RepairStage::Preparing => eta.filter(|&secs| secs > 0),
+                        RepairStage::Waiting => eta,
+                        RepairStage::Rebuilding => None,
+                    },
                 }),
             },
             selection: self.record.selection.clone(),
@@ -339,7 +345,7 @@ mod tests {
     }
 
     #[test]
-    fn a_repair_waiting_for_the_rest_of_the_release_has_the_downloads_eta() {
+    fn a_repair_has_the_downloads_eta_while_it_fetches_its_recovery_files_and_waits_for_the_rest() {
         use super::super::engine_port::RepairStats;
         let mut job = entry(1, 0, Intent::Running, Observed::InEngine(Phase::Downloading));
         let start = Instant::now();
@@ -350,6 +356,12 @@ mod tests {
         }
         let view = job.view().progress;
         assert_eq!((view.eta, view.repair.and_then(|r| r.eta)), (Some(60), Some(60)));
+        // Fetching the recovery files does not hold it up: the rest of the release takes longer.
+        job.sample(
+            Stats { down_rate: 10 << 20, repair: repair(RepairStage::Preparing), ..Stats::default() },
+            start + Duration::from_secs(10),
+        );
+        assert_eq!(job.view().progress.repair.and_then(|r| r.eta), Some(60));
         job.sample(
             Stats { repair: repair(RepairStage::Rebuilding), ..Stats::default() },
             start + Duration::from_secs(11),

@@ -40,11 +40,13 @@ export function repairing(repair: Repair): string {
   const what = repair.articles === 1 ? "a damaged part" : "damaged parts";
   switch (repair.stage) {
     case "preparing":
-      return `Repairing ${what} of this video. Fetching its recovery files.`;
     case "waiting":
-      return repair.eta == null
-        ? `Repairing ${what} of this video once the rest of it arrives.`
-        : `Repairing ${what} of this video · about ${span(Math.max(1, repair.eta))} left`;
+      if (repair.eta == null) {
+        return repair.stage === "preparing"
+          ? `Repairing ${what} of this video. Fetching its recovery files.`
+          : `Repairing ${what} of this video once the rest of it arrives.`;
+      }
+      return `Repairing ${what} of this video · about ${span(Math.max(1, repair.eta))} left`;
     case "rebuilding":
       return `Repairing ${what} of this video · almost done`;
   }

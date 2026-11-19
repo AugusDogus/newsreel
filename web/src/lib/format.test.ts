@@ -20,6 +20,7 @@ test("a repair says what the player waits for, and how long it has left", () => 
   const repair = { articles: 1, stage: "waiting" as const, blocking: true, eta: 95 };
   expect(repairing(repair)).toBe("Repairing a damaged part of this video · about 1m 35s left");
   expect(repairing({ ...repair, eta: null })).toBe("Repairing a damaged part of this video once the rest of it arrives.");
-  expect(repairing({ ...repair, articles: 2, stage: "preparing" })).toBe("Repairing damaged parts of this video. Fetching its recovery files.");
+  expect(repairing({ ...repair, articles: 2, stage: "preparing", eta: null })).toBe("Repairing damaged parts of this video. Fetching its recovery files.");
+  expect(repairing({ ...repair, stage: "preparing" })).toBe("Repairing a damaged part of this video · about 1m 35s left");
   expect(repairing({ ...repair, stage: "rebuilding" })).toBe("Repairing a damaged part of this video · almost done");
 });

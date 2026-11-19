@@ -72,7 +72,8 @@ articles: number, stage: RepairStage,
  */
 blocking: boolean,
 /**
- * Seconds until the rebuilt bytes are on disk, at the current rate. `None` while unknown.
+ * Seconds until the rebuilt bytes are on disk, at the current rate: the rest of the release
+ * arriving, which rebuilding reads. `None` while unknown, and while rebuilding.
  */
 eta?: number | null, };
 

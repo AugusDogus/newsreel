@@ -9,7 +9,8 @@
 //!
 //! A repair runs as one task per download, started when its first piece is set aside. It fetches
 //! the set's index and only as many recovery blocks as the damaged slices need, feeds every other
-//! slice as it lands, and rebuilds once the rest of the set is in. When it cannot work (no PAR2
+//! slice as it lands, and rebuilds once the rest of the set is in. Its fetches go at urgent
+//! priority while a reader waits on the damaged bytes, and beside the download otherwise. When it cannot work (no PAR2
 //! set covers the bytes, too few blocks, blocks that cannot solve these slices), the pieces stay
 //! set aside with the reason, and the download fails as it did before repair existed: at once for
 //! a reader waiting on them, which lets a title play move to its next source, and at the end for
@@ -27,7 +28,7 @@ use usenet::nntp::Priority;
 use usenet::nzb::NzbFile;
 use usenet::par2::{Feed, Par2Files, RecoverySet, Repair, RepairError, Scanner};
 use usenet::yenc::Part;
-use usenet::{Nzb, Pool, article};
+use usenet::{Nzb, article};
 
 use super::{Job, PieceRef, RETRY_AFTER, Run, State, finish, read_at, short};
 use crate::log::log;
@@ -134,13 +135,12 @@ pub(super) async fn run(job: Arc<Job>, epoch: u64) {
 
 async fn repair(job: &Arc<Job>, epoch: u64) -> Result<(), Stop> {
     let nzb = job.nzb.clone().ok_or_else(|| Stop::Cannot("the release posts no PAR2 files".into()))?;
-    let urgent = job.pool.with_priority(Priority::Urgent);
     let par2 = Par2Files::find(&nzb)
         .into_iter()
         .next()
         .ok_or_else(|| Stop::Cannot("the release posts no PAR2 files".into()))?;
     let started = std::time::Instant::now();
-    let index = fetch_whole(job, epoch, &urgent, &nzb.files[par2.index]).await?;
+    let index = fetch_whole(job, epoch, &nzb.files[par2.index]).await?;
     let set = RecoverySet::parse(&index.concat())
         .map_err(|e| Stop::Cannot(format!("its PAR2 index {} does not read: {e}", nzb.files[par2.index].filename)))?;
     let mut scanner = Scanner::new(&set);
@@ -148,7 +148,7 @@ async fn repair(job: &Arc<Job>, epoch: u64) -> Result<(), Stop> {
     let mut fetched = BTreeSet::from([par2.index]);
     let mut bad: BTreeSet<u32> = BTreeSet::new();
     loop {
-        let plan = Plan::new(job, epoch, &nzb, &set, &urgent).await?;
+        let plan = Plan::new(job, epoch, &nzb, &set).await?;
         let lost: BTreeSet<PieceRef> = match &guard(job, epoch)?.repair {
             Repairing::Active { pieces, .. } => pieces.clone(),
             _ => return Err(Stop::Cancelled),
@@ -163,7 +163,7 @@ async fn repair(job: &Arc<Job>, epoch: u64) -> Result<(), Stop> {
                     .find(|v| !fetched.contains(v))
                     .ok_or(RepairError::NotEnoughRecovery { damaged: damaged.len(), blocks: scanner.blocks().len() })?;
                 fetched.insert(next);
-                fetch_whole(job, epoch, &urgent, &nzb.files[next]).await?.iter().for_each(|data| scanner.push(data));
+                fetch_whole(job, epoch, &nzb.files[next]).await?.iter().for_each(|data| scanner.push(data));
             }
             let blocks = scanner.blocks().to_vec();
             match Repair::new(&set, &damaged.iter().copied().collect::<Vec<_>>(), blocks) {
@@ -176,10 +176,7 @@ async fn repair(job: &Arc<Job>, epoch: u64) -> Result<(), Stop> {
                         .find(|v| !fetched.contains(v));
                     let next = next.ok_or(RepairError::Dependent { damaged: damaged.len() })?;
                     fetched.insert(next);
-                    fetch_whole(job, epoch, &urgent, &nzb.files[next])
-                        .await?
-                        .iter()
-                        .for_each(|data| scanner.push(data));
+                    fetch_whole(job, epoch, &nzb.files[next]).await?.iter().for_each(|data| scanner.push(data));
                 }
                 Err(e) => return Err(e.into()),
             }
@@ -374,11 +371,13 @@ struct Plan {
 impl Plan {
     /// Maps the set's files to the posted files and the pieces of the download, and fetches the
     /// bytes of the set that no file on disk holds.
-    async fn new(job: &Arc<Job>, epoch: u64, nzb: &Nzb, set: &RecoverySet, urgent: &Pool) -> Result<Self, Stop> {
+    async fn new(job: &Arc<Job>, epoch: u64, nzb: &Nzb, set: &RecoverySet) -> Result<Self, Stop> {
         let wanted = guard(job, epoch)?.wanted.clone();
         // The set's file each posted file is, by name, or else by its size and first bytes, since
         // posters rename files.
         let mut posted_as: Vec<Option<usize>> = nzb.files.iter().map(|f| set.file_named(&f.filename)).collect();
+        // First articles fetched to match files, kept for the bytes they hold that are not on disk.
+        let mut first: HashMap<usize, Part> = HashMap::new();
         let named: BTreeSet<usize> = posted_as.iter().flatten().copied().collect();
         if named.len() < set.files().len() {
             let unnamed: Vec<usize> = (0..nzb.files.len())
@@ -386,9 +385,11 @@ impl Plan {
                 .filter(|&n| !nzb.files[n].segments.is_empty())
                 .collect();
             let ids = unnamed.iter().map(|&n| nzb.files[n].segments[0].message_ids.clone()).collect();
-            for (n, part) in unnamed.into_iter().zip(fetch_all(job, epoch, urgent, ids).await?) {
+            for (n, part) in unnamed.into_iter().zip(fetch_all(job, epoch, ids).await?) {
                 if let Some(part) = part {
                     posted_as[n] = set.file_starting(part.file_size, &part.data).filter(|k| !named.contains(k));
+                    // Its first article holds the volume's first header, which is read below.
+                    first.insert(n, part);
                 }
             }
         }
@@ -426,6 +427,7 @@ impl Plan {
         let mut held_bytes = 0;
         let mut missing: Vec<Vec<(u64, u64)>> = vec![Vec::new(); set.files().len()];
         let mut wanted_articles: Vec<(usize, Vec<String>)> = Vec::new();
+        let mut parts: Vec<(usize, Option<Part>)> = Vec::new();
         for (k, file) in set.files().iter().enumerate() {
             runs[k].sort_by_key(|r| r.at);
             let mut at = 0;
@@ -452,13 +454,17 @@ impl Plan {
                     newsreel_core::units::format_size(HELD_MOST)
                 )));
             }
-            let segments = spanning(&nzb.files[n], &begins[n], file.size, &missing[k]);
-            wanted_articles.extend(segments.into_iter().map(|i| (k, nzb.files[n].segments[i].message_ids.clone())));
+            for i in spanning(&nzb.files[n], &begins[n], file.size, &missing[k]) {
+                match if i == 0 { first.remove(&n) } else { None } {
+                    Some(part) => parts.push((k, Some(part))),
+                    None => wanted_articles.push((k, nzb.files[n].segments[i].message_ids.clone())),
+                }
+            }
         }
         let (from, ids): (Vec<usize>, Vec<Vec<String>>) = wanted_articles.into_iter().unzip();
-        let parts = fetch_all(job, epoch, urgent, ids).await?;
+        parts.extend(from.into_iter().zip(fetch_all(job, epoch, ids).await?));
         let mut held: Vec<Vec<Span>> = vec![Vec::new(); set.files().len()];
-        for (k, part) in from.into_iter().zip(parts) {
+        for (k, part) in parts {
             let Some(part) = part else { continue };
             for &(s, e) in &missing[k] {
                 let (x, y) = (s.max(part.begin), e.min(part.end()));
@@ -629,9 +635,13 @@ fn spanning(file: &NzbFile, begins: &HashMap<usize, u64>, size: u64, missing: &[
 }
 
 /// One article, or None when no server sends it intact. Waits out servers that cannot be reached.
-async fn fetch(job: &Job, epoch: u64, pool: &Pool, ids: &[String]) -> Result<Option<Part>, Stop> {
+/// It goes at urgent priority while a reader waits on the repair, past the download's requests,
+/// and beside them otherwise, so a repair nobody waits on yet does not slow a seek.
+async fn fetch(job: &Job, epoch: u64, ids: &[String]) -> Result<Option<Part>, Stop> {
     loop {
-        match article::fetch(pool, ids).await {
+        let blocking = guard(job, epoch)?.repair_stats().is_some_and(|r| r.blocking);
+        let pool = if blocking { job.pool.with_priority(Priority::Urgent) } else { job.pool.clone() };
+        match article::fetch(&pool, ids).await {
             Ok(part) => return Ok(Some(part)),
             Err(ArticleError::Yenc { .. } | ArticleError::Nntp(usenet::nntp::NntpError::Missing { .. })) => {
                 return Ok(None);
@@ -645,14 +655,14 @@ async fn fetch(job: &Job, epoch: u64, pool: &Pool, ids: &[String]) -> Result<Opt
 }
 
 /// A posted file's articles' bytes in order, leaving out those no server sends intact.
-async fn fetch_whole(job: &Job, epoch: u64, pool: &Pool, file: &NzbFile) -> Result<Vec<Vec<u8>>, Stop> {
+async fn fetch_whole(job: &Job, epoch: u64, file: &NzbFile) -> Result<Vec<Vec<u8>>, Stop> {
     let ids: Vec<Vec<String>> = file.segments.iter().map(|s| s.message_ids.clone()).collect();
-    let parts = fetch_all(job, epoch, pool, ids).await?;
+    let parts = fetch_all(job, epoch, ids).await?;
     Ok(parts.into_iter().flatten().map(|p| p.data).collect())
 }
 
 /// Articles, in order, as [`fetch`] gives them, a few at once.
-async fn fetch_all(job: &Job, epoch: u64, pool: &Pool, ids: Vec<Vec<String>>) -> Result<Vec<Option<Part>>, Stop> {
-    let fetches = ids.into_iter().map(|ids| async move { fetch(job, epoch, pool, &ids).await });
+async fn fetch_all(job: &Job, epoch: u64, ids: Vec<Vec<String>>) -> Result<Vec<Option<Part>>, Stop> {
+    let fetches = ids.into_iter().map(|ids| async move { fetch(job, epoch, &ids).await });
     futures_util::stream::iter(fetches).buffered(FETCH_AT_ONCE).collect::<Vec<_>>().await.into_iter().collect()
 }

@@ -3478,7 +3478,7 @@ dependencies = [
 [[package]]
 name = "usenet"
 version = "0.3.0"
-source = "git+https://github.com/AugusDogus/usenet-rs?rev=f7badd953d3d372c6d85719424f6ff3a1cf1d465#f7badd953d3d372c6d85719424f6ff3a1cf1d465"
+source = "git+https://github.com/AugusDogus/usenet-rs?rev=dbdd2618ce184e5838fabd534606006b655a4ee7#dbdd2618ce184e5838fabd534606006b655a4ee7"
 dependencies = [
  "crc32fast",
  "futures-util",
