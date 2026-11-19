@@ -992,3 +992,146 @@ before.
   7f's name went the moment the logo was measured, while the logo took 300 ms to fade in. The name
   now fades out over the logo on the same 300 ms. Layout only, no test. Upstream showed no name at
   all until the logo (section 7f), so this gap is newsreel's.
+
+
+# Third retest
+
+Fixes for what a Safari and iPhone check of the second retest found. One commit each. The scripts,
+traces and run logs are in `~/.cache/nr-retest3/` (`scripts/`, `runs/<run>/engine.out`). The
+`usenet` crate's part is `ac04b12` on `par2-priority`, which newsreel now pins.
+
+Findings 2 and 3 were measured on this host through a relay shaped like the Mac's link
+(`scripts/shaper.py`): 25 MiB/s in all, 0.5 MiB/s on each connection, 40 ms each way, with the four
+real servers (105 connections in the first tier) and TLS end to end, in a network namespace of the
+test engine's own. Each run is a fresh home playing the real NZB. The engine logged a line for every
+NNTP request (its priority, how long it waited for a connection, how long the reply took, and how
+many requests were ahead of it on that connection) and every HTTP read; that tracing was not
+committed.
+
+## 25. The start screen hides a repair
+
+**Bug.** A resume just before Charade's damaged article said "Getting ready to play · Buffering the
+first seconds." for about 80 s while status said `repair: blocking, eta 19 → 14 → 8 → 1`.
+
+**Cause.** Only the player's buffering overlay read `progress.repair` (section 11). The start
+screens' steps (`READING` in `Chrome.tsx`, the release player's `Starting` and the title player's
+`TitleStarting`) always said their own words.
+
+**Fix.** `waitingOn` puts the repair's words in place of the running step's detail while a read
+waits on a repair (`blockingRepair`: the download is running and `repair.blocking`): "Repairing a
+damaged part of this video · about 19s left". Both start screens follow the download that plays,
+also once a source plays and buffers its first seconds (`BufferingStart`, `TitleBuffering`), and
+the overlay uses the same test.
+
+**Test.** `Chrome.test.ts`: the running step says the repair and its time left; a repair no read
+waits on, a paused download, or no download leave the steps as they are. Not shown on a device: the
+phone emulator's serial was held by another agent's session, which was left alone.
+
+**Upstream.** No PAR2 upstream: newsreel's own.
+
+## 26. Fetching the recovery blocks is still slow on a Mac-like link
+
+**Bug.** The Mac logged the recovery blocks fetched in 21.6 to 69.4 s, 33.3 and 36.0 s of them while
+a reader waited; 2.2 s on this host uncapped.
+
+**Reproduced.** Through the shaped relay, a reader asking for the damaged bytes at once: 33.6 s, then
+12.0 s on a second run (`runs/before-repair-1`, `before-repair-0b`).
+
+**Cause.** The traces rule out TLS (connections were open long before; opening one took about 1 s,
+at the start only) and the tiers (every repair request went to the first tier). Two things:
+- **The first fetch went at background priority.** A repair starts the moment its piece is set
+  aside, and its first fetch, the PAR2 index, picks its priority then. The reader's own urgent
+  fetch had found the damage, but the reader marks itself as waiting on the repair only on its next
+  poll, so the index joined the download's queue: 13.1 s and 5.3 s for one article, while the
+  download's own requests waited 7 to 13 s for the background limit (128 in flight).
+- **Urgent requests stacked on a few connections.** An urgent request never queues behind a
+  background one (section 11), so with the background limit (128) past the connections (105),
+  nearly every connection carried background requests and the repair's rounds of 7 and 25 urgent
+  articles went up to 4 deep on the few that did not. A connection sends its replies in turn, at
+  0.5 MiB/s here, so those rounds took 18.5 s; single urgent articles took 1.7 s, the 4th in line
+  up to 8.9 s.
+- The rest is the repair's rounds, each waiting on the one before: the index (1 article), the
+  volumes' first articles (7), their headers (25), the recovery volume (2), all about 768 KB. On
+  this link no article comes in under about 1.7 s.
+
+**Fix.**
+- Crate (`ac04b12`): an urgent request does not queue behind another urgent one while a connection
+  carrying background requests drains. Background requests wait while an urgent one does, so those
+  connections free up in a fraction of an article each, and a burst spreads over them. Test:
+  `urgent_requests_spread_over_connections_that_free_up_rather_than_stack_on_one` (6 urgent
+  requests, one free connection out of 6, 0.25 s an article): 1.20 s before, 0.58 s now.
+- newsreel: a piece set aside by a reader's own fetch, or while one is under way, marks the reader as
+  waiting then (`settle`), so the repair's first fetch is urgent. Test:
+  `a_piece_set_aside_that_a_reader_rushed_is_one_the_reader_waits_on`, which failed before.
+- A repair fetches 32 articles at once, not 16, so a film's 25 header articles go in one round.
+
+**Live check** (seconds to "recovery blocks fetched", same relay and NZB):
+
+| | before | after |
+|---|---|---|
+| Reader asks for the damaged bytes at once | 33.6, 12.0 | 5.3, 5.5 |
+| Of which: the PAR2 index | 13.1, 5.3 | 0.3, 0.3 |
+| Reader asks 30 s into the download (limit 72 of 105, idle connections left) | 10.2 | 8.2 |
+| No shaping | 3.8 | 0.8 |
+
+With the pool fix and the urgent start alone, 16 at once, the first case took 7.0 s. Every read
+returned all 868,001 bytes. The Mac was not tested again.
+
+**Upstream.** libtorrent has no PAR2 and the pool is newsreel's: newsreel's own.
+
+## 27. Resuming from a saved place starts slowly
+
+**Bug.** From 0:00 the player started in 15 to 20 s, from 1:19 and about 1:13 in 52 to 59 s.
+
+**What a resume reads.** The same as from 0:00 up to the stream: the play, then `/api/media`, whose
+ffprobe reads the `moov`, which Charade keeps at the front (2.7 MB, 4 articles). Then ffmpeg seeks
+(`-ss`), and the pieces it reads there are fetched urgently, one article each round. Neither of
+those differs much. The traces show what does: from 0:00 ffmpeg made 6 HTTP reads before its third
+fragment; from 1:19:00, 549, one every 20 ms.
+
+**Cause.** Two things together.
+- Charade's audio is stored ahead of its video, further the later the film: 16 MB apart at 20 min,
+  53 MB at 1:19 (ffprobe of the packets' positions). ffmpeg reads in time order, so after a seek it
+  hops between the two places, a few hundred bytes of audio, then a frame of video, and each hop is
+  a new HTTP read. From 0:00 the two are close and one read serves both.
+- Each read of a download still running asks the engine thread twice (`want_range`), and the thread
+  slept up to 10 ms waiting for the Usenet engine's events between requests: the Usenet engine
+  could not wake it, so it was polled. On a finished download the reads skip the engine: the same
+  stream from 1:19:00 made its hops and had its third fragment in 0.45 s.
+
+**Fix.** The Usenet engine implements `notify`: a download's tasks wake the engine thread when they
+send an event, so the thread sleeps until a request or an event comes and a request waits for
+nothing. Test: `the_engine_thread_answers_requests_at_once_and_not_after_waiting_for_events`, 50
+asks in turn: 9.9 ms an ask before, under 3 ms now.
+
+**Live check** (seconds from the play's start, same relay and NZB, two runs each):
+
+| | from 0:00 | from 1:19:00 |
+|---|---|---|
+| Play answered (the NZB resolved) | 20.5 to 20.8 | 20.5 to 20.8 |
+| Media read | 24.0 to 24.3 | 24.0 to 24.3 |
+| First fragment, before | 24.3, 24.3 | 33.4, 33.6 |
+| First fragment, after | 24.2, 24.1 | 28.3, 28.6 |
+| Third fragment, before | 24.4, 24.3 | 38.9, 39.1 |
+| Third fragment, after | 25.8, 24.1 | 30.1, 32.0 |
+
+The hops now run at about 300 a second. What is left from a saved place is two article rounds in
+turn: ffmpeg finds where the video is only once the audio's bytes have come (1.7 and 1.9 s on this
+link). Fetching both at once would need the engine to read the file's sample tables. The Mac's
+longer gap (about 37 s against about 10 s here) was not measured again.
+
+**Upstream.** v0.7.0's libtorrent engine implements `notify`, so the wait is newsreel's own.
+
+## 28. A picked source said "Found 9 sources" and "Playing the best source"
+
+**Fix.** A play of a source picked from the title's list says "Finding the source you picked",
+"Found the source you picked", then "Trying" and "Playing the source you picked", and counts no
+others. The engine still looks the release up among the title's search results, which the step's
+detail says ("Looking it up among this title's releases.").
+
+**Test.** `TitleScreens.test.ts`: a picked source's steps, and a play the engine chooses for as
+before. The CLI's `newsreel play <title> --source` still prints "Found 9 sources" and "Trying the
+best source"; not changed.
+
+**Upstream.** v0.7.0 says "Found 9 sources" and "Playing source 1 of 1" for a picked source.
+Upstream has it.
