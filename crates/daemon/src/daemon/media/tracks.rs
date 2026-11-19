@@ -45,6 +45,13 @@ pub struct Video {
     pub bit_depth: u8,
     pub hdr: bool,
     pub fps: Option<f64>,
+    /// Bytes before each H.264 or HEVC NAL unit that give its length, as the file's codec
+    /// configuration says. ISO/IEC 14496-15 allows 1, 2 or 4; some files have 3, which ffmpeg
+    /// reads and browsers' decoders refuse (Safari's VideoToolbox, Chrome's MediaCodec and Media
+    /// Source paths), so they play the sound and no picture.
+    #[serde(skip)]
+    #[cfg_attr(test, ts(skip))]
+    pub nal_length_size: Option<u8>,
 }
 
 #[derive(Clone, PartialEq, Eq, Debug, Serialize)]
@@ -113,6 +120,8 @@ struct Stream {
     level: Option<i32>,
     color_transfer: Option<String>,
     avg_frame_rate: Option<String>,
+    /// A number, as a string.
+    nal_length_size: Option<String>,
     channels: u32,
     disposition: Disposition,
     tags: Tags,
@@ -135,6 +144,14 @@ struct Tags {
     title: Option<String>,
 }
 
+impl Video {
+    /// The NAL units' lengths take a number of bytes no browser's decoder takes; see
+    /// [`Video::nal_length_size`].
+    pub fn odd_nal_lengths(&self) -> bool {
+        self.nal_length_size.is_some_and(|size| !matches!(size, 1 | 2 | 4))
+    }
+}
+
 impl Media {
     /// Reads the JSON `ffprobe -show_format -show_streams` printed about the file named `name`.
     pub fn from_ffprobe(json: &[u8], name: &str) -> Result<Media, Error> {
@@ -154,6 +171,7 @@ impl Media {
                 bit_depth,
                 hdr: s.color_transfer.as_deref().is_some_and(|transfer| HDR_TRANSFERS.contains(&transfer)),
                 fps: s.avg_frame_rate.as_deref().and_then(rate),
+                nal_length_size: s.nal_length_size.as_deref().and_then(|size| size.parse().ok()),
             }
         });
         let audio: Vec<Audio> = of("audio")
@@ -237,7 +255,7 @@ fn container(format: &str, name: &str, video: Option<&Video>, audio: &[Audio]) -
 }
 
 fn direct(container: &str, video: Option<&Video>, audio: Option<&Audio>) -> Option<String> {
-    let video = video?;
+    let video = video.filter(|v| !v.odd_nal_lengths())?;
     let (kind, picture, sound) = match container {
         "mp4" => {
             let sound = audio.map(|a| match a.codec.as_str() {
@@ -499,6 +517,9 @@ mod tests {
             direct("a.mkv", webm("vp8", "vorbis")),
             direct("a.mkv", webm("vp9", "aac")),
             direct("a.mkv", webm("h264", "aac")),
+            // Charade (1963): NAL units with 3-byte lengths, which no browser's decoder takes.
+            direct("a.mp4", mp4(&format!(r#"{h264},"is_avc":"true","nal_length_size":"3""#), r#""codec_name":"aac""#)),
+            direct("a.mp4", mp4(&format!(r#"{h264},"is_avc":"true","nal_length_size":"4""#), r#""codec_name":"aac""#)),
         ];
         let expected = [
             Some(r#"video/mp4; codecs="avc1.640028, mp4a.40.2""#),
@@ -509,6 +530,8 @@ mod tests {
             Some(r#"video/webm; codecs="vp8, vorbis""#),
             None,
             None,
+            None,
+            Some(r#"video/mp4; codecs="avc1.640028, mp4a.40.2""#),
         ];
         assert_eq!(read, expected.map(|direct| direct.map(String::from)));
     }

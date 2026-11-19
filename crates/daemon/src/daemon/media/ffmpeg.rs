@@ -95,8 +95,16 @@ pub fn stream(
     if let Some(video) = &media.video {
         add(&["-map", &format!("0:{}", video.stream)]);
         match picture {
-            Picture::Copy if video.codec == "hevc" => add(&["-c:v", "copy", "-tag:v", "hvc1"]),
-            Picture::Copy => add(&["-c:v", "copy"]),
+            Picture::Copy => {
+                add(&["-c:v", "copy"]);
+                // The MP4 muxer writes 4-byte lengths for a stream it gets in Annex B.
+                if video.odd_nal_lengths() && matches!(video.codec.as_str(), "h264" | "hevc") {
+                    add(&["-bsf:v", &format!("{}_mp4toannexb", video.codec)]);
+                }
+                if video.codec == "hevc" {
+                    add(&["-tag:v", "hvc1"]);
+                }
+            }
             Picture::H264 => {
                 let (width, height) = HIGHEST;
                 let fit = format!(
@@ -212,6 +220,7 @@ mod tests {
             bit_depth: 10,
             hdr: false,
             fps: Some(23.976),
+            nal_length_size: None,
         };
         Media {
             duration: Some(60.0),
@@ -240,6 +249,15 @@ mod tests {
         assert_eq!(
             line(stream(URL, &media("h264", &[("ac3", false)]), 0.0, Some(1), Picture::Copy, Encoder::X264, false)),
             format!("-v error -nostdin -copyts -i {URL} -map 0:0 -c:v copy -map 0:1 -c:a aac -ac 2 -b:a 192k {tail}")
+        );
+        // Through Annex B, the MP4 muxer writes the 4-byte lengths browsers' decoders take.
+        let mut odd = media("h264", &[("aac", true)]);
+        odd.video.as_mut().unwrap().nal_length_size = Some(3);
+        assert_eq!(
+            line(stream(URL, &odd, 0.0, None, Picture::Copy, Encoder::X264, false)),
+            format!(
+                "-v error -nostdin -copyts -i {URL} -map 0:0 -c:v copy -bsf:v h264_mp4toannexb -map 0:1 -c:a copy {tail}"
+            )
         );
         let fit = "-vf scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:\
                    force_divisible_by=2,format=yuv420p -g 48";
