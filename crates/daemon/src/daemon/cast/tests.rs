@@ -14,12 +14,17 @@ fn heard(udn: &str, address: &str) -> Known {
         connection: None,
     };
     let renderer = Arc::new(Renderer::new(description, address.into(), Vec::new()));
-    Known { renderer, location: at("/").to_string(), missed: 0 }
+    Known { device: Device::Dlna(renderer), location: at("/").to_string(), missed: 0 }
 }
 
 #[test]
 fn a_device_that_copies_a_tvs_udn_from_another_address_is_listed_as_another_tv() {
-    let casts = Casts::new(Weak::new(), Find::At(SocketAddr::from(([127, 0, 0, 1], 9))));
+    let casts = Casts::new(
+        Weak::new(),
+        Find::At(SocketAddr::from(([127, 0, 0, 1], 9))),
+        google::Find::At(Vec::new()),
+        tempfile::tempdir().unwrap().path().join("segments"),
+    );
     let listed = |casts: &Casts| -> Vec<String> {
         casts.list().tvs.iter().map(|tv| format!("{} {} {}", tv.id, tv.name, tv.address)).collect()
     };
@@ -31,8 +36,8 @@ fn a_device_that_copies_a_tvs_udn_from_another_address_is_listed_as_another_tv()
         (error.code, error.message.as_str()),
         (ErrorCode::AmbiguousRef, "2 TVs answered: LG TV at 192.168.1.40, LG TV at 192.168.1.66")
     );
-    assert_eq!(casts.choose(Some("192.168.1.66")).unwrap().tv.address, "192.168.1.66");
-    assert_eq!(casts.choose(Some("uuid:lg@192.168.1.40")).unwrap().tv.address, "192.168.1.40");
+    assert_eq!(casts.choose(Some("192.168.1.66")).unwrap().tv().address, "192.168.1.66");
+    assert_eq!(casts.choose(Some("uuid:lg@192.168.1.40")).unwrap().tv().address, "192.168.1.40");
 
     casts.state().found(vec![heard("uuid:lg", "192.168.1.41")]);
     assert_eq!(listed(&casts).len(), 3, "a TV at a new address is a new entry, and the old ones stay a search");
@@ -82,6 +87,7 @@ fn a_download_made_by_playing_one_film_or_episode_names_it() {
 #[test]
 fn a_tv_that_does_not_take_the_container_is_refused_in_a_sentence() {
     let tv = Tv {
+        protocol: Protocol::Dlna,
         id: "uuid:6a3e".into(),
         name: "LG TV".into(),
         address: "192.168.1.40".into(),
@@ -96,7 +102,12 @@ fn a_tv_that_does_not_take_the_container_is_refused_in_a_sentence() {
 
 #[test]
 fn the_list_keeps_thirty_two_tvs_and_drops_those_the_last_search_missed_first() {
-    let casts = Casts::new(Weak::new(), Find::At(SocketAddr::from(([127, 0, 0, 1], 9))));
+    let casts = Casts::new(
+        Weak::new(),
+        Find::At(SocketAddr::from(([127, 0, 0, 1], 9))),
+        google::Find::At(Vec::new()),
+        tempfile::tempdir().unwrap().path().join("segments"),
+    );
     let search = |first: u8| (first..first + 32).map(|n| heard(&format!("uuid:{n}"), &format!("10.0.0.{n}"))).collect();
     casts.state().found(search(1));
     casts.state().found(search(101));

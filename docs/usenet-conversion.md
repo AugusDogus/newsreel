@@ -50,6 +50,7 @@ the segments under a byte range first, which is what streaming and seeking need.
 | Metadata probes of the next sources | NZBs of the next two sources fetched early |
 | Hold other downloads back while a film streams | Per-download rate limit in the NNTP engine |
 | Phones and TVs, Play on TV (DLNA), plays folder, Trash, ffmpeg fetch, login service | Kept |
+| No Google Cast | Added: Play on TV on Chromecasts and Google TVs |
 | Windows: logon task, Recycle Bin, `install.ps1`, self-update | Kept |
 | Ranking by the file a play opens (archive.org file lists) | Dropped; codecs come from the release name |
 | Updates from GitHub releases, install script | Kept; from AugusDogus/newsreel |
@@ -128,6 +129,18 @@ Compressed, encrypted, expired, and incomplete releases are refused with a reaso
   its first conversion commits as one. Upstream's version number is not taken.
 - **Name.** The app, its crates, paths, and environment variables are `newsreel`, not `torrential`,
   and its versions start again at 0.1.0.
+- **Google Cast.** newsreel's own addition: Play on TV also finds Chromecasts, Google TVs, and TVs
+  with Cast built in (mDNS `_googlecast._tcp`, through mdns-sd; speakers and speaker groups are left
+  out), and plays on them over CASTV2 (TLS on port 8009, newsreel's own client, written after
+  mitsuhiko/tvpipe's) in the Default Media Receiver, through the same casts, remote, CLI, watch
+  history, resume check, and grants as DLNA. An MP4 or WebM the device plays goes as it is. Anything
+  else, Matroska and MP4s with 3-byte NAL lengths among it, goes as an HLS film: a whole VOD
+  playlist cut on the video's keyframes from its Matroska Cues or MP4 sample tables, each segment
+  made when the device asks for it by one ffmpeg run that copies the video and makes the audio AAC
+  unless it is, so the device's own remote seeks anywhere. A run reads ahead 8 segments at most and
+  16 stay on disk. A device whose player refuses the film at its own size (a Google TV on a 720p
+  screen took 720p HLS and refused 768p) gets one encoded at 720p, as do its casts after. A file with
+  no index newsreel reads streams instead, and a seek loads the stream again from there.
 
 Left out of upstream 0.7.0, for having no Usenet counterpart:
 

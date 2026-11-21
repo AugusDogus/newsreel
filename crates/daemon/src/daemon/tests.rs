@@ -75,6 +75,8 @@ struct Outside {
     timing: Timing,
     /// Where searches for TVs go: nowhere that answers, unless a test runs a fake TV.
     tvs: super::cast::Find,
+    /// The Cast devices a search finds: none, unless a test runs a fake one.
+    cast_devices: super::cast::google::Find,
     /// What the plays folder holds, and how long a play no one streams keeps downloading.
     plays_max: u64,
     idle_after: Duration,
@@ -101,6 +103,7 @@ impl Default for Outside {
             catalog: Arc::new(catalog_port::Fake::default()),
             timing: TIMING,
             tvs: super::cast::Find::At(std::net::SocketAddr::from(([127, 0, 0, 1], 9))),
+            cast_devices: super::cast::google::Find::At(Vec::new()),
             plays_max: 20 * GIB,
             idle_after: IDLE_AFTER,
             gate: None,
@@ -229,6 +232,7 @@ impl Harness {
             subtitles: Arc::new(outside.subtitles.clone()),
             catalog: outside.catalog.clone(),
             tvs: outside.tvs,
+            cast_devices: outside.cast_devices.clone(),
             indexers: super::indexers::Indexers::new(Harness::paths(dir), Harness::env(dir)).unwrap(),
         };
         let db = super::db::connect(&dir.path().join("state.db")).unwrap();
@@ -1780,6 +1784,7 @@ async fn the_other_downloads_keep_trickling_between_ffprobes_read_of_a_film_and_
 
 mod cast;
 mod devices;
+mod google_cast;
 mod plays;
 mod titles;
 mod web;

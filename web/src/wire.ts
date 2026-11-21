@@ -298,16 +298,20 @@ seen_from: string | null, };
 
 export type Container = "mkv" | "mp4" | "webm" | "avi" | "ts" | "mov" | "mpeg" | "wmv";
 
+export type Protocol = "dlna" | "google_cast";
+
 export type Tv = {
 /**
- * The renderer's UDN and its address, such as `uuid:6a3e…@192.168.1.40`. A device that
- * copies a TV's UDN from another address is another TV, and so is the TV at a new address.
+ * The renderer's UDN and its address, such as `uuid:6a3e…@192.168.1.40`, or a Cast
+ * device's ID and address. A device that copies a TV's UDN from another address is another
+ * TV, and so is the TV at a new address.
  */
 id: string,
 /**
- * The name the TV gives itself, such as `[LG] webOS TV OLED55C1`.
+ * The name the TV gives itself, such as `[LG] webOS TV OLED55C1`, or the name its owner
+ * gave a Cast device, such as `Living Room TV`.
  */
-name: string,
+name: string, protocol: Protocol,
 /**
  * Its IP address on the home network.
  */

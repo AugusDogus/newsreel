@@ -28,6 +28,9 @@ pub enum Picture {
     Copy,
     /// Encoded again as H.264, for a codec the browser cannot decode.
     H264,
+    /// Encoded again as H.264 no larger than this width and height, for a TV whose player takes
+    /// nothing larger.
+    Fit(u32, u32),
 }
 
 /// The encoder to use for `Picture::H264`.
@@ -105,17 +108,25 @@ pub fn stream(
                     add(&["-tag:v", "hvc1"]);
                 }
             }
-            Picture::H264 => {
-                let (width, height) = HIGHEST;
+            Picture::H264 | Picture::Fit(..) => {
+                let (width, height) = match picture {
+                    Picture::Fit(width, height) => (width.min(HIGHEST.0), height.min(HIGHEST.1)),
+                    _ => HIGHEST,
+                };
                 let fit = format!(
                     "scale=w='min({width},iw)':h='min({height},ih)':force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p"
                 );
                 let between = (video.fps.unwrap_or(24.0) * KEYFRAME_EVERY).round().max(1.0);
                 add(&["-vf", &fit, "-g", &format!("{between}")]);
                 match encoder {
-                    Encoder::VideoToolbox => {
-                        add(&["-c:v", "h264_videotoolbox", "-profile:v", "high", "-b:v", bitrate(video.height)])
-                    }
+                    Encoder::VideoToolbox => add(&[
+                        "-c:v",
+                        "h264_videotoolbox",
+                        "-profile:v",
+                        "high",
+                        "-b:v",
+                        bitrate(video.height.min(height)),
+                    ]),
                     Encoder::X264 => {
                         add(&["-c:v", "libx264", "-preset", "veryfast", "-crf", "21", "-profile:v", "high"])
                     }
@@ -134,6 +145,25 @@ pub fn stream(
     add(&["-map_chapters", "-1", "-map_metadata", "-1", "-avoid_negative_ts", "disabled"]);
     add(&["-movflags", FRAGMENTED, "-f", "mp4", "pipe:1"]);
     args
+}
+
+/// Moves a conversion's timestamps up so none is below zero. An AAC encoder's first frame starts
+/// 1024 samples early, which from the start of a file is before zero, and a Cast device refuses
+/// a fragment that says so. It moves the run from the start by those 21 ms, and no other run.
+pub fn never_negative(args: &mut [String]) {
+    if let Some(at) = args.iter().position(|arg| arg == "-avoid_negative_ts")
+        && let Some(value) = args.get_mut(at + 1)
+    {
+        *value = "make_non_negative".into();
+    }
+}
+
+/// Makes the encoder start a keyframe at each of `times`, in seconds on the file's own timeline,
+/// so an HLS film encoded again can start a segment at each.
+pub fn force_keyframes(args: &mut Vec<String>, times: &[f64]) {
+    let at = args.iter().position(|arg| arg == "-movflags").unwrap_or(args.len());
+    let times: Vec<String> = times.iter().map(|t| seconds(*t)).collect();
+    args.splice(at..at, strings(&["-force_key_frames", &times.join(",")]));
 }
 
 /// WebVTT of the subtitle track `stream` of the file at `url` from `t` seconds on, on the file's
@@ -271,6 +301,31 @@ mod tests {
         assert!(
             line(stream(URL, &film, 1.0, None, Picture::H264, Encoder::X264, false))
                 .contains(&format!("{fit} -c:v libx264 -preset veryfast -crf 21 -profile:v high -map 0:2"))
+        );
+    }
+
+    #[test]
+    fn a_film_for_a_cast_device_keeps_its_timestamps_above_zero_and_its_keyframes_where_asked() {
+        let mut args = stream(URL, &media("mpeg4", &[("ac3", true)]), 0.0, None, Picture::H264, Encoder::X264, false);
+        never_negative(&mut args);
+        force_keyframes(&mut args, &[0.0, 6.0, 12.5]);
+        let line = args.join(" ");
+        assert!(
+            line.contains("-avoid_negative_ts make_non_negative -force_key_frames 0.000,6.000,12.500 -movflags"),
+            "{line}"
+        );
+        let fit = stream(
+            URL,
+            &media("h264", &[("aac", true)]),
+            0.0,
+            None,
+            Picture::Fit(1280, 720),
+            Encoder::VideoToolbox,
+            false,
+        );
+        assert!(
+            fit.join(" ").contains("scale=w='min(1280,iw)':h='min(720,ih)'") && fit.join(" ").contains("-b:v 4M"),
+            "{fit:?}"
         );
     }
 

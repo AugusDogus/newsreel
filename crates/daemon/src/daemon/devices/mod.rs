@@ -626,12 +626,29 @@ impl Devices {
         Ok(CastGrant { devices: Arc::downgrade(self), key, token: token.hex(), path })
     }
 
-    /// The file a live grant serves at exactly `path`.
+    /// A grant of a folder of names, each standing for file `index` of download `id` made into
+    /// something a TV plays, such as an HLS film's playlist and segments. Its path ends in `/`.
+    pub fn grant_folder(self: &Arc<Self>, id: DownloadId, index: u32) -> Result<CastGrant, Error> {
+        let token = Token::new()?;
+        let path = format!("{CAST}{}/", token.hex());
+        let key = token.key();
+        let mut state = self.state();
+        state.grants.insert(key, Grant { id, index, path: path.clone() });
+        self.publish(&state);
+        Ok(CastGrant { devices: Arc::downgrade(self), key, token: token.hex(), path })
+    }
+
+    /// The file a live grant serves at exactly `path`, or a name in a folder a grant serves.
     pub fn granted(&self, path: &str) -> Option<Granted> {
         let token = path.strip_prefix(CAST)?.split('/').next()?;
         let key = Token::parse(token)?.key();
         let state = self.state();
-        let grant = state.grants.get(&key).filter(|grant| grant.path == path)?;
+        let within = |grant: &&Grant| {
+            grant.path.ends_with('/')
+                && path.strip_prefix(grant.path.as_str()).is_some_and(|name| !name.is_empty() && !name.contains('/'))
+        };
+        let exact = |grant: &&Grant| grant.path == path && !grant.path.ends_with('/');
+        let grant = state.grants.get(&key).filter(|grant| exact(grant) || within(grant))?;
         Some(Granted { id: grant.id, index: grant.index, key })
     }
 

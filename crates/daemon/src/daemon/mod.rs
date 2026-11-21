@@ -86,6 +86,8 @@ pub struct Ports {
     pub catalog: Arc<dyn titles::catalog_port::CatalogPort>,
     /// Where searches for TVs go.
     pub tvs: cast::Find,
+    /// Where searches for Cast devices go.
+    pub cast_devices: cast::google::Find,
     /// config.yaml's indexers, which the engine checks and changes.
     pub indexers: indexers::Indexers,
 }
@@ -122,6 +124,8 @@ impl Ports {
             Some(address) => cast::Find::At(address),
             None => cast::Find::Multicast,
         };
+        // A test's engine finds no Cast device on the real network.
+        let cast_devices = if test.is_some() { cast::google::Find::At(Vec::new()) } else { cast::google::Find::Mdns };
         if let Some(test) = test.filter(TestHooks::fake_engine) {
             let network = fake::fixture::network(test.fake_rate());
             // Releases whose articles no server has, so a title play moves past them.
@@ -140,6 +144,7 @@ impl Ports {
                 subtitles,
                 catalog,
                 tvs,
+                cast_devices,
                 indexers,
             });
         }
@@ -162,6 +167,7 @@ impl Ports {
             subtitles,
             catalog,
             tvs,
+            cast_devices,
             indexers,
         })
     }
@@ -233,6 +239,8 @@ pub fn start(
     let (events_tx, events) = mpsc::unbounded_channel();
     let (engine, thread) = engine_port::spawn(ports.engine, events_tx);
     let playing = playing::Playing::new();
+    // The segments of HLS films for Cast devices, beside the plays they are made from.
+    let segments = config.plays.root.join(".cast");
     let owner =
         Owner::new(store, shelf.clone(), engine.clone(), ports.parse, Arc::from(ports.disk), playing.clone(), config)?;
     let (commands_tx, commands) = mpsc::unbounded_channel();
@@ -253,7 +261,7 @@ pub fn start(
         playing,
         news,
         devices,
-        casts: cast::Casts::new(ctx.clone(), ports.tvs),
+        casts: cast::Casts::new(ctx.clone(), ports.tvs, ports.cast_devices, segments),
         indexers: ports.indexers,
     });
     let http = runtime.spawn(http::accept(ctx.clone(), players, reach));

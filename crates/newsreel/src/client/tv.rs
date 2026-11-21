@@ -76,7 +76,7 @@ fn list_doc(list: &TvList) -> Doc {
     let mut summary = vec![count(list.tvs.len(), "TV")];
     if list.tvs.is_empty() {
         summary.push(
-            "no TV answered: check that it is on, on the same network as the computer running newsreel, and that its DLNA or media sharing setting is on"
+            "no TV answered: check that it is on and on the same network as the computer running newsreel; a TV without Google Cast also needs its DLNA or media sharing setting on"
                 .to_string(),
         );
     }
@@ -84,14 +84,20 @@ fn list_doc(list: &TvList) -> Doc {
     Doc { body: Body::Table { header: vec!["TV", "ADDRESS", "PLAYS", "NOW"], rows }, summary, next }
 }
 
-/// What a TV plays as they are, such as `MKV, MP4 (H.264)`.
+/// What a TV plays as they are, such as `MKV, MP4 (H.264)`. A Cast device gets the rest
+/// converted, such as `Google Cast: MP4, WEBM (H.264), the rest converted`.
 fn plays(tv: &Tv) -> String {
     let containers: Vec<String> = tv.plays.iter().map(|c| c.name().to_ascii_uppercase()).collect();
     let codec = match tv.decodes {
         newsreel_core::Playback::H264 => "H.264",
         newsreel_core::Playback::Hevc | newsreel_core::Playback::HevcHdr => "HEVC",
     };
-    format!("{} ({codec})", containers.join(", "))
+    match tv.protocol {
+        newsreel_core::Protocol::Dlna => format!("{} ({codec})", containers.join(", ")),
+        newsreel_core::Protocol::GoogleCast => {
+            format!("Google Cast: {} ({codec}), the rest converted", containers.join(", "))
+        }
+    }
 }
 
 /// A cast in a few words, such as `playing Sintel 4:05 / 14:48`.
@@ -162,6 +168,7 @@ mod tests {
 
     fn tv(name: &str, decodes: Playback) -> Tv {
         Tv {
+            protocol: newsreel_core::Protocol::Dlna,
             id: format!("uuid:{name}"),
             name: name.into(),
             address: "192.168.1.40".into(),
@@ -190,8 +197,13 @@ mod tests {
 
     #[test]
     fn the_list_shows_each_tv_what_it_plays_and_what_plays_on_it() {
+        let google = Tv {
+            protocol: newsreel_core::Protocol::GoogleCast,
+            plays: [Container::Mp4, Container::WebM].into_iter().collect(),
+            ..tv("Augie's Bedroom Google TV", Playback::H264)
+        };
         let list = TvList {
-            tvs: vec![tv("[LG] webOS TV OLED55C1", Playback::Hevc), tv("Bedroom TV", Playback::H264)],
+            tvs: vec![tv("[LG] webOS TV OLED55C1", Playback::Hevc), tv("Bedroom TV", Playback::H264), google],
             casts: vec![sintel(CastState::Playing)],
         };
         assert_eq!(
@@ -199,13 +211,14 @@ mod tests {
             "TV\tADDRESS\tPLAYS\tNOW\n\
              [LG] webOS TV OLED55C1\t192.168.1.40\tMKV, MP4 (HEVC)\tplaying Sintel (2010) 4:05 / 14:48\n\
              Bedroom TV\t192.168.1.40\tMKV, MP4 (H.264)\t\n\
-             # 2 TVs\n\
+             Augie's Bedroom Google TV\t192.168.1.40\tGoogle Cast: MP4, WEBM (H.264), the rest converted\t\n\
+             # 3 TVs\n\
              next: newsreel tv play <title or download ID>\n"
         );
         assert_eq!(
             list_doc(&TvList::default()).plain(),
             "TV\tADDRESS\tPLAYS\tNOW\n# 0 TVs\n\
-             # no TV answered: check that it is on, on the same network as the computer running newsreel, and that its DLNA or media sharing setting is on\n"
+             # no TV answered: check that it is on and on the same network as the computer running newsreel; a TV without Google Cast also needs its DLNA or media sharing setting on\n"
         );
     }
 

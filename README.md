@@ -118,7 +118,7 @@ On your computer, open **Devices** and choose **Add a device**, or run `newsreel
   <img src="docs/play-on-tv.webp" alt="Charade on a phone, with the Play on TV list showing an LG TV and a Samsung TV" width="300">
 </p>
 
-LG, Samsung, Sony, and most other smart TVs play over DLNA. On a title page, on your computer or a phone you added, choose **Play on TV** and pick the TV. The phone then works as the remote. newsreel sends the TV only copies in a format it plays.
+LG, Samsung, Sony, and most other smart TVs play over DLNA, and Chromecasts, Google TVs, and TVs with Cast built in over Google Cast. On a title page, on your computer or a phone you added, choose **Play on TV** and pick the TV. The phone then works as the remote, and so does the TV's own. newsreel sends a DLNA TV only copies in a format it plays. A Google Cast TV gets the rest converted as it plays, with ffmpeg, the way the web player does, and seeks anywhere in it.
 
 ```sh
 newsreel tv                    # list the TVs on the home network

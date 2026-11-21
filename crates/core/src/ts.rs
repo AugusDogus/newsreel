@@ -104,6 +104,7 @@ pub fn declarations(cfg: &Config) -> Vec<String> {
         Decoders::decl(cfg),
         Device::decl(cfg),
         words("Container", Container::ALL.map(Container::name)),
+        Protocol::decl(cfg),
         Tv::decl(cfg),
         CastState::decl(cfg),
         Cast::decl(cfg),

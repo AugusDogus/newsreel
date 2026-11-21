@@ -1,6 +1,6 @@
 //! Playing on a TV: the TVs on the home network that play what they are sent, and the casts
 //! playing on them. A TV here is any UPnP media renderer, as LG, Samsung, Sony, and most other
-//! smart TVs are.
+//! smart TVs are, or a Google Cast device: a Chromecast, a Google TV, or a TV with Cast built in.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -59,9 +59,10 @@ impl Plays {
     /// What a browser plays: its own files, and the rest once ffmpeg converts them.
     pub const BROWSER: Plays = Plays { opens: Opens::Browser, remux: true, decodes: None };
 
-    /// What `tv` plays: the containers it lists, as they are, in the codecs it decodes.
+    /// What `tv` plays: the containers it lists, as they are, in the codecs it decodes. A Cast
+    /// device gets the rest converted, as a browser does.
     pub fn tv(tv: &Tv) -> Plays {
-        Plays { opens: Opens::Only(tv.plays), remux: false, decodes: Some(tv.decodes) }
+        Plays { opens: Opens::Only(tv.plays), remux: tv.protocol == Protocol::GoogleCast, decodes: Some(tv.decodes) }
     }
 
     /// Whether a file named `path` plays, with `ffmpeg` here to convert it or not.
@@ -114,15 +115,29 @@ impl<'de> Deserialize<'de> for Containers {
     }
 }
 
+/// How newsreel plays on a TV.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+pub enum Protocol {
+    /// UPnP AV, which most smart TVs speak. They play the files they list, as they are.
+    Dlna,
+    /// Google Cast. It plays MP4 and WebM as they are, and the rest once ffmpeg converts it.
+    GoogleCast,
+}
+
 /// A TV, or another media renderer, that answered a search of the home network.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 pub struct Tv {
-    /// The renderer's UDN and its address, such as `uuid:6a3e…@192.168.1.40`. A device that
-    /// copies a TV's UDN from another address is another TV, and so is the TV at a new address.
+    /// The renderer's UDN and its address, such as `uuid:6a3e…@192.168.1.40`, or a Cast
+    /// device's ID and address. A device that copies a TV's UDN from another address is another
+    /// TV, and so is the TV at a new address.
     pub id: String,
-    /// The name the TV gives itself, such as `[LG] webOS TV OLED55C1`.
+    /// The name the TV gives itself, such as `[LG] webOS TV OLED55C1`, or the name its owner
+    /// gave a Cast device, such as `Living Room TV`.
     pub name: String,
+    pub protocol: Protocol,
     /// Its IP address on the home network.
     pub address: String,
     /// The containers a cast sends it as they are.

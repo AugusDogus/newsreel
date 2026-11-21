@@ -236,6 +236,24 @@ async fn a_grant_serves_its_one_path_until_it_is_dropped() {
 }
 
 #[test]
+fn a_folder_grant_serves_each_name_in_its_folder_and_nothing_under_or_beside_it() {
+    let home = Home::new();
+    let film = DownloadId::from_bytes([7; 20]);
+    let grant = home.devices.grant_folder(film, 2).unwrap();
+    let folder = grant.path().to_string();
+    assert_eq!(folder, format!("/cast/{}/", grant.token()));
+    for name in ["film.m3u8", "init.mp4", "120.m4s"] {
+        let granted = home.devices.granted(&format!("{folder}{name}")).unwrap();
+        assert_eq!((granted.id, granted.index), (film, 2), "{name}");
+    }
+    for other in [folder.clone(), format!("{folder}a/b.m4s"), folder.trim_end_matches('/').to_string()] {
+        assert_eq!(home.devices.granted(&other), None, "{other}");
+    }
+    drop(grant);
+    assert_eq!(home.devices.granted(&format!("{folder}film.m3u8")), None);
+}
+
+#[test]
 fn a_device_is_named_by_what_its_browser_runs_on() {
     let cases = [
         (IPHONE, "iPhone"),

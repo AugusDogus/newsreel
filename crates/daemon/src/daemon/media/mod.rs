@@ -3,6 +3,7 @@
 //! through `ctx.media`.
 
 pub mod ffmpeg;
+pub mod hls;
 pub mod thumbnail;
 pub mod tracks;
 

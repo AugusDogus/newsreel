@@ -46,7 +46,7 @@ Manage downloads with `status`, `pause`, `resume`, `verify` (then `wait`), and `
 
 `newsreel play <title id, release id, or search words>` opens the user's player on the video while it downloads, and for a title ID first finds a release that starts, as `get` does. Run it only when the user asks to watch something. With `--json` it opens nothing and returns `streams[0].url`, a local URL any player can open while the download continues. A title it plays downloads into newsreel's plays folder, which drops the plays watched longest ago once they pass 20 GiB. To keep a file, use `get`.
 
-`newsreel tv` lists the TVs on the home network (any smart TV with DLNA). When the user asks to watch on the TV, run `newsreel tv play <title id or release id>`, with `--tv <part of its name>` if more than one answers. It returns once the TV plays, and the cast goes on without you. `newsreel tv pause`, `resume`, `seek 1:02:30`, `volume 20`, and `stop` work the remote.
+`newsreel tv` lists the TVs on the home network (any smart TV with DLNA, and Chromecasts and Google TVs). When the user asks to watch on the TV, run `newsreel tv play <title id or release id>`, with `--tv <part of its name>` if more than one answers. It returns once the TV plays, and the cast goes on without you. `newsreel tv pause`, `resume`, `seek 1:02:30`, `volume 20`, and `stop` work the remote.
 
 ## Another machine's engine
 

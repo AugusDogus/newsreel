@@ -23,7 +23,7 @@ pub mod units;
 pub mod watching;
 pub mod words;
 
-pub use cast::{Cast, CastAction, CastRequest, CastState, Containers, Opens, Plays, Tv, TvList};
+pub use cast::{Cast, CastAction, CastRequest, CastState, Containers, Opens, Plays, Protocol, Tv, TvList};
 pub use catalog::{Art, ArtKind, EpisodeInfo, Kind, Season, TitleCard, TitleDetails, TitleId, VideoRef};
 pub use device::{Device, DeviceList, PairingOffer};
 pub use error::{Error, ErrorCode, Skip, SourceOutcome, SourceReport, Tried};

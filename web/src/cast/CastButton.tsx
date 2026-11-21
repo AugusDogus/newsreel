@@ -48,8 +48,10 @@ const PLACES: Record<Look, string> = {
   player: "right-(--edge-right) bottom-full mb-2 sm:right-0",
 };
 
+/** How newsreel plays on the TV: Google Cast converts what the TV cannot play, and a DLNA TV plays only the files it lists. */
 function plays(tv: Tv): string {
-  return tv.plays.map((container) => container.toUpperCase()).join(", ");
+  if (tv.protocol === "google_cast") return "Google Cast";
+  return `Plays ${tv.plays.map((container) => container.toUpperCase()).join(", ")}`;
 }
 
 /** "Play on TV": opens a list of the TVs on the home network, and plays on the one chosen. */
@@ -220,7 +222,7 @@ function Picker({
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="truncate text-sm text-ink">{tv.name}</span>
             <span className="truncate text-xs text-pencil">
-              {tv.address} · Plays {plays(tv)}
+              {tv.address} · {plays(tv)}
             </span>
           </span>
           {sending === tv.id && <Spinner className="size-4 text-soft" />}
@@ -229,7 +231,7 @@ function Picker({
       {tvs.length === 0 && looking && <p className="px-2.5 py-2 text-sm text-soft">Looking for TVs on this network…</p>}
       {tvs.length === 0 && search.kind === "done" && (
         <p className="px-2.5 py-2 text-sm text-pretty text-soft">
-          No TV answered. Check that the TV is on, on the same network as the computer running newsreel, and that its DLNA or media sharing setting is on.
+          No TV answered. Check that the TV is on and on the same network as the computer running newsreel. A TV without Google Cast also needs its DLNA or media sharing setting on.
         </p>
       )}
       {search.kind === "failed" && <p className="px-2.5 py-2 text-sm text-pretty text-error">{sentence(search.error.message)}</p>}

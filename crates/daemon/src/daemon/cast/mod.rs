@@ -1,15 +1,18 @@
-//! Play on TV. The engine finds the TVs on the home network with SSDP, and plays a film, an
-//! episode, or a release's video on one over UPnP AV: it mints a cast grant for the file, tells
-//! the TV its URL, and asks the TV where it is every second while it plays, which goes to the
-//! watch history. The grant is dropped once the cast ends, and the TV can fetch nothing more.
+//! Play on TV. The engine finds the TVs on the home network with SSDP and mDNS, and plays a film,
+//! an episode, or a release's video on one over UPnP AV or Google Cast: it mints a cast grant for
+//! the file, tells the TV its URL, and asks the TV where it is every second while it plays, which
+//! goes to the watch history. The grant is dropped once the cast ends, and the TV can fetch
+//! nothing more.
 
 pub mod didl;
+pub mod google;
 mod ssdp;
 mod upnp;
 mod xml;
 
 use std::collections::{BTreeMap, HashMap};
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
@@ -19,13 +22,15 @@ use newsreel_core::time::now;
 use newsreel_core::title::Span;
 use newsreel_core::{
     AttemptEvent, Cast, CastAction, CastRequest, CastState, Container, DownloadId, Error, ErrorCode, Player, Plays,
-    Quality, Resolution, ResultId, Target, TitleLink, Tv, TvList, VideoRef, Viewer, Watched,
+    Protocol, Quality, Resolution, ResultId, Target, TitleLink, Tv, TvList, VideoRef, Viewer, Watched,
 };
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
 
 use super::ctx::Ctx;
 use super::downloads;
 use super::media;
+use super::media::ffmpeg::Picture;
+use super::media::hls::{self, Converted};
 use super::names::Names;
 use super::owner::Command;
 use super::owner::plays::Destination;
@@ -76,6 +81,9 @@ const RESUME_SLACK: f64 = 10.0;
 pub struct Casts {
     ctx: Weak<Ctx>,
     find: Find,
+    google: google::Find,
+    /// Where the segments of the HLS films casts convert are kept, a folder for each cast.
+    segments: PathBuf,
     http: reqwest::Client,
     /// A random word the engine answers at `HELLO`, so a cast can tell this engine from another
     /// program on the same port.
@@ -93,14 +101,56 @@ struct State {
     /// By the TV's ID.
     casts: BTreeMap<String, Entry>,
     /// How each file a cast grant serves goes to the TV, by the grant's path.
-    served: HashMap<String, Dlna>,
+    served: HashMap<String, Served>,
+    /// The largest video each Cast device's player took, by the TV's ID, once it refused one.
+    fits: HashMap<String, (u32, u32)>,
     next: u64,
 }
 
 struct Known {
-    renderer: Arc<Renderer>,
+    device: Device,
+    /// Where its description is, or for a Cast device its address.
     location: String,
     missed: u8,
+}
+
+/// A TV on the home network, and how to reach it.
+#[derive(Clone, Debug)]
+enum Device {
+    Dlna(Arc<Renderer>),
+    Cast(Arc<Receiver>),
+}
+
+impl Device {
+    fn tv(&self) -> &Tv {
+        match self {
+            Device::Dlna(renderer) => &renderer.tv,
+            Device::Cast(receiver) => &receiver.tv,
+        }
+    }
+}
+
+/// A Cast device that shows video.
+#[derive(Debug)]
+struct Receiver {
+    tv: Tv,
+    at: SocketAddr,
+}
+
+impl Receiver {
+    fn new(heard: &google::Heard) -> Self {
+        let address = heard.at.ip().to_string();
+        let tv = Tv {
+            id: format!("cast:{}@{address}", heard.id),
+            name: heard.name.clone(),
+            protocol: Protocol::GoogleCast,
+            address,
+            plays: [Container::Mp4, Container::WebM].into_iter().collect(),
+            decodes: google::decodes(&heard.model),
+            volume: true,
+        };
+        Self { tv, at: heard.at }
+    }
 }
 
 impl State {
@@ -108,7 +158,7 @@ impl State {
     /// leaves the list, unless a cast plays on it, and one that missed the last search leaves to
     /// keep the list to `ssdp::MOST`.
     fn found(&mut self, seen: Vec<Known>) {
-        let seen: BTreeMap<String, Known> = seen.into_iter().map(|k| (k.renderer.tv.id.clone(), k)).collect();
+        let seen: BTreeMap<String, Known> = seen.into_iter().map(|k| (k.device.tv().id.clone(), k)).collect();
         let State { tvs, casts, .. } = self;
         for (id, known) in tvs.iter_mut() {
             if !seen.contains_key(id) {
@@ -132,7 +182,7 @@ impl State {
 
     /// The TVs by name.
     fn tvs(&self) -> Vec<Tv> {
-        let mut tvs: Vec<Tv> = self.tvs.values().map(|known| known.renderer.tv.clone()).collect();
+        let mut tvs: Vec<Tv> = self.tvs.values().map(|known| known.device.tv().clone()).collect();
         tvs.sort_by(|a, b| (&a.name, &a.id).cmp(&(&b.name, &b.id)));
         tvs
     }
@@ -149,6 +199,39 @@ enum Control {
     Act(CastAction, oneshot::Sender<Result<Cast, Error>>),
     /// Another cast takes the TV: keep the position, and end without stopping the TV.
     Leave,
+}
+
+/// How what a cast grant serves goes to the TV.
+pub enum Served {
+    /// A file as it is, to a DLNA renderer.
+    Dlna(Dlna),
+    /// A file as it is, to a Cast device, whose player runs on another origin.
+    Cast { mime: String },
+    /// An HLS film made as the Cast device asks for it.
+    Film(Arc<hls::Film>),
+    /// A fragmented MP4 from the time a request asks for.
+    Stream(Arc<Stream>),
+}
+
+impl Served {
+    /// The type and extra headers of a file sent as it is.
+    pub fn file(&self) -> Option<(String, String)> {
+        match self {
+            Served::Dlna(dlna) => Some((dlna.mime.clone(), dlna.headers())),
+            Served::Cast { mime } => Some((mime.clone(), CORS.to_string())),
+            Served::Film(_) | Served::Stream(_) => None,
+        }
+    }
+}
+
+/// Lets a Cast device's player, a page on Google's origin, read what a cast grant serves. The
+/// grant's URL is all it holds.
+pub const CORS: &str = "Access-Control-Allow-Origin: *\r\n";
+
+/// A conversion that starts at the time a request asks for.
+pub struct Stream {
+    pub program: PathBuf,
+    pub arguments: hls::Arguments,
 }
 
 /// How a file a cast grant serves goes to the TV: its type in the TV's spelling, and the DLNA
@@ -176,7 +259,7 @@ impl Dlna {
 }
 
 impl Casts {
-    pub fn new(ctx: Weak<Ctx>, find: Find) -> Self {
+    pub fn new(ctx: Weak<Ctx>, find: Find, google: google::Find, segments: PathBuf) -> Self {
         // A redirect could lead anywhere, and a TV has no use for one. Each request gets a
         // connection of its own: libupnp, which many renderers run, answers one request per
         // connection without saying so, and drops the next one sent on it.
@@ -190,7 +273,18 @@ impl Casts {
         let mut word = [0u8; 16];
         getrandom::fill(&mut word).expect("the system gives random bytes");
         let hello = word.iter().map(|b| format!("{b:02x}")).collect();
-        Self { ctx, find, http, hello, state: Mutex::default(), searching: tokio::sync::Mutex::new(()) }
+        // What a cast left behind when the engine stopped.
+        let _ = std::fs::remove_dir_all(&segments);
+        Self {
+            ctx,
+            find,
+            google,
+            segments,
+            http,
+            hello,
+            state: Mutex::default(),
+            searching: tokio::sync::Mutex::new(()),
+        }
     }
 
     pub fn hello(&self) -> &str {
@@ -219,10 +313,16 @@ impl Casts {
         if searched != before || (recent && !fresh) {
             return self.list();
         }
-        let answers = ssdp::search(self.find, &Names::read().lan).await.unwrap_or_default();
+        let lan = Names::read().lan;
+        let (answers, receivers) = tokio::join!(ssdp::search(self.find, &lan), google::search(&self.google, &lan));
+        let answers = answers.unwrap_or_default();
         let known: HashMap<String, Arc<Renderer>> = {
             let state = self.state();
-            state.tvs.values().map(|k| (k.location.clone(), k.renderer.clone())).collect()
+            let renderers = state.tvs.values().filter_map(|k| match &k.device {
+                Device::Dlna(renderer) => Some((k.location.clone(), renderer.clone())),
+                Device::Cast(_) => None,
+            });
+            renderers.collect()
         };
         let mut found = tokio::task::JoinSet::new();
         let describing = Arc::new(tokio::sync::Semaphore::new(DESCRIBING));
@@ -238,10 +338,17 @@ impl Casts {
                 renderer.map(|renderer| (heard.location.to_string(), renderer))
             });
         }
-        let mut seen = Vec::new();
+        let mut seen: Vec<Known> = receivers
+            .iter()
+            .map(|heard| Known {
+                device: Device::Cast(Arc::new(Receiver::new(heard))),
+                location: heard.at.to_string(),
+                missed: 0,
+            })
+            .collect();
         while let Some(answer) = found.join_next().await {
             if let Ok(Some((location, renderer))) = answer {
-                seen.push(Known { renderer, location, missed: 0 });
+                seen.push(Known { device: Device::Dlna(renderer), location, missed: 0 });
             }
         }
         self.state().found(seen);
@@ -272,8 +379,8 @@ impl Casts {
             _ => ("the video".to_string(), CastState::Loading),
         };
         let cast = Cast {
-            tv: tv.tv.id.clone(),
-            tv_name: tv.tv.name.clone(),
+            tv: tv.tv().id.clone(),
+            tv_name: tv.tv().name.clone(),
             name,
             video: None,
             download: None,
@@ -293,7 +400,7 @@ impl Casts {
             state.next += 1;
             let id = state.next;
             let entry = Entry { id, view: view.clone(), control: control_tx };
-            let before = state.casts.insert(tv.tv.id.clone(), entry).map(|old| {
+            let before = state.casts.insert(tv.tv().id.clone(), entry).map(|old| {
                 let _ = old.control.send(Control::Leave);
                 old.view
             });
@@ -357,30 +464,44 @@ impl Casts {
         answer.await.map_err(|_| nothing_plays())?
     }
 
-    /// How the file a cast grant serves at `path` goes to the TV.
-    pub fn served(&self, path: &str) -> Option<Dlna> {
-        self.state().served.get(path).cloned()
+    /// The largest video the Cast device `tv` names takes, once it refused a larger one.
+    fn fits(&self, tv: &str) -> Option<(u32, u32)> {
+        self.state().fits.get(tv).copied()
+    }
+
+    /// How what a cast grant serves at `path` goes to the TV: the file at that path, or what is
+    /// asked of the grant's folder.
+    pub fn served(&self, path: &str) -> Option<Served> {
+        let state = self.state();
+        let folder = path.rsplit_once('/').map(|(folder, _)| format!("{folder}/"));
+        let served = state.served.get(path).or_else(|| state.served.get(folder.as_deref()?))?;
+        Some(match served {
+            Served::Dlna(dlna) => Served::Dlna(dlna.clone()),
+            Served::Cast { mime } => Served::Cast { mime: mime.clone() },
+            Served::Film(film) => Served::Film(film.clone()),
+            Served::Stream(stream) => Served::Stream(stream.clone()),
+        })
     }
 
     /// The TV `wanted` names by its ID or a part of its name, or the only TV on the network.
-    fn choose(&self, wanted: Option<&str>) -> Result<Arc<Renderer>, Error> {
+    fn choose(&self, wanted: Option<&str>) -> Result<Device, Error> {
         let state = self.state();
-        let tvs: Vec<&Arc<Renderer>> = match wanted {
+        let tvs: Vec<&Device> = match wanted {
             Some(wanted) => {
-                state.tvs.values().map(|k| &k.renderer).filter(|r| names_tv(wanted, &r.tv.id, &r.tv.name)).collect()
+                state.tvs.values().map(|k| &k.device).filter(|d| names_tv(wanted, &d.tv().id, &d.tv().name)).collect()
             }
-            None => state.tvs.values().map(|k| &k.renderer).collect(),
+            None => state.tvs.values().map(|k| &k.device).collect(),
         };
         match (tvs.as_slice(), wanted) {
             ([one], _) => Ok((*one).clone()),
             ([], None) => Err(Error::new(ErrorCode::NotFound, "no TV answered on the home network").with_hint(
-                "check that the TV is on and on the same network as the computer running newsreel, and that its DLNA or media sharing setting is on",
+                "check that the TV is on and on the same network as the computer running newsreel, and for a TV that does not have Google Cast, that its DLNA or media sharing setting is on",
             )),
             ([], Some(wanted)) => Err(Error::new(ErrorCode::NotFound, format!("no TV named {wanted} answered"))
                 .with_hint("run newsreel tv to list the TVs on the network")
                 .with_next("newsreel tv")),
             (many, _) => {
-                let names: Vec<String> = many.iter().map(|r| at_address(&r.tv.name, &r.tv.id)).collect();
+                let names: Vec<String> = many.iter().map(|d| at_address(&d.tv().name, &d.tv().id)).collect();
                 Err(Error::new(ErrorCode::AmbiguousRef, format!("{} TVs answered: {}", names.len(), names.join(", ")))
                     .with_hint("name one with --tv, by its address if they share a name"))
             }
@@ -463,7 +584,7 @@ struct Found {
 
 struct Run {
     ctx: Arc<Ctx>,
-    tv: Arc<Renderer>,
+    tv: Device,
     view: watch::Sender<Cast>,
     id: u64,
     /// The cast this one took the TV from, which may still be sending it a video.
@@ -501,7 +622,7 @@ impl Run {
             }
         };
         if let Some(error) = &error {
-            log(&format!("the cast to {} ended: {error}", self.tv.tv.name));
+            log(&format!("the cast to {} ended: {error}", self.tv.tv().name));
         }
         // A cast that takes the TV from this one waits for this end, so it must mean the cast
         // before has ended too.
@@ -512,7 +633,7 @@ impl Run {
         self.view.send_modify(|cast| cast.state = CastState::Ended { error });
         drop(control);
         tokio::time::sleep(ENDED_KEPT).await;
-        self.ctx.casts.forget(&self.tv.tv.id, self.id);
+        self.ctx.casts.forget(&self.tv.tv().id, self.id);
     }
 
     /// Sends the file to the TV and follows it until the cast ends.
@@ -528,8 +649,23 @@ impl Run {
                 () = until_stopped(control) => return Ok(()),
             }
         }
-        let tv = &self.tv.tv;
-        let host = facing(&tv.address)?;
+        let host = facing(&self.tv.tv().address)?;
+        let _keeping = found.video.as_ref().map(|video| Keeping::new(&ctx.titles.watching, video, self.id));
+        match &self.tv {
+            Device::Dlna(renderer) => self.play_dlna(renderer, found, host, control).await,
+            Device::Cast(receiver) => self.play_cast(receiver, found, host, control).await,
+        }
+    }
+
+    async fn play_dlna(
+        &self,
+        renderer: &Renderer,
+        found: &Found,
+        host: IpAddr,
+        control: &mut mpsc::UnboundedReceiver<Control>,
+    ) -> Result<(), Error> {
+        let ctx = &self.ctx;
+        let tv = &renderer.tv;
         let video = ctx.devices.grant(found.id, found.file, &found.path)?;
         let caption =
             found.subtitle.as_ref().map(|(index, path)| ctx.devices.grant(found.id, *index, path)).transpose()?;
@@ -538,15 +674,19 @@ impl Run {
         let url = at(video.path());
         let caption_url = caption.as_ref().map(|grant| at(grant.path()));
         let container = Container::of_path(&found.path).ok_or_else(|| refused(tv, &found.path))?;
-        let mime = self.tv.mime(container).to_string();
-        let mut served =
-            vec![(video.path().to_string(), Dlna { mime: mime.clone(), caption: caption_url.clone(), video: true })];
+        let mime = renderer.mime(container).to_string();
+        let mut served = vec![(
+            video.path().to_string(),
+            Served::Dlna(Dlna { mime: mime.clone(), caption: caption_url.clone(), video: true }),
+        )];
         if let (Some(grant), Some((_, path))) = (&caption, &found.subtitle) {
             let kind = extension(path);
-            served.push((grant.path().to_string(), Dlna { mime: format!("text/{kind}"), caption: None, video: false }));
+            served.push((
+                grant.path().to_string(),
+                Served::Dlna(Dlna { mime: format!("text/{kind}"), caption: None, video: false }),
+            ));
         }
         let _serving = Serving::new(&ctx.casts, served);
-        let _keeping = found.video.as_ref().map(|video| Keeping::new(&ctx.titles.watching, video, self.id));
         let duration = media::probed(ctx, found.id, found.file).and_then(|media| media.duration);
         let film = found.video.as_ref().is_some_and(|video| video.episode.is_none());
         let kind = found.subtitle.as_ref().map(|(_, path)| extension(path));
@@ -559,24 +699,134 @@ impl Run {
             film,
             caption: caption_url.as_deref().zip(kind.as_deref()).map(|(url, kind)| didl::Caption { url, kind }),
         });
-        self.send(&url, &metadata).await?;
-        self.follow(found, video.token(), duration, control).await
+        let mut remote = Remote::Dlna(renderer);
+        self.send(renderer, &url, &metadata).await?;
+        self.follow(found, video.token(), duration, control, &mut remote).await
+    }
+
+    /// Plays on a Cast device: the file as it is when the device plays it, or else an HLS film
+    /// converted as the device asks for it. A device whose player refuses a film as large as the
+    /// video gets one encoded again at 720p, as do its casts after.
+    async fn play_cast(
+        &self,
+        receiver: &Receiver,
+        found: &Found,
+        host: IpAddr,
+        control: &mut mpsc::UnboundedReceiver<Control>,
+    ) -> Result<(), Error> {
+        let ctx = &self.ctx;
+        let tv = &receiver.tv;
+        let media = media::probe(ctx, found.id, found.file).await?;
+        let start_at = found.start_at.filter(|at| *at > WORTH_SAVING).unwrap_or(0.0);
+        let larger =
+            |(width, height): (u32, u32)| media.video.as_ref().is_some_and(|v| v.width > width || v.height > height);
+        let mut form = match google::form(&media, tv.decodes) {
+            google::Form::Convert(Picture::Copy) if ctx.casts.fits(&tv.id).is_some_and(larger) => {
+                let (width, height) = FIT;
+                google::Form::Convert(Picture::Fit(width, height))
+            }
+            form => form,
+        };
+        let launch = google::Session::launch(receiver.at, &tv.name);
+        let (session, sending) = tokio::join!(launch, self.sending(found, &media, form, host, start_at));
+        let (mut session, mut sending) = (session?, sending?);
+        loop {
+            reachable(ctx, host).await?;
+            log(&format!("casting {} to {} as {}", found.name, tv.name, sending.sent.name()));
+            match session.load(&sending.load).await {
+                Ok(()) => break,
+                Err(Failed::Refused(..)) if form == google::Form::Convert(Picture::Copy) && larger(FIT) => {
+                    log(&format!("{} refused the film at its own size, so it gets one at 720p", tv.name));
+                    ctx.casts.state().fits.insert(tv.id.clone(), FIT);
+                    form = google::Form::Convert(Picture::Fit(FIT.0, FIT.1));
+                    drop(sending);
+                    sending = self.sending(found, &media, form, host, start_at).await?;
+                }
+                Err(failed) => return Err(failed.into()),
+            }
+        }
+        let Sending { grant, serving, load, sent, duration } = sending;
+        let mut remote = Remote::Cast(Box::new(CastRemote::new(session, load, sent)));
+        let ended = self.follow(found, grant.token(), duration, control, &mut remote).await;
+        if let Remote::Cast(remote) = &mut remote
+            && remote.finished
+        {
+            // At the video's end the device goes back to where it was.
+            let _ = remote.session.stop().await;
+        }
+        drop(serving);
+        ended
+    }
+
+    /// The grant, and what it serves, for sending `found` to a Cast device in `form`.
+    async fn sending(
+        &self,
+        found: &Found,
+        media: &media::Media,
+        form: google::Form,
+        host: IpAddr,
+        start_at: f64,
+    ) -> Result<Sending<'_>, Error> {
+        let ctx = &self.ctx;
+        let at = |path: &str| format!("http://{}{path}", std::net::SocketAddr::new(host, ctx.http_port));
+        let duration = media.duration;
+        let (grant, served, load, sent, duration) = match form {
+            google::Form::AsIs { mime } => {
+                let grant = ctx.devices.grant(found.id, found.file, &found.path)?;
+                let load = self.load(at(grant.path()), mime.to_string(), duration, start_at, false, found);
+                (grant, Served::Cast { mime: mime.to_string() }, load, Sent::AsIs, duration)
+            }
+            google::Form::Convert(picture) => {
+                let grant = ctx.devices.grant_folder(found.id, found.file)?;
+                let dir = ctx.casts.segments.join(grant.token());
+                match hls::convert(ctx, found.id, found.file, picture, &dir, start_at).await? {
+                    Converted::Film(film) => {
+                        let url = at(&format!("{}{FILM}", grant.path()));
+                        let duration = Some(film.plan().duration);
+                        let load = self.load(url, hls::PLAYLIST.to_string(), duration, start_at, true, found);
+                        (grant, Served::Film(Arc::new(film)), load, Sent::Film, duration)
+                    }
+                    Converted::Stream { program, arguments } => {
+                        let base = at(&format!("{}{STREAM}", grant.path()));
+                        let url = stream_url(&base, start_at);
+                        let load = self.load(url, "video/mp4".to_string(), duration, start_at, false, found);
+                        let stream = Arc::new(Stream { program, arguments });
+                        (grant, Served::Stream(stream), load, Sent::Stream { base }, duration)
+                    }
+                }
+            }
+        };
+        let serving = Serving::new(&ctx.casts, vec![(grant.path().to_string(), served)]);
+        Ok(Sending { grant, serving, load, sent, duration })
+    }
+
+    fn load(
+        &self,
+        url: String,
+        mime: String,
+        duration: Option<f64>,
+        start_at: f64,
+        hls: bool,
+        found: &Found,
+    ) -> google::Load {
+        let film = found.video.as_ref().is_some_and(|video| video.episode.is_none());
+        google::Load { url, mime, title: found.name.clone(), film, duration, start_at, hls }
     }
 
     /// Tells the TV to play `url`. A TV that refuses a new video while it plays one gets a Stop
     /// first. One that does not answer may still hold what it played before, which a Play would
     /// bring back, so the cast fails there.
-    async fn send(&self, url: &str, metadata: &str) -> Result<(), Error> {
+    async fn send(&self, tv: &Renderer, url: &str, metadata: &str) -> Result<(), Error> {
         let set = [("InstanceID", "0"), ("CurrentURI", url), ("CurrentURIMetaData", metadata)];
-        match self.transport("SetAVTransportURI", &set).await {
+        match self.transport(tv, "SetAVTransportURI", &set).await {
             Ok(_) => {}
             Err(Failed::Refused(..)) => {
-                let _ = self.transport("Stop", &[("InstanceID", "0")]).await;
-                self.transport("SetAVTransportURI", &set).await?;
+                let _ = self.transport(tv, "Stop", &[("InstanceID", "0")]).await;
+                self.transport(tv, "SetAVTransportURI", &set).await?;
             }
             Err(gone @ Failed::Gone(_)) => return Err(gone.into()),
         }
-        self.transport("Play", &[("InstanceID", "0"), ("Speed", "1")]).await?;
+        self.transport(tv, "Play", &[("InstanceID", "0"), ("Speed", "1")]).await?;
         Ok(())
     }
 
@@ -589,11 +839,18 @@ impl Run {
         token: &str,
         known: Option<f64>,
         control: &mut mpsc::UnboundedReceiver<Control>,
+        remote: &mut Remote<'_>,
     ) -> Result<(), Error> {
-        let tv = &self.tv.tv;
+        let tv = self.tv.tv();
+        // A Cast device playing a stream says its length is what it has read so far.
+        let cast = matches!(remote, Remote::Cast(_));
         let mut contact = Contact::new(Instant::now());
         let mut saved = Instant::now();
-        let mut resume = found.start_at.filter(|at| *at > WORTH_SAVING).map(Resume::new);
+        let mut resume = found.start_at.filter(|at| *at > WORTH_SAVING).map(|at| match remote {
+            Remote::Dlna(_) => Resume::new(at),
+            // The LOAD asked to start there.
+            Remote::Cast(_) => Resume::loaded(at),
+        });
         let mut polls = 0u32;
         let mut tick = tokio::time::interval(POLL);
         tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -605,7 +862,7 @@ impl Run {
                         self.save(found);
                         return Ok(());
                     };
-                    let done = self.act(action).await;
+                    let done = self.act(remote, action).await;
                     if matches!(action, CastAction::Seek { .. }) && done.is_ok() {
                         resume = None;
                     }
@@ -628,9 +885,13 @@ impl Run {
                 }
             }
             polls += 1;
-            let polled = self.poll(polls % VOLUME_EVERY == 1).await;
+            let polled = self.poll(remote, polls % VOLUME_EVERY == 1).await;
             let now = Instant::now();
             contact.heard(now, &polled);
+            if let Ok(Polled { failed: Some(error), .. }) = &polled {
+                self.save(found);
+                return Err(error.clone());
+            }
             if let Ok(polled) = polled
                 && let Some(transport) = polled.transport
             {
@@ -642,7 +903,7 @@ impl Run {
                         if !paused && self.view.borrow().state == CastState::Paused {
                             self.start(found);
                         }
-                        let duration = polled.duration.or(known);
+                        let duration = if cast { known.or(polled.duration) } else { polled.duration.or(known) };
                         resume = resume.and_then(|resume| match resume.check(polled.position, now) {
                             Check::Landed => None,
                             Check::Waiting(resume) => Some(resume),
@@ -671,7 +932,7 @@ impl Run {
                             && let Some(Resume { at, seek: Seek::Due(tries) }) = resume
                         {
                             let left = tries - 1;
-                            resume = match self.seek(at).await {
+                            resume = match self.seek(remote, at).await {
                                 Ok(()) => Some(Resume { at, seek: Seek::Taken(Instant::now(), left) }),
                                 Err(_) if left > 0 => Some(Resume { at, seek: Seek::Due(left) }),
                                 Err(failed) => {
@@ -704,15 +965,25 @@ impl Run {
         }
     }
 
-    async fn act(&self, action: CastAction) -> Result<(), Error> {
-        let tv = &self.tv.tv;
+    async fn act(&self, remote: &mut Remote<'_>, action: CastAction) -> Result<(), Error> {
+        let tv = self.tv.tv();
         match action {
             CastAction::Pause => {
-                self.transport("Pause", &[("InstanceID", "0")]).await?;
+                match remote {
+                    Remote::Dlna(renderer) => {
+                        self.transport(renderer, "Pause", &[("InstanceID", "0")]).await.map(drop)?
+                    }
+                    Remote::Cast(cast) => cast.session.pause().await?,
+                }
                 self.view.send_modify(|cast| cast.state = CastState::Paused);
             }
             CastAction::Resume => {
-                self.transport("Play", &[("InstanceID", "0"), ("Speed", "1")]).await?;
+                match remote {
+                    Remote::Dlna(renderer) => {
+                        self.transport(renderer, "Play", &[("InstanceID", "0"), ("Speed", "1")]).await.map(drop)?
+                    }
+                    Remote::Cast(cast) => cast.session.play().await?,
+                }
                 self.view.send_modify(|cast| cast.state = CastState::Playing);
             }
             CastAction::Seek { position } => {
@@ -720,45 +991,72 @@ impl Run {
                 if !position.is_finite() || position < 0.0 || duration.is_some_and(|d| position > d) {
                     return Err(Error::new(ErrorCode::Usage, format!("{position} is not a time in this video")));
                 }
-                self.seek(position).await?;
+                self.seek(remote, position).await?;
                 self.view.send_modify(|cast| cast.position = Some(position));
             }
-            CastAction::Stop => {
+            CastAction::Stop => match remote {
                 // A TV that has gone has stopped too.
-                if let Err(Failed::Refused(_, error)) = self.transport("Stop", &[("InstanceID", "0")]).await {
-                    log(&format!("{} refused to stop: {error}", tv.name));
+                Remote::Dlna(renderer) => {
+                    if let Err(Failed::Refused(_, error)) =
+                        self.transport(renderer, "Stop", &[("InstanceID", "0")]).await
+                    {
+                        log(&format!("{} refused to stop: {error}", tv.name));
+                    }
                 }
-            }
+                Remote::Cast(cast) => {
+                    if let Err(Failed::Refused(_, error)) = cast.session.stop().await {
+                        log(&format!("{} refused to stop: {error}", tv.name));
+                    }
+                }
+            },
             CastAction::Volume { level } => {
-                let Some(rendering) = &self.tv.rendering else {
-                    return Err(Error::new(ErrorCode::Usage, format!("newsreel cannot set the volume of {}", tv.name)));
-                };
                 let level = level.min(100);
-                let desired = level.to_string();
-                let args = [("InstanceID", "0"), ("Channel", "Master"), ("DesiredVolume", desired.as_str())];
-                self.call(rendering, "SetVolume", &args).await?;
+                match remote {
+                    Remote::Dlna(renderer) => {
+                        let Some(rendering) = &renderer.rendering else {
+                            return Err(Error::new(
+                                ErrorCode::Usage,
+                                format!("newsreel cannot set the volume of {}", tv.name),
+                            ));
+                        };
+                        let desired = level.to_string();
+                        let args = [("InstanceID", "0"), ("Channel", "Master"), ("DesiredVolume", desired.as_str())];
+                        self.call(rendering, "SetVolume", &args).await?;
+                    }
+                    Remote::Cast(cast) => cast.session.volume(level).await?,
+                }
                 self.view.send_modify(|cast| cast.volume = Some(level));
             }
         }
         Ok(())
     }
 
-    /// Seeks by the time into the video, or by the absolute time on a TV that has only that.
-    async fn seek(&self, position: f64) -> Result<(), Failed> {
-        let target = upnp::clock(position);
-        let seek = |unit| [("InstanceID", "0"), ("Unit", unit), ("Target", target.as_str())];
-        match self.transport("Seek", &seek("REL_TIME")).await {
-            Err(Failed::Refused(710, _)) => self.transport("Seek", &seek("ABS_TIME")).await.map(drop),
-            done => done.map(drop),
+    /// Seeks by the time into the video, or by the absolute time on a TV that has only that. A
+    /// Cast device playing a stream gets it again from there, as it seeks only in what it read.
+    async fn seek(&self, remote: &mut Remote<'_>, position: f64) -> Result<(), Failed> {
+        match remote {
+            Remote::Dlna(renderer) => {
+                let target = upnp::clock(position);
+                let seek = |unit| [("InstanceID", "0"), ("Unit", unit), ("Target", target.as_str())];
+                match self.transport(renderer, "Seek", &seek("REL_TIME")).await {
+                    Err(Failed::Refused(710, _)) => self.transport(renderer, "Seek", &seek("ABS_TIME")).await.map(drop),
+                    done => done.map(drop),
+                }
+            }
+            Remote::Cast(cast) => cast.seek(position).await,
         }
     }
 
     /// What the TV does, and where it is when it says. A TV that faults on where it is still
     /// says whether it plays.
-    async fn poll(&self, volume: bool) -> Result<Polled, Failed> {
-        let transport = self.transport("GetTransportInfo", &[("InstanceID", "0")]).await?;
-        let position = self.transport("GetPositionInfo", &[("InstanceID", "0")]).await.unwrap_or_default();
-        let volume = match (&self.tv.rendering, volume) {
+    async fn poll(&self, remote: &mut Remote<'_>, volume: bool) -> Result<Polled, Failed> {
+        let renderer = match remote {
+            Remote::Dlna(renderer) => *renderer,
+            Remote::Cast(cast) => return cast.poll(volume, &self.tv.tv().name).await,
+        };
+        let transport = self.transport(renderer, "GetTransportInfo", &[("InstanceID", "0")]).await?;
+        let position = self.transport(renderer, "GetPositionInfo", &[("InstanceID", "0")]).await.unwrap_or_default();
+        let volume = match (&renderer.rendering, volume) {
             (Some(rendering), true) => {
                 let args = [("InstanceID", "0"), ("Channel", "Master")];
                 let answer = self.call(rendering, "GetVolume", &args).await.ok();
@@ -769,12 +1067,12 @@ impl Run {
         Ok(Polled::read(&transport, &position, volume))
     }
 
-    async fn transport(&self, action: &str, args: &[(&str, &str)]) -> Result<String, Failed> {
-        self.call(&self.tv.transport, action, args).await
+    async fn transport(&self, tv: &Renderer, action: &str, args: &[(&str, &str)]) -> Result<String, Failed> {
+        self.call(&tv.transport, action, args).await
     }
 
     async fn call(&self, service: &Service, action: &str, args: &[(&str, &str)]) -> Result<String, Failed> {
-        upnp::call(&self.ctx.casts.http, service, action, args, &self.tv.tv.name).await
+        upnp::call(&self.ctx.casts.http, service, action, args, &self.tv.tv().name).await
     }
 
     /// The TV resumed the video, so it keeps the place from now on.
@@ -812,6 +1110,149 @@ impl Run {
     }
 }
 
+/// What a cast sends a Cast device, for as long as it plays.
+struct Sending<'a> {
+    grant: super::devices::CastGrant,
+    serving: Serving<'a>,
+    load: google::Load,
+    sent: Sent,
+    /// Seconds, as ffprobe or the film's plan says.
+    duration: Option<f64>,
+}
+
+/// The largest video a Cast device gets once its player refused a film as large as the video:
+/// 720p, which a Chromecast with Google TV on a 720p screen took in HLS when it refused 768p.
+const FIT: (u32, u32) = (1280, 720);
+
+/// What a cast drives: a DLNA renderer by its SOAP actions, or a Cast device by its session.
+enum Remote<'a> {
+    Dlna(&'a Renderer),
+    Cast(Box<CastRemote>),
+}
+
+/// How a cast sent its video to a Cast device.
+#[derive(Clone, PartialEq, Eq, Debug)]
+enum Sent {
+    AsIs,
+    Film,
+    /// A stream, whose URL is `base` with the time it starts at.
+    Stream {
+        base: String,
+    },
+}
+
+impl Sent {
+    fn name(&self) -> &'static str {
+        match self {
+            Sent::AsIs => "the file as it is",
+            Sent::Film => "an HLS film converted as it plays",
+            Sent::Stream { .. } => "a converted stream",
+        }
+    }
+}
+
+/// A Cast session, and what it takes to load the video again where it was.
+struct CastRemote {
+    session: google::Session,
+    load: google::Load,
+    sent: Sent,
+    /// Where the device last played, and since when it has not.
+    played_at: Option<f64>,
+    stuck_since: Option<Instant>,
+    /// The device played the video to its end.
+    finished: bool,
+}
+
+/// How long a Cast device may buffer, having played, before the cast loads the video again where
+/// it was: a stall from which the device does not come back by itself.
+const STALLED_FOR: Duration = Duration::from_secs(20);
+
+impl CastRemote {
+    fn new(session: google::Session, load: google::Load, sent: Sent) -> Self {
+        Self { session, load, sent, played_at: None, stuck_since: None, finished: false }
+    }
+
+    async fn seek(&mut self, position: f64) -> Result<(), Failed> {
+        match &self.sent {
+            Sent::Stream { base } => {
+                let load = google::Load { url: stream_url(base, position), start_at: position, ..self.load.clone() };
+                self.reload(load).await
+            }
+            Sent::AsIs | Sent::Film => self.session.seek(position).await,
+        }
+    }
+
+    async fn reload(&mut self, load: google::Load) -> Result<(), Failed> {
+        self.session.load(&load).await?;
+        self.load = load;
+        self.stuck_since = None;
+        Ok(())
+    }
+
+    async fn poll(&mut self, volume: bool, name: &str) -> Result<Polled, Failed> {
+        let status = self.session.poll(volume).await?;
+        let now = Instant::now();
+        let failed = status.failed.as_ref().map(|why| {
+            Error::new(ErrorCode::FetchFailed, format!("{name} could not play the video ({why})"))
+                .with_hint("play it here, or choose another source")
+        });
+        let transport = match status.player {
+            _ if status.closed => Some(Transport::Stopped),
+            google::Player::Playing => Some(Transport::Playing),
+            google::Player::Paused => Some(Transport::Paused),
+            google::Player::Buffering | google::Player::Loading => Some(Transport::Busy),
+            google::Player::Idle(google::Idle::Unsaid) => Some(Transport::Busy),
+            google::Player::Idle(google::Idle::Finished) => {
+                self.finished = true;
+                Some(Transport::Stopped)
+            }
+            google::Player::Idle(_) => Some(Transport::Stopped),
+        };
+        match transport {
+            Some(Transport::Playing | Transport::Paused) => {
+                self.played_at = status.time.or(self.played_at);
+                self.stuck_since = None;
+            }
+            Some(Transport::Busy) => {
+                let since = *self.stuck_since.get_or_insert(now);
+                // A stream the device's own remote sent past what it read goes back to the start
+                // and stalls there, and never says where it was going.
+                let lost = matches!(self.sent, Sent::Stream { .. })
+                    && status.time.is_some_and(|t| t < 1.0)
+                    && self.played_at.is_some_and(|at| at > 10.0);
+                if let Some(at) = self.played_at.filter(|_| lost || now.saturating_duration_since(since) >= STALLED_FOR)
+                {
+                    log(&format!("{name} stalled, so the cast loads the video again at {}", upnp::clock(at)));
+                    let load = match &self.sent {
+                        Sent::Stream { base } => {
+                            google::Load { url: stream_url(base, at), start_at: at, ..self.load.clone() }
+                        }
+                        Sent::AsIs | Sent::Film => google::Load { start_at: at, ..self.load.clone() },
+                    };
+                    self.reload(load).await?;
+                }
+            }
+            _ => {}
+        }
+        Ok(Polled {
+            transport,
+            position: status.time,
+            duration: status.duration,
+            uri: status.content,
+            volume: status.volume,
+            failed,
+        })
+    }
+}
+
+/// The name of an HLS film's playlist, and of a stream, in a cast grant's folder.
+const FILM: &str = "film.m3u8";
+const STREAM: &str = "film.mp4";
+
+fn stream_url(base: &str, at: f64) -> String {
+    if at > 0.0 { format!("{base}?t={at:.3}") } else { base.to_string() }
+}
+
 /// Where a cast resumes the video, which it shows until the TV gets there, so the bar does not
 /// show the top of the video while the TV starts there and seeks.
 #[derive(Clone, Copy, Debug)]
@@ -827,6 +1268,8 @@ enum Seek {
     Due(u32),
     /// The TV took it at this time, with this many tries left should it not get there.
     Taken(Instant, u32),
+    /// A Cast device was asked to start there, with this many tries left should it not.
+    Loaded(u32),
 }
 
 /// How resuming goes, by where the TV says it is.
@@ -844,6 +1287,11 @@ impl Resume {
         Self { at, seek: Seek::Due(RESUME_TRIES) }
     }
 
+    /// For a Cast device that was asked to start at `at` with the video.
+    fn loaded(at: f64) -> Self {
+        Self { at, seek: Seek::Loaded(RESUME_TRIES - 1) }
+    }
+
     /// Whether the TV, at `position` at `now`, got there, or took the seek `RESUME_WITHIN` ago
     /// and is still not there, which sends it again while tries are left.
     fn check(self, position: Option<f64>, now: Instant) -> Check {
@@ -852,6 +1300,11 @@ impl Resume {
         }
         match self.seek {
             Seek::Taken(taken, left) if now.saturating_duration_since(taken) >= RESUME_WITHIN => match left {
+                0 => Check::Lost,
+                left => Check::Waiting(Self { seek: Seek::Due(left), ..self }),
+            },
+            // It plays, and somewhere else.
+            Seek::Loaded(left) if position.is_some_and(|position| position > 0.0) => match left {
                 0 => Check::Lost,
                 left => Check::Waiting(Self { seek: Seek::Due(left), ..self }),
             },
@@ -939,6 +1392,8 @@ struct Polled {
     duration: Option<f64>,
     uri: Option<String>,
     volume: Option<u8>,
+    /// Why the TV gave up on the video, when it says.
+    failed: Option<Error>,
 }
 
 impl Polled {
@@ -950,6 +1405,7 @@ impl Polled {
             duration: xml::text(position, "TrackDuration").and_then(|t| upnp::seconds(&t)).filter(|d| *d > 0.0),
             uri: xml::text(position, "TrackURI"),
             volume,
+            failed: None,
         }
     }
 }
@@ -980,7 +1436,7 @@ async fn until_stopped(control: &mut mpsc::UnboundedReceiver<Control>) {
 /// The download and file to play: the first source of a title that starts, or a release's video.
 async fn find(
     ctx: &Ctx,
-    tv: &Renderer,
+    tv: &Device,
     request: &CastRequest,
     steps: &broadcast::Sender<AttemptEvent>,
     view: &watch::Sender<Cast>,
@@ -990,10 +1446,10 @@ async fn find(
             let pin = match &request.source {
                 Some(prefix) => {
                     let release = titles::pinned(ctx, video, prefix).await?;
-                    if !Plays::tv(&tv.tv).decodes(Quality::parse(&release.name)) {
+                    if !Plays::tv(tv.tv()).decodes(Quality::parse(&release.name)) {
                         return Err(Error::new(
                             ErrorCode::Usage,
-                            format!("{} cannot decode the video of this source", tv.tv.name),
+                            format!("{} cannot decode the video of this source", tv.tv().name),
                         )
                         .with_hint("let newsreel choose a source, or play it here"));
                     }
@@ -1006,8 +1462,8 @@ async fn find(
                 pin,
                 replace: None,
                 // A TV says what it decodes but not its screen, and 1080p plays well on any TV.
-                player: Player::Device(Viewer { screen: Resolution::P1080, playback: tv.tv.decodes, decoders: None }),
-                plays: Plays::tv(&tv.tv),
+                player: Player::Device(Viewer { screen: Resolution::P1080, playback: tv.tv().decodes, decoders: None }),
+                plays: Plays::tv(tv.tv()),
                 to: Destination::Plays,
             };
             let outcome = attempt::run(ctx, ask, |step| {
@@ -1028,8 +1484,8 @@ async fn find(
         target => {
             let (source, layout, playable) = downloads::prepare(ctx, target.clone(), request.file, None).await?;
             let path = sanitize(&layout.files[playable.video as usize].path);
-            if !tv.tv.plays.takes(&path) {
-                return Err(refused(&tv.tv, &path));
+            if !Plays::tv(tv.tv()).opens(&path, ctx.media.ffmpeg.converts()) {
+                return Err(refused(tv.tv(), &path));
             }
             let (job, _) = downloads::begin(ctx, source, &playable).await?;
             let video = request.video.clone().or_else(|| job.title.as_ref().and_then(video_of));
@@ -1100,8 +1556,16 @@ fn video_of(link: &TitleLink) -> Option<VideoRef> {
 fn refused(tv: &Tv, path: &str) -> Error {
     let container = extension(path).to_ascii_uppercase();
     let plays: Vec<String> = tv.plays.iter().map(|c| c.name().to_ascii_uppercase()).collect();
-    Error::new(ErrorCode::Usage, format!("{} does not play {container} files, only {}", tv.name, plays.join(" and ")))
-        .with_hint("play it here, or choose a source in a format the TV plays")
+    let error = Error::new(
+        ErrorCode::Usage,
+        format!("{} does not play {container} files, only {}", tv.name, plays.join(" and ")),
+    );
+    match tv.protocol {
+        Protocol::Dlna => error.with_hint("play it here, or choose a source in a format the TV plays"),
+        Protocol::GoogleCast => {
+            error.with_hint(format!("{} to convert it for the TV, or play it here", crate::ffmpeg::INSTALL))
+        }
+    }
 }
 
 fn file_name(path: &str) -> String {
@@ -1152,7 +1616,7 @@ struct Serving<'a> {
 }
 
 impl<'a> Serving<'a> {
-    fn new(casts: &'a Casts, served: Vec<(String, Dlna)>) -> Self {
+    fn new(casts: &'a Casts, served: Vec<(String, Served)>) -> Self {
         let paths = served.iter().map(|(path, _)| path.clone()).collect();
         casts.state().served.extend(served);
         Self { casts, paths }

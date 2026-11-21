@@ -8,10 +8,12 @@ use newsreel_core::protocol::Event;
 use newsreel_core::{Error, ErrorCode};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+use super::super::cast::{CORS, Stream};
 use super::super::ctx::Ctx;
 use super::super::downloads::JobEvents;
 use super::super::http::{Connection, Request};
 use super::super::media::ffmpeg::Picture;
+use super::super::media::hls::{self, Asked, Film};
 use super::super::media::{self, Conversion};
 use super::{fail, file_of, number};
 use crate::log::log;
@@ -72,6 +74,44 @@ async fn stream_conversion(ctx: &Ctx, request: &Request) -> Result<Conversion, E
         Some(other) => return Err(Error::new(ErrorCode::Usage, format!("video={other} is not copy or h264"))),
     };
     media::stream(ctx, id, index, t, audio, picture).await
+}
+
+/// What a Cast device asks of a cast's HLS film: its playlist, its init segment, or a segment,
+/// which is made now unless it is on disk.
+pub async fn film(conn: &mut Connection<'_>, request: &Request, film: &Film) -> io::Result<bool> {
+    let name = request.path.rsplit('/').next().unwrap_or_default();
+    let headers = format!("Cache-Control: no-store\r\n{CORS}");
+    let made = match Asked::of(name) {
+        None => return conn.empty("404 Not Found", "", false).await,
+        Some(Asked::Playlist) => {
+            return conn.send("200 OK", hls::PLAYLIST, &headers, film.playlist().as_bytes(), request).await;
+        }
+        Some(Asked::Init) => {
+            tokio::select! {
+                init = film.init() => init.map(|init| init.to_vec()),
+                gone = conn.gone() => return Err(gone),
+            }
+        }
+        Some(Asked::Segment(segment)) => {
+            tokio::select! {
+                segment = film.segment(segment) => segment,
+                gone = conn.gone() => return Err(gone),
+            }
+        }
+    };
+    match made {
+        Ok(bytes) => conn.send("200 OK", "video/mp4", &headers, &bytes, request).await,
+        Err(error) => fail(conn, request, &error).await,
+    }
+}
+
+/// A cast's stream from the time `t` asks for, converted as the Cast device reads it.
+pub async fn cast_stream(conn: &mut Connection<'_>, request: &Request, stream: &Stream) -> io::Result<bool> {
+    let t = match number::<f64>(request, "t") {
+        Ok(t) => t.unwrap_or(0.0),
+        Err(error) => return fail(conn, request, &error).await,
+    };
+    pipe(conn, request, (stream.program.clone(), (stream.arguments)(t), None), "video/mp4").await
 }
 
 /// WebVTT of a subtitle track inside a video, or of a subtitle file of the release.

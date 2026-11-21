@@ -18,7 +18,7 @@ use tokio::net::TcpStream;
 use tokio::net::tcp::{OwnedReadHalf, OwnedWriteHalf};
 use tokio::sync::{oneshot, watch};
 
-use super::cast::{Dlna, HELLO};
+use super::cast::{HELLO, Served};
 use super::ctx::Ctx;
 use super::devices::{Addressing, Asker, CAST, Devices, Reach};
 use super::owner::{Command, Lease, StreamFile};
@@ -584,8 +584,14 @@ impl Connection<'_> {
                 return self.empty("405 Method Not Allowed", "", request.keep_alive).await;
             }
             Asker::Cast(granted) => {
-                let dlna = self.ctx.casts.served(&request.path);
-                return self.file(request, granted.id, granted.index, dlna.as_ref()).await;
+                return match self.ctx.casts.served(&request.path) {
+                    Some(Served::Film(film)) => web::watch::film(self, &request, &film).await,
+                    Some(Served::Stream(stream)) => web::watch::cast_stream(self, &request, &stream).await,
+                    served => {
+                        let file = served.as_ref().and_then(Served::file);
+                        self.file(request, granted.id, granted.index, file).await
+                    }
+                };
             }
             Asker::Local | Asker::Device(_) if request.path == wire::PATH => {
                 if request.method != Method::Post {
@@ -727,9 +733,15 @@ impl Connection<'_> {
     }
 
     /// Sends file `index` of download `id` to a player on this Mac, a paired device, or a cast, with
-    /// the type and headers a TV playing a cast reads when `dlna` says them. Its lease holds off an
+    /// the type and headers a TV playing a cast reads when `cast` says them. Its lease holds off an
     /// update's switch, and none is handed out once the switch waits for none.
-    async fn file(&mut self, request: Request, id: DownloadId, index: u32, dlna: Option<&Dlna>) -> io::Result<bool> {
+    async fn file(
+        &mut self,
+        request: Request,
+        id: DownloadId,
+        index: u32,
+        cast: Option<(String, String)>,
+    ) -> io::Result<bool> {
         let keep = request.keep_alive;
         let (file, lease) = match self.ctx.owner.ask(|reply| Command::Stream { id, index, reply }).await {
             Ok(streaming) => streaming,
@@ -762,8 +774,7 @@ impl Connection<'_> {
                 return self.send("503 Service Unavailable", plain, "", text.as_bytes(), &request).await;
             }
         }
-        let content_type = dlna.map_or(content_type(&file.path), |dlna| dlna.mime.as_str());
-        let dlna = dlna.map(Dlna::headers).unwrap_or_default();
+        let (content_type, dlna) = cast.unwrap_or_else(|| (content_type(&file.path).to_string(), String::new()));
         // A download's ID fixes every byte of its files, so this tag never names other bytes,
         // and a browser that keeps it can resume a cut download.
         let tag = format!("ETag: \"{}-{index}\"\r\n", id.to_hex());
@@ -1041,6 +1052,14 @@ fn ask(peer: Peer, request: &Request, port: u16, devices: &Devices, now: i64) ->
             return Err(Refusal::Moved(format!("http://127.0.0.1:{port}{}{query}", request.path)));
         }
         Peer::Loopback if !request.from.loopback_allowed(port) => return Err(Refusal::Forbidden),
+        // A Cast device's player is a page on Google's origin, so it names another site. The
+        // grant's URL is all a cast URL holds, so naming this Mac is enough.
+        Peer::Network { local, .. } if request.path.starts_with(CAST) => {
+            if !request.from.names(port, local, &addressing) {
+                let host = name.unwrap_or_else(|| local.to_string());
+                return Err(Refusal::Elsewhere(format!("{host}:{port}")));
+            }
+        }
         Peer::Network { local, .. } => {
             if !request.from.home_allowed(port, local, &addressing) {
                 let host = name.unwrap_or_else(|| local.to_string());
@@ -1107,16 +1126,24 @@ impl Sender {
     /// cookie.
     fn home_allowed(&self, port: u16, local: IpAddr, addressing: &Addressing) -> bool {
         let Some(host) = self.host.as_deref() else { return false };
+        let public = addressing.exposure.public_address.as_ref().filter(|public| public.host == host);
+        let same_origin = self.origin.as_deref().is_none_or(|origin| {
+            origin.strip_prefix("http://") == Some(host) || public.is_some_and(|public| public.origin == origin)
+        });
+        self.names(port, local, addressing) && !self.cross_site() && same_origin
+    }
+
+    /// For a request from the network, true when it names this Mac by the address it connected
+    /// to, its .local name or its tailnet name, on `port`, or by the public address, whatever
+    /// website made it.
+    fn names(&self, port: u16, local: IpAddr, addressing: &Addressing) -> bool {
+        let Some(host) = self.host.as_deref() else { return false };
         let (host_name, host_port) = split_host(host);
         let names = [&addressing.local, &addressing.tailnet];
         let ours = host_name.parse::<IpAddr>().is_ok_and(|ip| ip.to_canonical() == local)
             || names.iter().any(|name| name.as_deref() == Some(host_name));
-        let public = addressing.exposure.public_address.as_ref().filter(|public| public.host == host);
-        let named = addressing.exposure.server || public.is_some() || ours && host_port == Some(port);
-        let same_origin = self.origin.as_deref().is_none_or(|origin| {
-            origin.strip_prefix("http://") == Some(host) || public.is_some_and(|public| public.origin == origin)
-        });
-        named && !self.cross_site() && same_origin
+        let public = addressing.exposure.public_address.as_ref().is_some_and(|public| public.host == host);
+        addressing.exposure.server || public || ours && host_port == Some(port)
     }
 
     fn cross_site(&self) -> bool {
