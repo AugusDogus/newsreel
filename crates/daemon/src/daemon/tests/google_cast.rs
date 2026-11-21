@@ -227,7 +227,8 @@ async fn a_matroska_release_needs_ffmpeg_for_a_cast_device() {
         (error.code, error.message.as_str()),
         (ErrorCode::Usage, "Fake Google TV does not play MKV files, only MP4 and WEBM")
     );
-    assert!(error.hint.as_deref().is_some_and(|hint| hint.contains("ffmpeg")), "{:?}", error.hint);
+    let install = format!("{} to convert it for the TV, or play it here", crate::ffmpeg::INSTALL);
+    assert_eq!(error.hint.as_deref(), Some(install.as_str()));
 }
 
 /// A 60-second Matroska film `size` large: H.264 with a keyframe every 2 seconds, and AC-3,
